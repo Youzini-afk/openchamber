@@ -5,6 +5,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
+import { useOpenAgentConfigStore } from '@/stores/useOpenAgentConfigStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import {
@@ -36,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
+import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -95,6 +97,7 @@ const pageOrder: SettingsPageSlug[] = [
   'projects',
   'remote-instances',
   'agents',
+  'openagent',
   'behavior',
   'commands',
   'mcp',
@@ -143,6 +146,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiCloudLine;
     case 'agents':
       return RiAiAgentLine;
+    case 'openagent':
+      return RiRobot2Line;
     case 'behavior':
       return RiBrainLine;
     case 'commands':
@@ -344,6 +349,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       void useAgentsStore.getState().loadAgents();
       return;
     }
+    if (settingsSlug === 'openagent') {
+      void useOpenAgentConfigStore.getState().loadConfig();
+      return;
+    }
     if (settingsSlug === 'commands') {
       void useCommandsStore.getState().loadCommands();
       return;
@@ -400,6 +409,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.usage.title');
       case 'agents':
         return t('settings.page.agents.title');
+      case 'openagent':
+        return t('settings.page.openagent.title');
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':
@@ -485,6 +496,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <RemoteInstancesPage />;
       case 'agents':
         return <AgentsPage />;
+      case 'openagent':
+        return <OpenAgentPage />;
       case 'behavior':
         return <BehaviorPage />;
       case 'commands':
