@@ -18,6 +18,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getProviderSources,
     upsertProviderConfig,
     removeProviderConfig,
+    fetchProviderModels,
     refreshOpenCodeAfterConfigChange,
   } = dependencies;
 
@@ -217,6 +218,26 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to save custom provider:', error);
       return res.status(400).json({ error: error.message || 'Failed to save custom provider' });
+    }
+  });
+
+  app.post('/api/provider/custom/models', async (req, res) => {
+    try {
+      if (typeof fetchProviderModels !== 'function') {
+        return res.status(500).json({ error: 'Provider model discovery is not available' });
+      }
+
+      const result = await fetchProviderModels(req.body ?? {});
+
+      return res.json({
+        success: true,
+        type: result.type,
+        baseURL: result.baseURL,
+        models: result.models,
+      });
+    } catch (error) {
+      console.error('Failed to fetch custom provider models:', error);
+      return res.status(400).json({ error: error.message || 'Failed to fetch custom provider models' });
     }
   });
 

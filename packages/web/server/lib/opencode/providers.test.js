@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import express from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import request from 'supertest';
+import { registerOpenCodeRoutes } from './routes.js';
 
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
@@ -99,6 +102,202 @@ describe('provider config helpers', () => {
     expect(config.provider['deepseek-compatible'].models).toEqual({
       'deepseek-chat': { name: 'DeepSeek Chat' },
       'deepseek-reasoner': {},
+    });
+  });
+
+  it.each([
+    ['openai-compatible', '@ai-sdk/openai-compatible'],
+    ['openai-responses', '@ai-sdk/openai'],
+    ['anthropic', '@ai-sdk/anthropic'],
+    ['google', '@ai-sdk/google'],
+  ])('writes a %s custom provider using the expected AI SDK package', async (type, expectedNpm) => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      type,
+      id: `custom-${type}`,
+      name: `Custom ${type}`,
+      baseURL: 'https://api.example.com/v1',
+      models: [{ id: 'model-1', name: 'Model One' }],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider[`custom-${type}`]).toMatchObject({
+      npm: expectedNpm,
+      name: `Custom ${type}`,
+      options: {
+        baseURL: 'https://api.example.com/v1',
+      },
+      models: {
+        'model-1': {
+          name: 'Model One',
+        },
+      },
+    });
+  });
+
+  it('rejects unsupported custom provider API types', async () => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    expect(() => upsertProviderConfig({
+      type: 'not-real',
+      id: 'bad-provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [{ id: 'model-1' }],
+    })).toThrow('Unsupported custom provider API type');
+  });
+
+  it('fetches OpenAI-compatible models with bearer authentication', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { id: 'gpt-4o', owned_by: 'openai' },
+          { id: 'deepseek-chat' },
+        ],
+      }),
+    }));
+    const { fetchProviderModels } = await loadProvidersModule();
+
+    const result = await fetchProviderModels({
+      type: 'openai-compatible',
+      baseURL: 'https://api.example.com/v1/',
+      apiKey: 'sk-test',
+    }, fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.com/v1/models', {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer sk-test',
+      },
+    });
+    expect(result.models).toEqual([
+      { id: 'gpt-4o', name: 'gpt-4o' },
+      { id: 'deepseek-chat', name: 'deepseek-chat' },
+    ]);
+  });
+
+  it('fetches Gemini models with an API key query parameter', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        models: [
+          { name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+          { name: 'models/gemini-2.5-flash' },
+        ],
+      }),
+    }));
+    const { fetchProviderModels } = await loadProvidersModule();
+
+    const result = await fetchProviderModels({
+      type: 'google',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'gemini-key',
+    }, fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://generativelanguage.googleapis.com/v1beta/models?key=gemini-key', {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+    expect(result.models).toEqual([
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash' },
+    ]);
+  });
+
+  it('fetches Anthropic models with Anthropic headers', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' },
+        ],
+      }),
+    }));
+    const { fetchProviderModels } = await loadProvidersModule();
+
+    const result = await fetchProviderModels({
+      type: 'anthropic',
+      baseURL: 'https://api.anthropic.com/v1',
+      apiKey: 'anthropic-key',
+    }, fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.anthropic.com/v1/models', {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-api-key': 'anthropic-key',
+      },
+    });
+    expect(result.models).toEqual([
+      { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+    ]);
+  });
+});
+
+describe('provider routes', () => {
+  const createRouteDependencies = (overrides = {}) => ({
+    crypto: {},
+    clientReloadDelayMs: 1,
+    getOpenCodeResolutionSnapshot: vi.fn(),
+    formatSettingsResponse: vi.fn((settings) => settings),
+    readSettingsFromDisk: vi.fn(),
+    readSettingsFromDiskMigrated: vi.fn(),
+    persistSettings: vi.fn(),
+    sanitizeProjects: vi.fn((projects) => projects),
+    validateDirectoryPath: vi.fn(),
+    resolveProjectDirectory: vi.fn(async () => ({ directory: null, error: null })),
+    getProviderSources: vi.fn(),
+    upsertProviderConfig: vi.fn(),
+    removeProviderConfig: vi.fn(),
+    fetchProviderModels: vi.fn(async (input) => ({
+      type: input.type,
+      baseURL: input.baseURL,
+      models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }],
+    })),
+    refreshOpenCodeAfterConfigChange: vi.fn(),
+    ...overrides,
+  });
+
+  it('exposes custom provider model discovery through the settings API', async () => {
+    const app = express();
+    app.use(express.json());
+    const fetchProviderModels = vi.fn(async (input) => ({
+      type: input.type,
+      baseURL: input.baseURL,
+      models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }],
+    }));
+
+    registerOpenCodeRoutes(app, createRouteDependencies({ fetchProviderModels }));
+
+    const response = await request(app)
+      .post('/api/provider/custom/models')
+      .send({
+        type: 'google',
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'gemini-key',
+      })
+      .expect(200);
+
+    expect(fetchProviderModels).toHaveBeenCalledWith({
+      type: 'google',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'gemini-key',
+    });
+    expect(response.body).toEqual({
+      success: true,
+      type: 'google',
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta',
+      models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }],
     });
   });
 });

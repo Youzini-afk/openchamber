@@ -60,7 +60,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
     } = routeDependencies;
 
-    const { getProviderSources, upsertProviderConfig, removeProviderConfig } = await import('./index.js');
+    const { getProviderSources, upsertProviderConfig, removeProviderConfig, fetchProviderModels } = await import('./index.js');
 
     registerSettingsUtilityRoutes(app, {
       readCustomThemesFromDisk,
@@ -82,6 +82,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProviderSources,
       upsertProviderConfig,
       removeProviderConfig,
+      fetchProviderModels,
       refreshOpenCodeAfterConfigChange,
     });
 

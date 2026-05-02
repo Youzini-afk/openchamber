@@ -5,6 +5,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,14 +13,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui';
-import { RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine } from '@remixicon/react';
+import { RiAddLine, RiCloseLine, RiRefreshLine, RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -41,23 +42,79 @@ const formatTokens = (value?: number | null) => {
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
+type CustomProviderApiType = 'openai-compatible' | 'openai-responses' | 'anthropic' | 'google';
+
+interface CustomProviderApiTypeOption {
+  value: CustomProviderApiType;
+  labelKey: I18nKey;
+  descriptionKey: I18nKey;
+  defaultBaseURL: string;
+  baseURLPlaceholder: string;
+}
+
+const CUSTOM_PROVIDER_API_TYPES: CustomProviderApiTypeOption[] = [
+  {
+    value: 'openai-compatible',
+    labelKey: 'settings.providers.page.custom.type.openaiCompatible.label',
+    descriptionKey: 'settings.providers.page.custom.type.openaiCompatible.description',
+    defaultBaseURL: '',
+    baseURLPlaceholder: 'https://api.example.com/v1',
+  },
+  {
+    value: 'openai-responses',
+    labelKey: 'settings.providers.page.custom.type.openaiResponses.label',
+    descriptionKey: 'settings.providers.page.custom.type.openaiResponses.description',
+    defaultBaseURL: 'https://api.openai.com/v1',
+    baseURLPlaceholder: 'https://api.openai.com/v1',
+  },
+  {
+    value: 'anthropic',
+    labelKey: 'settings.providers.page.custom.type.anthropic.label',
+    descriptionKey: 'settings.providers.page.custom.type.anthropic.description',
+    defaultBaseURL: 'https://api.anthropic.com/v1',
+    baseURLPlaceholder: 'https://api.anthropic.com/v1',
+  },
+  {
+    value: 'google',
+    labelKey: 'settings.providers.page.custom.type.google.label',
+    descriptionKey: 'settings.providers.page.custom.type.google.description',
+    defaultBaseURL: 'https://generativelanguage.googleapis.com/v1beta',
+    baseURLPlaceholder: 'https://generativelanguage.googleapis.com/v1beta',
+  },
+];
+
+const isCustomProviderApiType = (value: string): value is CustomProviderApiType =>
+  CUSTOM_PROVIDER_API_TYPES.some((option) => option.value === value);
+
+const getCustomProviderApiTypeOption = (value: CustomProviderApiType) =>
+  CUSTOM_PROVIDER_API_TYPES.find((option) => option.value === value) ?? CUSTOM_PROVIDER_API_TYPES[0];
+
+interface CustomProviderModelRow {
+  id: string;
+  name: string;
+}
+
 interface CustomProviderFormState {
+  type: CustomProviderApiType;
   id: string;
   name: string;
   baseURL: string;
-  models: string;
+  models: CustomProviderModelRow[];
   apiKey: string;
   scope: 'user' | 'project';
 }
 
-const EMPTY_CUSTOM_PROVIDER_FORM: CustomProviderFormState = {
+const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '' });
+
+const createEmptyCustomProviderForm = (): CustomProviderFormState => ({
+  type: 'openai-compatible',
   id: '',
   name: '',
   baseURL: '',
-  models: '',
+  models: [createEmptyCustomProviderModelRow()],
   apiKey: '',
   scope: 'user',
-};
+});
 
 interface AuthMethod {
   type?: string;
@@ -157,21 +214,23 @@ const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
   });
 };
 
-const parseCustomProviderModels = (value: string): Array<{ id: string; name?: string }> =>
-  value
-    .split(/[\n,]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const separatorIndex = entry.indexOf('|');
-      if (separatorIndex < 0) {
-        return { id: entry };
-      }
-      const id = entry.slice(0, separatorIndex).trim();
-      const name = entry.slice(separatorIndex + 1).trim();
-      return name ? { id, name } : { id };
-    })
-    .filter((entry) => entry.id.length > 0);
+const normalizeCustomProviderModelRows = (rows: CustomProviderModelRow[]): Array<{ id: string; name?: string }> => {
+  const seen = new Set<string>();
+  const models: Array<{ id: string; name?: string }> = [];
+
+  for (const row of rows) {
+    const id = row.id.trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+
+    const name = row.name.trim();
+    models.push(name ? { id, name } : { id });
+  }
+
+  return models;
+};
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -203,8 +262,9 @@ export const ProvidersPage: React.FC = () => {
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [isCustomProviderMode, setIsCustomProviderMode] = React.useState(false);
-  const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(EMPTY_CUSTOM_PROVIDER_FORM);
+  const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(() => createEmptyCustomProviderForm());
   const [customProviderBusy, setCustomProviderBusy] = React.useState(false);
+  const [customProviderFetchingModels, setCustomProviderFetchingModels] = React.useState(false);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -551,10 +611,131 @@ export const ProvidersPage: React.FC = () => {
     setCustomProviderForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const updateCustomProviderType = (type: CustomProviderApiType) => {
+    setCustomProviderForm((prev) => {
+      const previousOption = getCustomProviderApiTypeOption(prev.type);
+      const nextOption = getCustomProviderApiTypeOption(type);
+      const currentBaseURL = prev.baseURL.trim();
+      const shouldReplaceBaseURL =
+        !currentBaseURL ||
+        (previousOption.defaultBaseURL.length > 0 && currentBaseURL === previousOption.defaultBaseURL);
+
+      return {
+        ...prev,
+        type,
+        baseURL: shouldReplaceBaseURL ? nextOption.defaultBaseURL : prev.baseURL,
+      };
+    });
+  };
+
+  const updateCustomProviderModelRow = (
+    index: number,
+    key: keyof CustomProviderModelRow,
+    value: string
+  ) => {
+    setCustomProviderForm((prev) => ({
+      ...prev,
+      models: prev.models.map((row, rowIndex) => (
+        rowIndex === index ? { ...row, [key]: value } : row
+      )),
+    }));
+  };
+
+  const addCustomProviderModelRow = () => {
+    setCustomProviderForm((prev) => ({
+      ...prev,
+      models: [...prev.models, createEmptyCustomProviderModelRow()],
+    }));
+  };
+
+  const removeCustomProviderModelRow = (index: number) => {
+    setCustomProviderForm((prev) => {
+      if (prev.models.length <= 1) {
+        return {
+          ...prev,
+          models: [createEmptyCustomProviderModelRow()],
+        };
+      }
+
+      return {
+        ...prev,
+        models: prev.models.filter((_, rowIndex) => rowIndex !== index),
+      };
+    });
+  };
+
+  const handleFetchCustomProviderModels = async () => {
+    const typeOption = getCustomProviderApiTypeOption(customProviderForm.type);
+    const baseURL = customProviderForm.baseURL.trim() || typeOption.defaultBaseURL;
+    const apiKey = customProviderForm.apiKey.trim();
+
+    if (!baseURL || !apiKey) {
+      toast.error(t('settings.providers.page.toast.customProviderFetchRequired'));
+      return;
+    }
+
+    setCustomProviderFetchingModels(true);
+    try {
+      const response = await fetch('/api/provider/custom/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          type: customProviderForm.type,
+          baseURL,
+          apiKey,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = isRecord(payload) && typeof payload.error === 'string'
+          ? payload.error
+          : t('settings.providers.page.toast.customProviderFetchFailed');
+        throw new Error(message);
+      }
+
+      const fetchedModels = isRecord(payload) && Array.isArray(payload.models)
+        ? payload.models
+            .map((entry) => {
+              if (!isRecord(entry) || typeof entry.id !== 'string') {
+                return null;
+              }
+              const id = entry.id.trim();
+              if (!id) {
+                return null;
+              }
+              const name = typeof entry.name === 'string' ? entry.name.trim() : id;
+              return { id, name: name || id };
+            })
+            .filter((entry): entry is CustomProviderModelRow => Boolean(entry))
+        : [];
+
+      if (fetchedModels.length === 0) {
+        throw new Error(t('settings.providers.page.toast.customProviderFetchNoModels'));
+      }
+
+      const resolvedBaseURL = isRecord(payload) && typeof payload.baseURL === 'string'
+        ? payload.baseURL
+        : baseURL;
+
+      setCustomProviderForm((prev) => ({
+        ...prev,
+        baseURL: resolvedBaseURL,
+        models: fetchedModels,
+      }));
+      toast.success(t('settings.providers.page.toast.customProviderModelsFetched', { count: fetchedModels.length }));
+    } catch (error) {
+      console.error('Failed to fetch custom provider models:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.customProviderFetchFailed'));
+    } finally {
+      setCustomProviderFetchingModels(false);
+    }
+  };
+
   const handleCreateCustomProvider = async () => {
     const providerId = customProviderForm.id.trim();
     const baseURL = customProviderForm.baseURL.trim();
-    const models = parseCustomProviderModels(customProviderForm.models);
+    const models = normalizeCustomProviderModelRows(customProviderForm.models);
 
     if (!providerId || !baseURL || models.length === 0) {
       toast.error(t('settings.providers.page.toast.customProviderRequired'));
@@ -567,6 +748,7 @@ export const ProvidersPage: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
+          type: customProviderForm.type,
           id: providerId,
           name: customProviderForm.name.trim(),
           baseURL,
@@ -604,7 +786,7 @@ export const ProvidersPage: React.FC = () => {
       setSelectedProvider(providerId);
       setCandidateProviderId('');
       setIsCustomProviderMode(false);
-      setCustomProviderForm(EMPTY_CUSTOM_PROVIDER_FORM);
+      setCustomProviderForm(createEmptyCustomProviderForm());
       toast.success(t('settings.providers.page.toast.customProviderSaved'));
     } catch (error) {
       console.error('Failed to save custom provider:', error);
@@ -615,6 +797,7 @@ export const ProvidersPage: React.FC = () => {
   };
 
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
+  const customProviderTypeOption = getCustomProviderApiTypeOption(customProviderForm.type);
 
   if (!isAddMode && providers.length === 0) {
     return (
@@ -783,23 +966,39 @@ export const ProvidersPage: React.FC = () => {
                   </label>
                 </div>
 
+                <div className="space-y-1.5">
+                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.type')}</span>
+                  <Select
+                    value={customProviderForm.type}
+                    onValueChange={(value) => {
+                      if (isCustomProviderApiType(value)) {
+                        updateCustomProviderType(value);
+                      }
+                    }}
+                  >
+                    <SelectTrigger size="lg" className="w-full justify-between normal-case">
+                      <SelectValue>{t(customProviderTypeOption.labelKey)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="max-w-[min(28rem,calc(100vw-2rem))]">
+                      {CUSTOM_PROVIDER_API_TYPES.map((option) => (
+                        <SelectItem key={option.value} value={option.value} className="py-2">
+                          <span className="flex min-w-0 flex-col items-start gap-0.5">
+                            <span className="typography-ui-label text-foreground">{t(option.labelKey)}</span>
+                            <span className="typography-meta whitespace-normal text-muted-foreground">{t(option.descriptionKey)}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <label className="block space-y-1.5">
                   <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.baseURL')}</span>
                   <Input
                     value={customProviderForm.baseURL}
                     onChange={(event) => updateCustomProviderField('baseURL', event.target.value)}
-                    placeholder={t('settings.providers.page.custom.placeholder.baseURL')}
+                    placeholder={customProviderTypeOption.baseURLPlaceholder}
                     className="font-mono text-xs"
-                  />
-                </label>
-
-                <label className="block space-y-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.models')}</span>
-                  <textarea
-                    value={customProviderForm.models}
-                    onChange={(event) => updateCustomProviderField('models', event.target.value)}
-                    placeholder={t('settings.providers.page.custom.placeholder.models')}
-                    className="min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-none outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                   />
                 </label>
 
@@ -837,6 +1036,77 @@ export const ProvidersPage: React.FC = () => {
                         {t('settings.providers.page.custom.scope.project')}
                       </Button>
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.models')}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="!font-normal"
+                        onClick={handleFetchCustomProviderModels}
+                        disabled={customProviderBusy || customProviderFetchingModels}
+                      >
+                        <RiRefreshLine className={cn('h-3.5 w-3.5', customProviderFetchingModels && 'animate-spin')} />
+                        {customProviderFetchingModels
+                          ? t('settings.providers.page.actions.fetchingModels')
+                          : t('settings.providers.page.actions.fetchModels')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="chip"
+                        size="xs"
+                        className="!font-normal"
+                        onClick={addCustomProviderModelRow}
+                      >
+                        <RiAddLine className="h-3.5 w-3.5" />
+                        {t('settings.providers.page.actions.addModel')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {customProviderForm.models.map((row, index) => (
+                      <div
+                        key={index}
+                        className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
+                      >
+                        <Input
+                          value={row.id}
+                          onChange={(event) => updateCustomProviderModelRow(index, 'id', event.target.value)}
+                          placeholder={t('settings.providers.page.custom.placeholder.modelId')}
+                          className="font-mono text-xs"
+                        />
+                        <Input
+                          value={row.name}
+                          onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
+                          placeholder={t('settings.providers.page.custom.placeholder.modelName')}
+                          className="font-mono text-xs"
+                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              className="h-8 w-8 px-0"
+                              onClick={() => removeCustomProviderModelRow(index)}
+                              disabled={customProviderForm.models.length <= 1}
+                              aria-label={t('settings.providers.page.actions.removeModel')}
+                            >
+                              <RiCloseLine className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent sideOffset={8}>
+                            {t('settings.providers.page.actions.removeModel')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
