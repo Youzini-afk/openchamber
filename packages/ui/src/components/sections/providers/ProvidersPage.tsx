@@ -41,6 +41,24 @@ const formatTokens = (value?: number | null) => {
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
+interface CustomProviderFormState {
+  id: string;
+  name: string;
+  baseURL: string;
+  models: string;
+  apiKey: string;
+  scope: 'user' | 'project';
+}
+
+const EMPTY_CUSTOM_PROVIDER_FORM: CustomProviderFormState = {
+  id: '',
+  name: '',
+  baseURL: '',
+  models: '',
+  apiKey: '',
+  scope: 'user',
+};
+
 interface AuthMethod {
   type?: string;
   name?: string;
@@ -139,6 +157,24 @@ const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
   });
 };
 
+const parseCustomProviderModels = (value: string): Array<{ id: string; name?: string }> =>
+  value
+    .split(/[\n,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.indexOf('|');
+      if (separatorIndex < 0) {
+        return { id: entry };
+      }
+      const id = entry.slice(0, separatorIndex).trim();
+      const name = entry.slice(separatorIndex + 1).trim();
+      return name ? { id, name } : { id };
+    })
+    .filter((entry) => entry.id.length > 0);
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const ProvidersPage: React.FC = () => {
   const { t } = useI18n();
   const providers = useConfigStore((state) => state.providers);
@@ -166,6 +202,9 @@ export const ProvidersPage: React.FC = () => {
   const [providerDropdownOpen, setProviderDropdownOpen] = React.useState(false);
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
+  const [isCustomProviderMode, setIsCustomProviderMode] = React.useState(false);
+  const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(EMPTY_CUSTOM_PROVIDER_FORM);
+  const [customProviderBusy, setCustomProviderBusy] = React.useState(false);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -505,6 +544,76 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
+  const updateCustomProviderField = <K extends keyof CustomProviderFormState>(
+    key: K,
+    value: CustomProviderFormState[K]
+  ) => {
+    setCustomProviderForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleCreateCustomProvider = async () => {
+    const providerId = customProviderForm.id.trim();
+    const baseURL = customProviderForm.baseURL.trim();
+    const models = parseCustomProviderModels(customProviderForm.models);
+
+    if (!providerId || !baseURL || models.length === 0) {
+      toast.error(t('settings.providers.page.toast.customProviderRequired'));
+      return;
+    }
+
+    setCustomProviderBusy(true);
+    try {
+      const response = await fetch('/api/provider/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          id: providerId,
+          name: customProviderForm.name.trim(),
+          baseURL,
+          models,
+          scope: customProviderForm.scope,
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = isRecord(payload) && typeof payload.error === 'string'
+          ? payload.error
+          : t('settings.providers.page.toast.customProviderSaveFailed');
+        throw new Error(message);
+      }
+
+      const reloadDelayMs = isRecord(payload) && typeof payload.reloadDelayMs === 'number'
+        ? payload.reloadDelayMs
+        : 800;
+      await wait(reloadDelayMs);
+
+      const apiKey = customProviderForm.apiKey.trim();
+      if (apiKey) {
+        const authResponse = await fetch(`/api/auth/${encodeURIComponent(providerId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'api', key: apiKey }),
+        });
+        if (!authResponse.ok) {
+          throw new Error(t('settings.providers.page.toast.apiKeySaveFailed'));
+        }
+      }
+
+      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      setSelectedProvider(providerId);
+      setCandidateProviderId('');
+      setIsCustomProviderMode(false);
+      setCustomProviderForm(EMPTY_CUSTOM_PROVIDER_FORM);
+      toast.success(t('settings.providers.page.toast.customProviderSaved'));
+    } catch (error) {
+      console.error('Failed to save custom provider:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.customProviderSaveFailed'));
+    } finally {
+      setCustomProviderBusy(false);
+    }
+  };
+
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
 
   if (!isAddMode && providers.length === 0) {
@@ -527,6 +636,31 @@ export const ProvidersPage: React.FC = () => {
             <h1 className="typography-ui-header font-semibold text-foreground">{t('settings.providers.page.connect.title')}</h1>
           </div>
 
+          <div className="mb-5 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="chip"
+              size="xs"
+              aria-pressed={!isCustomProviderMode}
+              onClick={() => setIsCustomProviderMode(false)}
+            >
+              {t('settings.providers.page.connect.knownProvider')}
+            </Button>
+            <Button
+              type="button"
+              variant="chip"
+              size="xs"
+              aria-pressed={isCustomProviderMode}
+              onClick={() => {
+                setCandidateProviderId('');
+                setIsCustomProviderMode(true);
+              }}
+            >
+              {t('settings.providers.page.connect.customProvider')}
+            </Button>
+          </div>
+
+          {!isCustomProviderMode && (
           <div className="mb-8">
             <div className="mb-1 px-1">
               <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.connect.selectProviderTitle')}</h2>
@@ -620,8 +754,107 @@ export const ProvidersPage: React.FC = () => {
               </div>
             </section>
           </div>
+          )}
 
-          {candidateProviderId && (
+          {isCustomProviderMode && (
+            <div className="mb-8">
+              <div className="mb-1 px-1">
+                <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.custom.title')}</h2>
+              </div>
+
+              <section className="px-2 pb-2 pt-0 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="space-y-1.5">
+                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.id')}</span>
+                    <Input
+                      value={customProviderForm.id}
+                      onChange={(event) => updateCustomProviderField('id', event.target.value)}
+                      placeholder={t('settings.providers.page.custom.placeholder.id')}
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.name')}</span>
+                    <Input
+                      value={customProviderForm.name}
+                      onChange={(event) => updateCustomProviderField('name', event.target.value)}
+                      placeholder={t('settings.providers.page.custom.placeholder.name')}
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.baseURL')}</span>
+                  <Input
+                    value={customProviderForm.baseURL}
+                    onChange={(event) => updateCustomProviderField('baseURL', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.baseURL')}
+                    className="font-mono text-xs"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.models')}</span>
+                  <textarea
+                    value={customProviderForm.models}
+                    onChange={(event) => updateCustomProviderField('models', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.models')}
+                    className="min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-none outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                  />
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 sm:items-end">
+                  <label className="space-y-1.5">
+                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.apiKey')}</span>
+                    <Input
+                      type="password"
+                      value={customProviderForm.apiKey}
+                      onChange={(event) => updateCustomProviderField('apiKey', event.target.value)}
+                      placeholder={t('settings.providers.page.custom.placeholder.apiKey')}
+                      className="font-mono text-xs"
+                    />
+                  </label>
+
+                  <div className="space-y-1.5">
+                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.scope')}</span>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="chip"
+                        size="xs"
+                        aria-pressed={customProviderForm.scope === 'user'}
+                        onClick={() => updateCustomProviderField('scope', 'user')}
+                      >
+                        {t('settings.providers.page.custom.scope.user')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="chip"
+                        size="xs"
+                        aria-pressed={customProviderForm.scope === 'project'}
+                        onClick={() => updateCustomProviderField('scope', 'project')}
+                      >
+                        {t('settings.providers.page.custom.scope.project')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    size="xs"
+                    className="!font-normal"
+                    onClick={handleCreateCustomProvider}
+                    disabled={customProviderBusy}
+                  >
+                    {customProviderBusy ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveProvider')}
+                  </Button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {!isCustomProviderMode && candidateProviderId && (
             <div className="mb-8">
               <div className="mb-1 px-1">
                 <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.auth.title')}</h2>

@@ -42,6 +42,7 @@ export {
 
 export {
   getProviderSources,
+  upsertProviderConfig,
   removeProviderConfig,
 } from './providers.js';
 

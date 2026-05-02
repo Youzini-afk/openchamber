@@ -16,6 +16,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     validateDirectoryPath,
     resolveProjectDirectory,
     getProviderSources,
+    upsertProviderConfig,
     removeProviderConfig,
     refreshOpenCodeAfterConfigChange,
   } = dependencies;
@@ -185,6 +186,37 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to get provider sources:', error);
       return res.status(500).json({ error: error.message || 'Failed to get provider sources' });
+    }
+  });
+
+  app.post('/api/provider/custom', async (req, res) => {
+    try {
+      const scope = typeof req.body?.scope === 'string' ? req.body.scope : 'user';
+      const requestedProjectScope = scope === 'project';
+      let directory = null;
+
+      if (requestedProjectScope) {
+        const resolved = await resolveProjectDirectory(req);
+        if (!resolved.directory) {
+          return res.status(400).json({ error: resolved.error || 'Working directory is required for project scope' });
+        }
+        directory = resolved.directory;
+      }
+
+      const result = upsertProviderConfig(req.body ?? {}, directory, requestedProjectScope ? 'project' : 'user');
+      await refreshOpenCodeAfterConfigChange(`custom provider ${result.providerId} saved (${result.scope})`);
+
+      return res.json({
+        success: true,
+        providerId: result.providerId,
+        scope: result.scope,
+        path: result.path,
+        requiresReload: true,
+        reloadDelayMs: clientReloadDelayMs,
+      });
+    } catch (error) {
+      console.error('Failed to save custom provider:', error);
+      return res.status(400).json({ error: error.message || 'Failed to save custom provider' });
     }
   });
 
