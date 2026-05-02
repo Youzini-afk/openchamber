@@ -21,6 +21,7 @@ export function createGlobalMessageStreamHub({
   let connected = false;
   let everConnected = false;
   let buildUrlFailed = false;
+  let readerGeneration = 0;
 
   const notifyStatus = (status) => {
     for (const subscriber of Array.from(statusSubscribers)) {
@@ -45,6 +46,8 @@ export function createGlobalMessageStreamHub({
       return;
     }
 
+    const generation = readerGeneration + 1;
+    readerGeneration = generation;
     controller = new AbortController();
     reader = createUpstreamSseReader({
       signal: controller.signal,
@@ -62,16 +65,25 @@ export function createGlobalMessageStreamHub({
       },
       getHeaders: getOpenCodeAuthHeaders,
       onConnect() {
+        if (generation !== readerGeneration) {
+          return;
+        }
         connected = true;
         const wasReady = everConnected;
         everConnected = true;
         notifyStatus({ type: 'connect', wasReady });
       },
       onDisconnect({ reason }) {
+        if (generation !== readerGeneration) {
+          return;
+        }
         connected = false;
         notifyStatus({ type: 'disconnect', reason });
       },
       onEvent(event) {
+        if (generation !== readerGeneration) {
+          return;
+        }
         const normalized = normalizeEvent(event);
         if (normalized.eventId) {
           replay.push(normalized);
@@ -85,6 +97,9 @@ export function createGlobalMessageStreamHub({
         }
       },
       onError(error) {
+        if (generation !== readerGeneration) {
+          return;
+        }
         if (controller?.signal.aborted) {
           return;
         }
@@ -101,6 +116,7 @@ export function createGlobalMessageStreamHub({
   };
 
   const stop = () => {
+    readerGeneration += 1;
     connected = false;
     reader?.stop();
     if (controller && !controller.signal.aborted) {

@@ -11,9 +11,11 @@ vi.mock('node:child_process', () => ({
 const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
+const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   spawnMock.mockReset();
+  globalThis.fetch = originalFetch;
   if (typeof originalOpencodeBinary === 'string') {
     process.env.OPENCODE_BINARY = originalOpencodeBinary;
     return;
@@ -215,5 +217,55 @@ describe('OpenCode lifecycle', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     await server.close();
+  });
+
+  it('restarts the shared global event hub around a config refresh', async () => {
+    const calls = [];
+    const state = {
+      openCodeWorkingDirectory: '/tmp/project',
+      openCodeProcess: null,
+      openCodePort: 45678,
+      openCodeBaseUrl: null,
+      currentRestartPromise: null,
+      isRestartingOpenCode: false,
+      openCodeApiPrefix: '',
+      openCodeApiPrefixDetected: false,
+      openCodeApiDetectionTimer: null,
+      lastOpenCodeError: null,
+      isOpenCodeReady: true,
+      openCodeNotReadySince: 0,
+      isExternalOpenCode: true,
+      isShuttingDown: false,
+      healthCheckInterval: null,
+      expressApp: {},
+      useWslForOpencode: false,
+      resolvedWslBinary: null,
+      resolvedWslOpencodePath: null,
+      resolvedWslDistro: null,
+    };
+    const globalEventHub = {
+      stop: vi.fn(() => calls.push('hub.stop')),
+      start: vi.fn(() => calls.push('hub.start')),
+    };
+
+    globalThis.fetch = vi.fn(async (url) => {
+      calls.push(`fetch:${new URL(url).pathname}`);
+      if (String(url).endsWith('/global/health')) {
+        return { ok: true, json: async () => ({ healthy: true }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+
+    const runtime = createRuntime({
+      state,
+      globalEventHub,
+    });
+
+    await runtime.refreshOpenCodeAfterConfigChange('custom provider saved');
+
+    expect(globalEventHub.stop).toHaveBeenCalledTimes(1);
+    expect(globalEventHub.start).toHaveBeenCalledTimes(1);
+    expect(calls.indexOf('hub.stop')).toBeLessThan(calls.indexOf('fetch:/global/health'));
+    expect(calls.indexOf('hub.start')).toBeGreaterThan(calls.indexOf('fetch:/agent'));
   });
 });

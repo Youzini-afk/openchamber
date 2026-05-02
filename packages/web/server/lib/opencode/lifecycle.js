@@ -26,6 +26,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     buildManagedOpenCodePath,
     getManagedOpenCodeShellEnvSnapshot,
     getActiveSessionCount = () => 0,
+    globalEventHub = null,
   } = deps;
 
   const killProcessOnPort = (port) => {
@@ -713,6 +714,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     clearResolvedOpenCodeBinary();
     await applyOpencodeBinaryFromSettings();
 
+    try {
+      globalEventHub?.stop?.();
+    } catch (error) {
+      console.warn('Failed to stop global OpenCode event hub before refresh:', error);
+    }
+
     await restartOpenCode();
 
     try {
@@ -726,6 +733,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
       state.isOpenCodeReady = true;
       state.openCodeNotReadySince = 0;
+
+      try {
+        globalEventHub?.start?.();
+      } catch (error) {
+        console.warn('Failed to restart global OpenCode event hub after refresh:', error);
+      }
     } catch (error) {
       state.isOpenCodeReady = false;
       state.openCodeNotReadySince = Date.now();
