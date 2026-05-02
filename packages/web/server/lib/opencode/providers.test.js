@@ -134,6 +134,34 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('omits the output token limit when it is not configured', async () => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      id: 'optional-output-provider',
+      name: 'Optional Output Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'context-only-model',
+          name: 'Context Only Model',
+          context: 128000,
+          output: '',
+        },
+      ],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider['optional-output-provider'].models['context-only-model']).toEqual({
+      name: 'Context Only Model',
+      limit: {
+        context: 128000,
+      },
+    });
+  });
+
   it('reads an existing custom provider config for editing', async () => {
     const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });

@@ -23,6 +23,7 @@ describe('custom provider form helpers', () => {
   test('normalizes model names and token limits for custom provider saving', () => {
     expect(normalizeCustomProviderModelRows([
       { id: ' gpt-test ', name: ' GPT Test ', context: '200000', output: '8192' },
+      { id: 'context-only', name: 'Context Only', context: '128000', output: '' },
       { id: 'empty-limits', name: '', context: '', output: ' ' },
       { id: 'bad-limits', name: 'Bad Limits', context: '0', output: '-10' },
       { id: 'gpt-test', name: 'Duplicate', context: '128000', output: '4096' },
@@ -33,6 +34,13 @@ describe('custom provider form helpers', () => {
         limit: {
           context: 200000,
           output: 8192,
+        },
+      },
+      {
+        id: 'context-only',
+        name: 'Context Only',
+        limit: {
+          context: 128000,
         },
       },
       { id: 'empty-limits' },
