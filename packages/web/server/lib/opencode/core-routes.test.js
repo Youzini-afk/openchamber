@@ -1,13 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { registerServerStatusRoutes } from './core-routes.js';
+import { registerCommonRequestMiddleware, registerServerStatusRoutes } from './core-routes.js';
 
 describe('core-routes', () => {
   it('should call gracefulShutdown with exitProcess: true on /api/system/shutdown', async () => {
     const app = express();
     let shutdownOpts = null;
     const dependencies = {
+      express,
+      process,
       gracefulShutdown: vi.fn(async (opts) => {
         shutdownOpts = opts;
       }),
@@ -22,5 +24,29 @@ describe('core-routes', () => {
 
     expect(dependencies.gracefulShutdown).toHaveBeenCalled();
     expect(shutdownOpts).toEqual({ exitProcess: true });
+  });
+
+  it('parses JSON bodies for provider management routes', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+
+    app.post('/api/provider/custom', (req, res) => {
+      res.json({ body: req.body ?? null });
+    });
+
+    const response = await request(app)
+      .post('/api/provider/custom')
+      .send({
+        id: 'my-provider',
+        apiKey: 'sk-test',
+      })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      body: {
+        id: 'my-provider',
+        apiKey: 'sk-test',
+      },
+    });
   });
 });
