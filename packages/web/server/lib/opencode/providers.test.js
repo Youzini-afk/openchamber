@@ -134,6 +134,53 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('reads an existing custom provider config for editing', async () => {
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({
+      provider: {
+        editable: {
+          npm: '@ai-sdk/anthropic',
+          name: 'Editable Provider',
+          options: { baseURL: 'https://api.example.com/v1' },
+          models: {
+            'claude-test': {
+              name: 'Claude Test',
+              limit: {
+                context: 200000,
+                output: 8192,
+              },
+            },
+            'nameless-model': {},
+          },
+        },
+      },
+    }, null, 2));
+
+    const { getProviderConfig } = await loadProvidersModule();
+
+    expect(getProviderConfig('editable')).toEqual({
+      providerId: 'editable',
+      type: 'anthropic',
+      name: 'Editable Provider',
+      baseURL: 'https://api.example.com/v1',
+      scope: 'user',
+      path: configPath,
+      models: [
+        {
+          id: 'claude-test',
+          name: 'Claude Test',
+          context: 200000,
+          output: 8192,
+        },
+        {
+          id: 'nameless-model',
+          name: '',
+        },
+      ],
+    });
+  });
+
   it.each([
     ['openai-compatible', '@ai-sdk/openai-compatible'],
     ['openai-responses', '@ai-sdk/openai'],
@@ -293,6 +340,7 @@ describe('provider routes', () => {
     validateDirectoryPath: vi.fn(),
     resolveProjectDirectory: vi.fn(async () => ({ directory: null, error: null })),
     getProviderSources: vi.fn(),
+    getProviderConfig: vi.fn(),
     upsertProviderConfig: vi.fn(),
     removeProviderConfig: vi.fn(),
     fetchProviderModels: vi.fn(async (input) => ({
@@ -334,6 +382,75 @@ describe('provider routes', () => {
       type: 'google',
       baseURL: 'https://generativelanguage.googleapis.com/v1beta',
       models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }],
+    });
+  });
+
+  it('exposes stored provider configuration for editing', async () => {
+    const app = express();
+    app.use(express.json());
+    const getProviderConfig = vi.fn(() => ({
+      providerId: 'editable',
+      type: 'anthropic',
+      name: 'Editable Provider',
+      baseURL: 'https://api.example.com/v1',
+      scope: 'user',
+      path: '/tmp/config.json',
+      models: [{ id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192 }],
+    }));
+
+    registerOpenCodeRoutes(app, createRouteDependencies({ getProviderConfig }));
+
+    const response = await request(app)
+      .get('/api/provider/editable/config')
+      .expect(200);
+
+    expect(getProviderConfig).toHaveBeenCalledWith('editable', null);
+    expect(response.body).toEqual({
+      providerId: 'editable',
+      config: {
+        providerId: 'editable',
+        type: 'anthropic',
+        name: 'Editable Provider',
+        baseURL: 'https://api.example.com/v1',
+        scope: 'user',
+        path: '/tmp/config.json',
+        models: [{ id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192 }],
+      },
+    });
+  });
+
+  it('saves custom provider edits back to the custom config scope', async () => {
+    const app = express();
+    app.use(express.json());
+    const upsertProviderConfig = vi.fn(() => ({
+      providerId: 'env-backed',
+      scope: 'custom',
+      path: '/tmp/custom-opencode.json',
+    }));
+
+    registerOpenCodeRoutes(app, createRouteDependencies({ upsertProviderConfig }));
+
+    const response = await request(app)
+      .post('/api/provider/custom')
+      .send({
+        id: 'env-backed',
+        name: 'Env Backed',
+        baseURL: 'https://api.example.com/v1',
+        scope: 'custom',
+        models: [{ id: 'model-1' }],
+      })
+      .expect(200);
+
+    expect(upsertProviderConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'env-backed', scope: 'custom' }),
+      null,
+      'custom',
+    );
+    expect(response.body).toMatchObject({
+      success: true,
+      providerId: 'env-backed',
+      scope: 'custom',
+      path: '/tmp/custom-opencode.json',
     });
   });
 });

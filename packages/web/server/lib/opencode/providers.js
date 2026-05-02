@@ -30,6 +30,10 @@ const CUSTOM_PROVIDER_TYPES = Object.freeze({
   },
 });
 
+const CUSTOM_PROVIDER_TYPE_BY_NPM = Object.freeze(
+  Object.fromEntries(Object.entries(CUSTOM_PROVIDER_TYPES).map(([type, config]) => [config.npm, type])),
+);
+
 function normalizeNonEmptyString(value) {
   if (typeof value !== 'string') {
     return '';
@@ -139,6 +143,106 @@ function buildProviderEntry(input) {
       },
       models: normalizeModels(input.models),
     },
+  };
+}
+
+function inferProviderType(entry) {
+  const explicitType = normalizeNonEmptyString(entry?.type ?? entry?.apiType ?? entry?.providerType ?? entry?.format);
+  if (explicitType && Object.prototype.hasOwnProperty.call(CUSTOM_PROVIDER_TYPES, explicitType)) {
+    return explicitType;
+  }
+
+  const npm = normalizeNonEmptyString(entry?.npm);
+  return CUSTOM_PROVIDER_TYPE_BY_NPM[npm] || DEFAULT_CUSTOM_PROVIDER_TYPE;
+}
+
+function getProviderConfigEntry(config, providerId) {
+  if (!isPlainObject(config)) {
+    return null;
+  }
+
+  const providerConfig = isPlainObject(config.provider) ? config.provider : {};
+  if (Object.prototype.hasOwnProperty.call(providerConfig, providerId) && isPlainObject(providerConfig[providerId])) {
+    return providerConfig[providerId];
+  }
+
+  const providersConfig = isPlainObject(config.providers) ? config.providers : {};
+  if (Object.prototype.hasOwnProperty.call(providersConfig, providerId) && isPlainObject(providersConfig[providerId])) {
+    return providersConfig[providerId];
+  }
+
+  return null;
+}
+
+function normalizeProviderConfigModels(models) {
+  if (Array.isArray(models)) {
+    return models
+      .map((entry) => {
+        if (!isPlainObject(entry)) {
+          const id = normalizeNonEmptyString(entry);
+          return id ? { id, name: '' } : null;
+        }
+
+        const id = normalizeNonEmptyString(entry.id);
+        if (!id) {
+          return null;
+        }
+
+        const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
+        return {
+          id,
+          name: normalizeNonEmptyString(entry.name),
+          ...(() => {
+            const context = normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length);
+            const output = normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit);
+            return {
+              ...(context ? { context } : {}),
+              ...(output ? { output } : {}),
+            };
+          })(),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (!isPlainObject(models)) {
+    return [];
+  }
+
+  return Object.entries(models)
+    .map(([modelId, entry]) => {
+      const id = normalizeNonEmptyString(modelId);
+      if (!id) {
+        return null;
+      }
+
+      const modelEntry = isPlainObject(entry) ? entry : {};
+      const limitInput = isPlainObject(modelEntry.limit) ? modelEntry.limit : {};
+      const context = normalizePositiveInteger(limitInput.context ?? modelEntry.context ?? modelEntry.contextLimit ?? modelEntry.context_length);
+      const output = normalizePositiveInteger(limitInput.output ?? modelEntry.output ?? modelEntry.outputLimit ?? modelEntry.output_token_limit);
+
+      return {
+        id,
+        name: normalizeNonEmptyString(modelEntry.name),
+        ...(context ? { context } : {}),
+        ...(output ? { output } : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildEditableProviderConfig(providerId, entry, scope, path) {
+  const options = isPlainObject(entry.options) ? entry.options : {};
+  const baseURL = normalizeNonEmptyString(options.baseURL ?? options.baseUrl ?? entry.baseURL ?? entry.baseUrl);
+
+  return {
+    providerId,
+    type: inferProviderType(entry),
+    name: normalizeNonEmptyString(entry.name),
+    baseURL,
+    scope,
+    path: path || null,
+    models: normalizeProviderConfigModels(entry.models),
   };
 }
 
@@ -388,6 +492,34 @@ function getProviderSources(providerId, workingDirectory) {
   };
 }
 
+function getProviderConfig(providerId, workingDirectory) {
+  if (!providerId || typeof providerId !== 'string') {
+    throw new Error('Provider ID is required');
+  }
+
+  const layers = readConfigLayers(workingDirectory);
+  const candidates = [
+    { scope: 'custom', path: layers.paths.customPath, config: layers.customConfig },
+    { scope: 'project', path: layers.paths.projectPath, config: layers.projectConfig },
+    { scope: 'user', path: layers.paths.userPath, config: layers.userConfig },
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.path && candidate.scope !== 'user') {
+      continue;
+    }
+
+    const entry = getProviderConfigEntry(candidate.config, providerId);
+    if (!entry) {
+      continue;
+    }
+
+    return buildEditableProviderConfig(providerId, entry, candidate.scope, candidate.path);
+  }
+
+  return null;
+}
+
 function upsertProviderConfig(input, workingDirectory, scope = 'user') {
   const { providerId, entry } = buildProviderEntry(input);
   const layers = readConfigLayers(workingDirectory);
@@ -480,6 +612,7 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
 
 export {
   getProviderSources,
+  getProviderConfig,
   upsertProviderConfig,
   removeProviderConfig,
   fetchProviderModels,

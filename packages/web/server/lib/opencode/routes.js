@@ -16,6 +16,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     validateDirectoryPath,
     resolveProjectDirectory,
     getProviderSources,
+    getProviderConfig,
     upsertProviderConfig,
     removeProviderConfig,
     fetchProviderModels,
@@ -190,10 +191,47 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
+  app.get('/api/provider/:providerId/config', async (req, res) => {
+    try {
+      const { providerId } = req.params;
+      if (!providerId) {
+        return res.status(400).json({ error: 'Provider ID is required' });
+      }
+
+      const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
+      const queryDirectory = Array.isArray(req.query?.directory)
+        ? req.query.directory[0]
+        : req.query?.directory;
+      const requestedDirectory = headerDirectory || queryDirectory || null;
+
+      let directory = null;
+      const resolved = await resolveProjectDirectory(req);
+      if (resolved.directory) {
+        directory = resolved.directory;
+      } else if (requestedDirectory) {
+        return res.status(400).json({ error: resolved.error });
+      }
+
+      const config = getProviderConfig(providerId, directory);
+      if (!config) {
+        return res.status(404).json({ error: 'Provider configuration not found' });
+      }
+
+      return res.json({
+        providerId,
+        config,
+      });
+    } catch (error) {
+      console.error('Failed to get provider config:', error);
+      return res.status(500).json({ error: error.message || 'Failed to get provider config' });
+    }
+  });
+
   app.post('/api/provider/custom', async (req, res) => {
     try {
       const scope = typeof req.body?.scope === 'string' ? req.body.scope : 'user';
       const requestedProjectScope = scope === 'project';
+      const requestedCustomScope = scope === 'custom';
       let directory = null;
 
       if (requestedProjectScope) {
@@ -204,7 +242,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         directory = resolved.directory;
       }
 
-      const result = upsertProviderConfig(req.body ?? {}, directory, requestedProjectScope ? 'project' : 'user');
+      const resolvedScope = requestedCustomScope ? 'custom' : requestedProjectScope ? 'project' : 'user';
+      const result = upsertProviderConfig(req.body ?? {}, directory, resolvedScope);
       await refreshOpenCodeAfterConfigChange(`custom provider ${result.providerId} saved (${result.scope})`);
 
       return res.json({

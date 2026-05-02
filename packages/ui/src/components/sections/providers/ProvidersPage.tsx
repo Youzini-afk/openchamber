@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui';
-import { RiAddLine, RiCloseLine, RiRefreshLine, RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine } from '@remixicon/react';
+import { RiAddLine, RiCloseLine, RiRefreshLine, RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine, RiEditLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import { cn } from '@/lib/utils';
@@ -21,7 +21,12 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
 import { useI18n, type I18nKey } from '@/lib/i18n';
-import { normalizeCustomProviderModelRows, resolveCustomProviderApiKey } from './customProviderForm';
+import {
+  createCustomProviderFormStateFromConfig,
+  hasEditableProviderConfigSource,
+  normalizeCustomProviderModelRows,
+  resolveCustomProviderApiKey,
+} from './customProviderForm';
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -104,7 +109,7 @@ interface CustomProviderFormState {
   baseURL: string;
   models: CustomProviderModelRow[];
   apiKey: string;
-  scope: 'user' | 'project';
+  scope: 'user' | 'project' | 'custom';
 }
 
 const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '', context: '', output: '' });
@@ -306,6 +311,8 @@ export const ProvidersPage: React.FC = () => {
   const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(() => createEmptyCustomProviderForm());
   const [customProviderBusy, setCustomProviderBusy] = React.useState(false);
   const [customProviderFetchingModels, setCustomProviderFetchingModels] = React.useState(false);
+  const [editingCustomProviderId, setEditingCustomProviderId] = React.useState<string | null>(null);
+  const [customProviderEditLoading, setCustomProviderEditLoading] = React.useState(false);
   const customProviderApiKeyInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -421,6 +428,7 @@ export const ProvidersPage: React.FC = () => {
     }
 
     setShowAuthPanel(false);
+    setEditingCustomProviderId(null);
   }, [selectedProviderId, t]);
 
   React.useEffect(() => {
@@ -465,6 +473,7 @@ export const ProvidersPage: React.FC = () => {
 
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
+  const canEditSelectedProvider = hasEditableProviderConfigSource(selectedSources);
 
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
@@ -618,6 +627,40 @@ export const ProvidersPage: React.FC = () => {
     }
     console.error('Failed to copy device code:', result.error);
     toast.error(t('settings.providers.page.toast.deviceCodeCopyFailed'));
+  };
+
+  const handleEditCustomProvider = async (providerId: string) => {
+    setCustomProviderEditLoading(true);
+    try {
+      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/config`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = isRecord(payload) && typeof payload.error === 'string'
+          ? payload.error
+          : t('settings.providers.page.toast.customProviderLoadFailed');
+        throw new Error(message);
+      }
+
+      const config = isRecord(payload) && isRecord(payload.config) ? payload.config : null;
+      if (!config) {
+        throw new Error(t('settings.providers.page.toast.customProviderConfigUnavailable'));
+      }
+
+      setCustomProviderForm(createCustomProviderFormStateFromConfig(config));
+      setEditingCustomProviderId(providerId);
+      setIsCustomProviderMode(false);
+      setShowAuthPanel(false);
+      setModelQuery('');
+    } catch (error) {
+      console.error('Failed to load custom provider config:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.customProviderLoadFailed'));
+    } finally {
+      setCustomProviderEditLoading(false);
+    }
   };
 
   const handleDisconnectProvider = async (providerId: string) => {
@@ -839,6 +882,7 @@ export const ProvidersPage: React.FC = () => {
       setSelectedProvider(providerId);
       setCandidateProviderId('');
       setIsCustomProviderMode(false);
+      setEditingCustomProviderId(null);
       setCustomProviderForm(createEmptyCustomProviderForm());
       toast.success(t('settings.providers.page.toast.customProviderSaved'));
     } catch (error) {
@@ -851,6 +895,242 @@ export const ProvidersPage: React.FC = () => {
 
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
   const customProviderTypeOption = getCustomProviderApiTypeOption(customProviderForm.type);
+  const isEditingCustomProvider = Boolean(editingCustomProviderId);
+  const customProviderFormSection = (
+    <div className="mb-8">
+      <div className="mb-1 px-1">
+        <h2 className="typography-ui-header font-medium text-foreground">
+          {isEditingCustomProvider ? t('settings.providers.page.custom.editTitle') : t('settings.providers.page.custom.title')}
+        </h2>
+      </div>
+
+      <section className="px-2 pb-2 pt-0 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="space-y-1.5">
+            <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.id')}</span>
+            <Input
+              value={customProviderForm.id}
+              onChange={(event) => updateCustomProviderField('id', event.target.value)}
+              placeholder={t('settings.providers.page.custom.placeholder.id')}
+              className="font-mono text-xs"
+              disabled={isEditingCustomProvider}
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.name')}</span>
+            <Input
+              value={customProviderForm.name}
+              onChange={(event) => updateCustomProviderField('name', event.target.value)}
+              placeholder={t('settings.providers.page.custom.placeholder.name')}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.type')}</span>
+          <Select
+            value={customProviderForm.type}
+            onValueChange={(value) => {
+              if (isCustomProviderApiType(value)) {
+                updateCustomProviderType(value);
+              }
+            }}
+          >
+            <SelectTrigger size="lg" className="w-full justify-between normal-case">
+              <SelectValue>{t(customProviderTypeOption.labelKey)}</SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(28rem,calc(100vw-2rem))]">
+              {CUSTOM_PROVIDER_API_TYPES.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="py-2">
+                  <span className="flex min-w-0 flex-col items-start gap-0.5">
+                    <span className="typography-ui-label text-foreground">{t(option.labelKey)}</span>
+                    <span className="typography-meta whitespace-normal text-muted-foreground">{t(option.descriptionKey)}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <label className="block space-y-1.5">
+          <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.baseURL')}</span>
+          <Input
+            value={customProviderForm.baseURL}
+            onChange={(event) => updateCustomProviderField('baseURL', event.target.value)}
+            placeholder={customProviderTypeOption.baseURLPlaceholder}
+            className="font-mono text-xs"
+          />
+        </label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 sm:items-end">
+          <label className="space-y-1.5">
+            <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.apiKey')}</span>
+            <Input
+              ref={customProviderApiKeyInputRef}
+              type="password"
+              value={customProviderForm.apiKey}
+              onChange={(event) => updateCustomProviderField('apiKey', event.target.value)}
+              placeholder={t('settings.providers.page.custom.placeholder.apiKey')}
+              className="font-mono text-xs"
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.scope')}</span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="chip"
+                size="xs"
+                aria-pressed={customProviderForm.scope === 'user'}
+                onClick={() => updateCustomProviderField('scope', 'user')}
+                disabled={isEditingCustomProvider || customProviderForm.scope === 'custom'}
+              >
+                {t('settings.providers.page.custom.scope.user')}
+              </Button>
+              <Button
+                type="button"
+                variant="chip"
+                size="xs"
+                aria-pressed={customProviderForm.scope === 'project'}
+                onClick={() => updateCustomProviderField('scope', 'project')}
+                disabled={isEditingCustomProvider || customProviderForm.scope === 'custom'}
+              >
+                {t('settings.providers.page.custom.scope.project')}
+              </Button>
+              {customProviderForm.scope === 'custom' && (
+                <Button
+                  type="button"
+                  variant="chip"
+                  size="xs"
+                  aria-pressed
+                  disabled
+                >
+                  {t('settings.providers.page.custom.scope.custom')}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.models')}</span>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="!font-normal"
+                onClick={handleFetchCustomProviderModels}
+                disabled={customProviderBusy || customProviderFetchingModels}
+              >
+                <RiRefreshLine className={cn('h-3.5 w-3.5', customProviderFetchingModels && 'animate-spin')} />
+                {customProviderFetchingModels
+                  ? t('settings.providers.page.actions.fetchingModels')
+                  : t('settings.providers.page.actions.fetchModels')}
+              </Button>
+              <Button
+                type="button"
+                variant="chip"
+                size="xs"
+                className="!font-normal"
+                onClick={addCustomProviderModelRow}
+              >
+                <RiAddLine className="h-3.5 w-3.5" />
+                {t('settings.providers.page.actions.addModel')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {customProviderForm.models.map((row, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_auto] sm:items-center"
+              >
+                <Input
+                  value={row.id}
+                  onChange={(event) => updateCustomProviderModelRow(index, 'id', event.target.value)}
+                  placeholder={t('settings.providers.page.custom.placeholder.modelId')}
+                  className="font-mono text-xs"
+                />
+                <Input
+                  value={row.name}
+                  onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
+                  placeholder={t('settings.providers.page.custom.placeholder.modelName')}
+                  className="font-mono text-xs"
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  value={row.context}
+                  onChange={(event) => updateCustomProviderModelRow(index, 'context', event.target.value)}
+                  placeholder={t('settings.providers.page.custom.placeholder.contextLimit')}
+                  className="font-mono text-xs"
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  value={row.output}
+                  onChange={(event) => updateCustomProviderModelRow(index, 'output', event.target.value)}
+                  placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
+                  className="font-mono text-xs"
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      className="h-8 w-8 px-0"
+                      onClick={() => removeCustomProviderModelRow(index)}
+                      disabled={customProviderForm.models.length <= 1}
+                      aria-label={t('settings.providers.page.actions.removeModel')}
+                    >
+                      <RiCloseLine className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent sideOffset={8}>
+                    {t('settings.providers.page.actions.removeModel')}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          {isEditingCustomProvider && (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={() => {
+                setEditingCustomProviderId(null);
+                setCustomProviderForm(createEmptyCustomProviderForm());
+              }}
+            >
+              {t('settings.providers.page.actions.cancel')}
+            </Button>
+          )}
+          <Button
+            size="xs"
+            className="!font-normal"
+            onClick={handleCreateCustomProvider}
+            disabled={customProviderBusy}
+          >
+            {customProviderBusy ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveProvider')}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
 
   if (!isAddMode && providers.length === 0) {
     return (
@@ -992,211 +1272,7 @@ export const ProvidersPage: React.FC = () => {
           </div>
           )}
 
-          {isCustomProviderMode && (
-            <div className="mb-8">
-              <div className="mb-1 px-1">
-                <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.custom.title')}</h2>
-              </div>
-
-              <section className="px-2 pb-2 pt-0 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="space-y-1.5">
-                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.id')}</span>
-                    <Input
-                      value={customProviderForm.id}
-                      onChange={(event) => updateCustomProviderField('id', event.target.value)}
-                      placeholder={t('settings.providers.page.custom.placeholder.id')}
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.name')}</span>
-                    <Input
-                      value={customProviderForm.name}
-                      onChange={(event) => updateCustomProviderField('name', event.target.value)}
-                      placeholder={t('settings.providers.page.custom.placeholder.name')}
-                    />
-                  </label>
-                </div>
-
-                <div className="space-y-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.type')}</span>
-                  <Select
-                    value={customProviderForm.type}
-                    onValueChange={(value) => {
-                      if (isCustomProviderApiType(value)) {
-                        updateCustomProviderType(value);
-                      }
-                    }}
-                  >
-                    <SelectTrigger size="lg" className="w-full justify-between normal-case">
-                      <SelectValue>{t(customProviderTypeOption.labelKey)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="max-w-[min(28rem,calc(100vw-2rem))]">
-                      {CUSTOM_PROVIDER_API_TYPES.map((option) => (
-                        <SelectItem key={option.value} value={option.value} className="py-2">
-                          <span className="flex min-w-0 flex-col items-start gap-0.5">
-                            <span className="typography-ui-label text-foreground">{t(option.labelKey)}</span>
-                            <span className="typography-meta whitespace-normal text-muted-foreground">{t(option.descriptionKey)}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <label className="block space-y-1.5">
-                  <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.baseURL')}</span>
-                  <Input
-                    value={customProviderForm.baseURL}
-                    onChange={(event) => updateCustomProviderField('baseURL', event.target.value)}
-                    placeholder={customProviderTypeOption.baseURLPlaceholder}
-                    className="font-mono text-xs"
-                  />
-                </label>
-
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 sm:items-end">
-                  <label className="space-y-1.5">
-                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.apiKey')}</span>
-                    <Input
-                      ref={customProviderApiKeyInputRef}
-                      type="password"
-                      value={customProviderForm.apiKey}
-                      onChange={(event) => updateCustomProviderField('apiKey', event.target.value)}
-                      placeholder={t('settings.providers.page.custom.placeholder.apiKey')}
-                      className="font-mono text-xs"
-                    />
-                  </label>
-
-                  <div className="space-y-1.5">
-                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.scope')}</span>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="chip"
-                        size="xs"
-                        aria-pressed={customProviderForm.scope === 'user'}
-                        onClick={() => updateCustomProviderField('scope', 'user')}
-                      >
-                        {t('settings.providers.page.custom.scope.user')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="chip"
-                        size="xs"
-                        aria-pressed={customProviderForm.scope === 'project'}
-                        onClick={() => updateCustomProviderField('scope', 'project')}
-                      >
-                        {t('settings.providers.page.custom.scope.project')}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.models')}</span>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="xs"
-                        className="!font-normal"
-                        onClick={handleFetchCustomProviderModels}
-                        disabled={customProviderBusy || customProviderFetchingModels}
-                      >
-                        <RiRefreshLine className={cn('h-3.5 w-3.5', customProviderFetchingModels && 'animate-spin')} />
-                        {customProviderFetchingModels
-                          ? t('settings.providers.page.actions.fetchingModels')
-                          : t('settings.providers.page.actions.fetchModels')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="chip"
-                        size="xs"
-                        className="!font-normal"
-                        onClick={addCustomProviderModelRow}
-                      >
-                        <RiAddLine className="h-3.5 w-3.5" />
-                        {t('settings.providers.page.actions.addModel')}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {customProviderForm.models.map((row, index) => (
-                      <div
-                        key={index}
-                        className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_auto] sm:items-center"
-                      >
-                        <Input
-                          value={row.id}
-                          onChange={(event) => updateCustomProviderModelRow(index, 'id', event.target.value)}
-                          placeholder={t('settings.providers.page.custom.placeholder.modelId')}
-                          className="font-mono text-xs"
-                        />
-                        <Input
-                          value={row.name}
-                          onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
-                          placeholder={t('settings.providers.page.custom.placeholder.modelName')}
-                          className="font-mono text-xs"
-                        />
-                        <Input
-                          type="number"
-                          min={1}
-                          step={1}
-                          inputMode="numeric"
-                          value={row.context}
-                          onChange={(event) => updateCustomProviderModelRow(index, 'context', event.target.value)}
-                          placeholder={t('settings.providers.page.custom.placeholder.contextLimit')}
-                          className="font-mono text-xs"
-                        />
-                        <Input
-                          type="number"
-                          min={1}
-                          step={1}
-                          inputMode="numeric"
-                          value={row.output}
-                          onChange={(event) => updateCustomProviderModelRow(index, 'output', event.target.value)}
-                          placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
-                          className="font-mono text-xs"
-                        />
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="xs"
-                              className="h-8 w-8 px-0"
-                              onClick={() => removeCustomProviderModelRow(index)}
-                              disabled={customProviderForm.models.length <= 1}
-                              aria-label={t('settings.providers.page.actions.removeModel')}
-                            >
-                              <RiCloseLine className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent sideOffset={8}>
-                            {t('settings.providers.page.actions.removeModel')}
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button
-                    size="xs"
-                    className="!font-normal"
-                    onClick={handleCreateCustomProvider}
-                    disabled={customProviderBusy}
-                  >
-                    {customProviderBusy ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveProvider')}
-                  </Button>
-                </div>
-              </section>
-            </div>
-          )}
+          {isCustomProviderMode && customProviderFormSection}
 
           {!isCustomProviderMode && candidateProviderId && (
             <div className="mb-8">
@@ -1386,6 +1462,8 @@ export const ProvidersPage: React.FC = () => {
           </div>
         </div>
 
+        {isEditingCustomProvider && customProviderFormSection}
+
         {/* Authentication */}
         <div className="mb-8">
           <div className="mb-1 px-1 flex items-center justify-between gap-2">
@@ -1557,15 +1635,29 @@ export const ProvidersPage: React.FC = () => {
                 )}
               </div>
 
-              <Button
-                variant="ghost"
-                size="xs"
-                className="!font-normal text-[var(--status-error)] hover:text-[var(--status-error)]"
-                onClick={() => handleDisconnectProvider(selectedProvider.id)}
-                disabled={authBusyKey === `disconnect:${selectedProvider.id}`}
-              >
-                {authBusyKey === `disconnect:${selectedProvider.id}` ? t('settings.providers.page.actions.disconnecting') : t('settings.providers.page.actions.disconnect')}
-              </Button>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                {canEditSelectedProvider && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="!font-normal"
+                    onClick={() => handleEditCustomProvider(selectedProvider.id)}
+                    disabled={customProviderEditLoading || customProviderBusy}
+                  >
+                    <RiEditLine className="h-3.5 w-3.5" />
+                    {customProviderEditLoading ? t('settings.providers.page.state.loading') : t('settings.providers.page.actions.editProvider')}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="!font-normal text-[var(--status-error)] hover:text-[var(--status-error)]"
+                  onClick={() => handleDisconnectProvider(selectedProvider.id)}
+                  disabled={authBusyKey === `disconnect:${selectedProvider.id}`}
+                >
+                  {authBusyKey === `disconnect:${selectedProvider.id}` ? t('settings.providers.page.actions.disconnecting') : t('settings.providers.page.actions.disconnect')}
+                </Button>
+              </div>
             </div>
           </section>
         </div>

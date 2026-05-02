@@ -42,6 +42,7 @@ export {
 
 export {
   getProviderSources,
+  getProviderConfig,
   upsertProviderConfig,
   removeProviderConfig,
   fetchProviderModels,

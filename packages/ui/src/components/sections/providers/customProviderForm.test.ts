@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { normalizeCustomProviderModelRows, resolveCustomProviderApiKey } from './customProviderForm';
+import {
+  createCustomProviderFormStateFromConfig,
+  hasEditableProviderConfigSource,
+  normalizeCustomProviderModelRows,
+  resolveCustomProviderApiKey,
+} from './customProviderForm';
 
 describe('custom provider form helpers', () => {
   test('uses the controlled API key state when it has a value', () => {
@@ -33,5 +38,61 @@ describe('custom provider form helpers', () => {
       { id: 'empty-limits' },
       { id: 'bad-limits', name: 'Bad Limits' },
     ]);
+  });
+
+  test('creates editable form state from a saved custom provider config', () => {
+    expect(createCustomProviderFormStateFromConfig({
+      providerId: 'editable',
+      type: 'anthropic',
+      name: 'Editable Provider',
+      baseURL: 'https://api.example.com/v1',
+      scope: 'project',
+      models: [
+        { id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192 },
+        { id: 'nameless-model' },
+      ],
+    })).toEqual({
+      type: 'anthropic',
+      id: 'editable',
+      name: 'Editable Provider',
+      baseURL: 'https://api.example.com/v1',
+      apiKey: '',
+      scope: 'project',
+      models: [
+        { id: 'claude-test', name: 'Claude Test', context: '200000', output: '8192' },
+        { id: 'nameless-model', name: '', context: '', output: '' },
+      ],
+    });
+  });
+
+  test('preserves custom config scope when editing an env-backed provider', () => {
+    expect(createCustomProviderFormStateFromConfig({
+      providerId: 'env-backed',
+      type: 'openai-compatible',
+      name: 'Env Backed',
+      baseURL: 'https://api.example.com/v1',
+      scope: 'custom',
+      models: [{ id: 'model-1' }],
+    }).scope).toBe('custom');
+  });
+
+  test('detects when a selected provider has editable provider configuration', () => {
+    expect(hasEditableProviderConfigSource(undefined)).toBe(false);
+    expect(hasEditableProviderConfigSource({
+      auth: { exists: true },
+      user: { exists: false },
+      project: { exists: false },
+    })).toBe(false);
+    expect(hasEditableProviderConfigSource({
+      auth: { exists: false },
+      user: { exists: true },
+      project: { exists: false },
+    })).toBe(true);
+    expect(hasEditableProviderConfigSource({
+      auth: { exists: false },
+      user: { exists: false },
+      project: { exists: false },
+      custom: { exists: true },
+    })).toBe(true);
   });
 });

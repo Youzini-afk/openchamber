@@ -9,6 +9,46 @@ export interface CustomProviderModelRowInput {
   output?: string | number;
 }
 
+export type CustomProviderApiTypeValue = 'openai-compatible' | 'openai-responses' | 'anthropic' | 'google';
+
+export interface CustomProviderEditableFormState {
+  type: CustomProviderApiTypeValue;
+  id: string;
+  name: string;
+  baseURL: string;
+  models: Array<{
+    id: string;
+    name: string;
+    context: string;
+    output: string;
+  }>;
+  apiKey: string;
+  scope: 'user' | 'project' | 'custom';
+}
+
+export interface CustomProviderConfigInput {
+  id?: string;
+  providerId?: string;
+  providerID?: string;
+  type?: string;
+  name?: string;
+  baseURL?: string;
+  baseUrl?: string;
+  scope?: string;
+  models?: CustomProviderModelRowInput[];
+}
+
+interface ProviderConfigSourceInput {
+  exists?: boolean;
+}
+
+export interface ProviderSourcesInput {
+  auth?: ProviderConfigSourceInput;
+  user?: ProviderConfigSourceInput;
+  project?: ProviderConfigSourceInput;
+  custom?: ProviderConfigSourceInput;
+}
+
 interface CustomProviderModelPayload {
   id: string;
   name?: string;
@@ -21,6 +61,16 @@ interface CustomProviderModelPayload {
 const trimString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 );
+
+const normalizeEditableApiType = (value: unknown): CustomProviderApiTypeValue => {
+  const normalized = trimString(value);
+  return normalized === 'openai-responses'
+    || normalized === 'anthropic'
+    || normalized === 'google'
+    || normalized === 'openai-compatible'
+    ? normalized
+    : 'openai-compatible';
+};
 
 const normalizePositiveInteger = (value: unknown): number | undefined => {
   if (typeof value === 'number') {
@@ -35,6 +85,13 @@ const normalizePositiveInteger = (value: unknown): number | undefined => {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 };
+
+const normalizePositiveIntegerInputValue = (value: unknown): string => {
+  const normalized = normalizePositiveInteger(value);
+  return normalized ? String(normalized) : '';
+};
+
+const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '' });
 
 export const resolveCustomProviderApiKey = (
   controlledValue: string,
@@ -78,3 +135,32 @@ export const normalizeCustomProviderModelRows = (
 
   return models;
 };
+
+export const createCustomProviderFormStateFromConfig = (
+  config: CustomProviderConfigInput
+): CustomProviderEditableFormState => {
+  const models = Array.isArray(config.models)
+    ? config.models
+        .map((model) => ({
+          id: trimString(model.id),
+          name: trimString(model.name),
+          context: normalizePositiveIntegerInputValue(model.context),
+          output: normalizePositiveIntegerInputValue(model.output),
+        }))
+        .filter((model) => model.id.length > 0)
+    : [];
+
+  return {
+    type: normalizeEditableApiType(config.type),
+    id: trimString(config.providerId ?? config.providerID ?? config.id),
+    name: trimString(config.name),
+    baseURL: trimString(config.baseURL ?? config.baseUrl),
+    models: models.length > 0 ? models : [createEmptyEditableModelRow()],
+    apiKey: '',
+    scope: config.scope === 'custom' ? 'custom' : config.scope === 'project' ? 'project' : 'user',
+  };
+};
+
+export const hasEditableProviderConfigSource = (sources?: ProviderSourcesInput): boolean => (
+  Boolean(sources?.user?.exists || sources?.project?.exists || sources?.custom?.exists)
+);
