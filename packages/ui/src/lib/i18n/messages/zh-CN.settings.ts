@@ -1045,6 +1045,7 @@ export const settingsDict = {
   'settings.providers.page.toast.apiKeySaved': 'API Key 已保存',
   'settings.providers.page.toast.customProviderRequired': '需要提供商 ID、基础 URL，以及至少一个模型',
   'settings.providers.page.toast.customProviderSaved': '自定义提供商已保存',
+  'settings.providers.page.toast.customProviderSavedButNotListed': '提供商已写入配置，但 OpenCode 暂未返回到列表。请检查 API 格式后重载。',
   'settings.providers.page.toast.customProviderSaveFailed': '保存自定义提供商失败',
   'settings.providers.page.toast.customProviderFetchRequired': '获取模型需要基础 URL 和 API Key',
   'settings.providers.page.toast.customProviderFetchFailed': '获取模型失败',

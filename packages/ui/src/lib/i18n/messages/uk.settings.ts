@@ -1045,6 +1045,7 @@ export const settingsDict = {
   "settings.providers.page.toast.apiKeySaved": "Ключ API збережено",
   "settings.providers.page.toast.customProviderRequired": "Provider ID, base URL, and at least one model are required",
   "settings.providers.page.toast.customProviderSaved": "Custom provider saved",
+  "settings.providers.page.toast.customProviderSavedButNotListed": "Provider saved, but OpenCode did not list it yet. Check the API format and try reloading.",
   "settings.providers.page.toast.customProviderSaveFailed": "Failed to save custom provider",
   "settings.providers.page.toast.customProviderFetchRequired": "Base URL and API key are required to fetch models",
   "settings.providers.page.toast.customProviderFetchFailed": "Failed to fetch models",

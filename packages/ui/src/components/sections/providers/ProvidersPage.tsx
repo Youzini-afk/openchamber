@@ -21,6 +21,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
 import { useI18n, type I18nKey } from '@/lib/i18n';
+import { resolveCustomProviderApiKey } from './customProviderForm';
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -265,6 +266,7 @@ export const ProvidersPage: React.FC = () => {
   const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(() => createEmptyCustomProviderForm());
   const [customProviderBusy, setCustomProviderBusy] = React.useState(false);
   const [customProviderFetchingModels, setCustomProviderFetchingModels] = React.useState(false);
+  const customProviderApiKeyInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -667,7 +669,7 @@ export const ProvidersPage: React.FC = () => {
   const handleFetchCustomProviderModels = async () => {
     const typeOption = getCustomProviderApiTypeOption(customProviderForm.type);
     const baseURL = customProviderForm.baseURL.trim() || typeOption.defaultBaseURL;
-    const apiKey = customProviderForm.apiKey.trim();
+    const apiKey = resolveCustomProviderApiKey(customProviderForm.apiKey, customProviderApiKeyInputRef.current);
 
     if (!baseURL || !apiKey) {
       toast.error(t('settings.providers.page.toast.customProviderFetchRequired'));
@@ -736,6 +738,7 @@ export const ProvidersPage: React.FC = () => {
     const providerId = customProviderForm.id.trim();
     const baseURL = customProviderForm.baseURL.trim();
     const models = normalizeCustomProviderModelRows(customProviderForm.models);
+    const apiKey = resolveCustomProviderApiKey(customProviderForm.apiKey, customProviderApiKeyInputRef.current);
 
     if (!providerId || !baseURL || models.length === 0) {
       toast.error(t('settings.providers.page.toast.customProviderRequired'));
@@ -770,7 +773,6 @@ export const ProvidersPage: React.FC = () => {
         : 800;
       await wait(reloadDelayMs);
 
-      const apiKey = customProviderForm.apiKey.trim();
       if (apiKey) {
         const authResponse = await fetch(`/api/auth/${encodeURIComponent(providerId)}`, {
           method: 'PUT',
@@ -783,6 +785,12 @@ export const ProvidersPage: React.FC = () => {
       }
 
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      const savedProviderVisible = useConfigStore.getState().providers.some((provider) => provider.id === providerId);
+      if (!savedProviderVisible) {
+        toast.warning(t('settings.providers.page.toast.customProviderSavedButNotListed'));
+        return;
+      }
+
       setSelectedProvider(providerId);
       setCandidateProviderId('');
       setIsCustomProviderMode(false);
@@ -1006,6 +1014,7 @@ export const ProvidersPage: React.FC = () => {
                   <label className="space-y-1.5">
                     <span className="typography-ui-label text-foreground">{t('settings.providers.page.custom.field.apiKey')}</span>
                     <Input
+                      ref={customProviderApiKeyInputRef}
                       type="password"
                       value={customProviderForm.apiKey}
                       onChange={(event) => updateCustomProviderField('apiKey', event.target.value)}
