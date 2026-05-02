@@ -8,6 +8,7 @@ export type SettingsPageSlug =
   | 'usage'
   | 'agents'
   | 'openagent'
+  | 'magic-context'
   | 'behavior'
   | 'commands'
   | 'mcp'
@@ -111,6 +112,13 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'opencode',
     kind: 'single',
     keywords: ['oh my openagent', 'openagent', 'oh-my-openagent', 'agent routing', 'categories', 'model routes'],
+  },
+  {
+    slug: 'magic-context',
+    title: 'Magic Context',
+    group: 'opencode',
+    kind: 'single',
+    keywords: ['magic context', 'opencode-magic-context', 'context', 'memory', 'historian', 'dreamer', 'sidekick'],
   },
   {
     slug: 'behavior',

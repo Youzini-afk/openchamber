@@ -56,6 +56,12 @@ export {
 } from './openagent-config.js';
 
 export {
+  readMagicContextConfig,
+  saveMagicContextConfig,
+  sanitizeMagicContextConfig,
+} from './magic-context-config.js';
+
+export {
   readAuthFile,
   writeAuthFile,
   removeProviderAuth,

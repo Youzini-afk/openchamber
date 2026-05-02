@@ -32,6 +32,7 @@ export const settingsDict = {
   "settings.page.usage.title": "Використання",
   "settings.page.agents.title": "Агенти",
   "settings.page.openagent.title": "Oh My OpenAgent",
+  "settings.page.magicContext.title": "Magic Context",
   "settings.page.commands.title": "Команди",
   "settings.page.mcp.title": "MCP",
   "settings.page.skills.title": "Навички",

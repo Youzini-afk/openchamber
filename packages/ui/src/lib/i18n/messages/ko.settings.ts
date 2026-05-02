@@ -32,6 +32,7 @@ export const settingsDict = {
   'settings.page.usage.title': '사용량',
   'settings.page.agents.title': '에이전트',
   'settings.page.openagent.title': 'Oh My OpenAgent',
+  'settings.page.magicContext.title': 'Magic Context',
   'settings.page.commands.title': '명령어',
   'settings.page.mcp.title': 'MCP',
   'settings.page.skills.title': '스킬',

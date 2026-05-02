@@ -11,6 +11,7 @@ import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { registerOpenAgentRoutes } from './openagent-routes.js';
+import { registerMagicContextRoutes } from './magic-context-routes.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -69,6 +70,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fetchProviderModels,
       readOpenAgentConfig,
       saveOpenAgentConfig,
+      readMagicContextConfig,
+      saveMagicContextConfig,
     } = await import('./index.js');
 
     registerSettingsUtilityRoutes(app, {
@@ -100,6 +103,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       clientReloadDelayMs,
       readOpenAgentConfig,
       saveOpenAgentConfig,
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory,
+    });
+
+    registerMagicContextRoutes(app, {
+      clientReloadDelayMs,
+      readMagicContextConfig,
+      saveMagicContextConfig,
       refreshOpenCodeAfterConfigChange,
       resolveOptionalProjectDirectory,
     });

@@ -6,6 +6,7 @@ import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
 import { useOpenAgentConfigStore } from '@/stores/useOpenAgentConfigStore';
+import { useMagicContextConfigStore } from '@/stores/useMagicContextConfigStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import {
@@ -38,6 +39,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
 import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
+import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -98,6 +100,7 @@ const pageOrder: SettingsPageSlug[] = [
   'remote-instances',
   'agents',
   'openagent',
+  'magic-context',
   'behavior',
   'commands',
   'mcp',
@@ -148,6 +151,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiAiAgentLine;
     case 'openagent':
       return RiRobot2Line;
+    case 'magic-context':
+      return RiBrainLine;
     case 'behavior':
       return RiBrainLine;
     case 'commands':
@@ -353,6 +358,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       void useOpenAgentConfigStore.getState().loadConfig();
       return;
     }
+    if (settingsSlug === 'magic-context') {
+      void useMagicContextConfigStore.getState().loadConfig();
+      return;
+    }
     if (settingsSlug === 'commands') {
       void useCommandsStore.getState().loadCommands();
       return;
@@ -411,6 +420,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.agents.title');
       case 'openagent':
         return t('settings.page.openagent.title');
+      case 'magic-context':
+        return t('settings.page.magicContext.title');
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':
@@ -498,6 +509,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <AgentsPage />;
       case 'openagent':
         return <OpenAgentPage />;
+      case 'magic-context':
+        return <MagicContextPage />;
       case 'behavior':
         return <BehaviorPage />;
       case 'commands':
