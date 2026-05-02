@@ -37,6 +37,20 @@ function normalizeNonEmptyString(value) {
   return value.trim();
 }
 
+function normalizePositiveInteger(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+  }
+
+  const normalized = normalizeNonEmptyString(value).replace(/,/g, '');
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+}
+
 function normalizeProviderId(value) {
   const id = normalizeNonEmptyString(value);
   if (!id) {
@@ -76,7 +90,22 @@ function normalizeModels(models) {
     }
 
     const modelName = isPlainObject(entry) ? normalizeNonEmptyString(entry.name) : '';
-    normalized[modelId] = modelName ? { name: modelName } : {};
+    const limitInput = isPlainObject(entry?.limit) ? entry.limit : {};
+    const context = isPlainObject(entry)
+      ? normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length)
+      : undefined;
+    const output = isPlainObject(entry)
+      ? normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit)
+      : undefined;
+    const limit = context || output ? {
+      ...(context ? { context } : {}),
+      ...(output ? { output } : {}),
+    } : undefined;
+
+    normalized[modelId] = {
+      ...(modelName ? { name: modelName } : {}),
+      ...(limit ? { limit } : {}),
+    };
   }
 
   if (Object.keys(normalized).length === 0) {
@@ -206,10 +235,40 @@ function normalizeFetchedModel(providerType, entry) {
   const displayName = normalizeNonEmptyString(
     entry.displayName ?? entry.display_name ?? entry.title ?? '',
   );
+  const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
+  const context = normalizePositiveInteger(
+    limitInput.context ??
+    entry.context ??
+    entry.contextWindow ??
+    entry.context_window ??
+    entry.contextLength ??
+    entry.context_length ??
+    entry.maxContext ??
+    entry.max_context ??
+    entry.maxContextLength ??
+    entry.max_context_length ??
+    entry.inputTokenLimit ??
+    entry.input_token_limit,
+  );
+  const output = normalizePositiveInteger(
+    limitInput.output ??
+    entry.output ??
+    entry.outputTokenLimit ??
+    entry.output_token_limit ??
+    entry.maxOutput ??
+    entry.max_output ??
+    entry.maxOutputTokens ??
+    entry.max_output_tokens,
+  );
+  const limit = context || output ? {
+    ...(context ? { context } : {}),
+    ...(output ? { output } : {}),
+  } : undefined;
 
   return {
     id: rawId,
     name: displayName || rawId,
+    ...(limit ? { limit } : {}),
   };
 }
 

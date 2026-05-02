@@ -989,6 +989,8 @@ export const settingsDict = {
   "settings.providers.page.custom.placeholder.models": "model-id | Model name",
   "settings.providers.page.custom.placeholder.modelId": "Model ID",
   "settings.providers.page.custom.placeholder.modelName": "Model name",
+  "settings.providers.page.custom.placeholder.contextLimit": "Ліміт контексту",
+  "settings.providers.page.custom.placeholder.outputLimit": "Ліміт виводу",
   "settings.providers.page.custom.placeholder.apiKey": "Optional",
   "settings.providers.page.custom.scope.user": "User",
   "settings.providers.page.custom.scope.project": "Project",

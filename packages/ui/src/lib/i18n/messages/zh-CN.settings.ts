@@ -989,6 +989,8 @@ export const settingsDict = {
   'settings.providers.page.custom.placeholder.models': 'model-id | 模型名称',
   'settings.providers.page.custom.placeholder.modelId': '模型 ID',
   'settings.providers.page.custom.placeholder.modelName': '模型名称',
+  'settings.providers.page.custom.placeholder.contextLimit': '上下文上限',
+  'settings.providers.page.custom.placeholder.outputLimit': '输出上限',
   'settings.providers.page.custom.placeholder.apiKey': '可选',
   'settings.providers.page.custom.scope.user': '用户',
   'settings.providers.page.custom.scope.project': '项目',

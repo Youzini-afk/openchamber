@@ -21,7 +21,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import type { ModelMetadata } from '@/types';
 import { useI18n, type I18nKey } from '@/lib/i18n';
-import { resolveCustomProviderApiKey } from './customProviderForm';
+import { normalizeCustomProviderModelRows, resolveCustomProviderApiKey } from './customProviderForm';
 
 const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -93,6 +93,8 @@ const getCustomProviderApiTypeOption = (value: CustomProviderApiType) =>
 interface CustomProviderModelRow {
   id: string;
   name: string;
+  context: string;
+  output: string;
 }
 
 interface CustomProviderFormState {
@@ -105,7 +107,7 @@ interface CustomProviderFormState {
   scope: 'user' | 'project';
 }
 
-const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '' });
+const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '', context: '', output: '' });
 
 const createEmptyCustomProviderForm = (): CustomProviderFormState => ({
   type: 'openai-compatible',
@@ -146,6 +148,62 @@ interface ProviderSources {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const toTokenLimitInputValue = (value: unknown): string => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? String(Math.floor(value)) : '';
+  }
+
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().replace(/,/g, '');
+  if (!normalized) {
+    return '';
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? String(Math.floor(parsed)) : '';
+};
+
+const getFetchedModelLimitInputValue = (entry: Record<string, unknown>, kind: 'context' | 'output'): string => {
+  const limit = isRecord(entry.limit) ? entry.limit : {};
+  const candidates = kind === 'context'
+    ? [
+        limit.context,
+        entry.context,
+        entry.contextWindow,
+        entry.context_window,
+        entry.contextLength,
+        entry.context_length,
+        entry.maxContext,
+        entry.max_context,
+        entry.maxContextLength,
+        entry.max_context_length,
+        entry.inputTokenLimit,
+        entry.input_token_limit,
+      ]
+    : [
+        limit.output,
+        entry.output,
+        entry.outputTokenLimit,
+        entry.output_token_limit,
+        entry.maxOutput,
+        entry.max_output,
+        entry.maxOutputTokens,
+        entry.max_output_tokens,
+      ];
+
+  for (const candidate of candidates) {
+    const normalized = toTokenLimitInputValue(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return '';
+};
 
 const normalizeAuthType = (method: AuthMethod) => {
   const raw = typeof method.type === 'string' ? method.type : '';
@@ -213,24 +271,6 @@ const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
     seen.add(entry.id);
     return true;
   });
-};
-
-const normalizeCustomProviderModelRows = (rows: CustomProviderModelRow[]): Array<{ id: string; name?: string }> => {
-  const seen = new Set<string>();
-  const models: Array<{ id: string; name?: string }> = [];
-
-  for (const row of rows) {
-    const id = row.id.trim();
-    if (!id || seen.has(id)) {
-      continue;
-    }
-    seen.add(id);
-
-    const name = row.name.trim();
-    models.push(name ? { id, name } : { id });
-  }
-
-  return models;
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -707,7 +747,12 @@ export const ProvidersPage: React.FC = () => {
                 return null;
               }
               const name = typeof entry.name === 'string' ? entry.name.trim() : id;
-              return { id, name: name || id };
+              return {
+                id,
+                name: name || id,
+                context: getFetchedModelLimitInputValue(entry, 'context'),
+                output: getFetchedModelLimitInputValue(entry, 'output'),
+              };
             })
             .filter((entry): entry is CustomProviderModelRow => Boolean(entry))
         : [];
@@ -1082,7 +1127,7 @@ export const ProvidersPage: React.FC = () => {
                     {customProviderForm.models.map((row, index) => (
                       <div
                         key={index}
-                        className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
+                        className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_auto] sm:items-center"
                       >
                         <Input
                           value={row.id}
@@ -1094,6 +1139,26 @@ export const ProvidersPage: React.FC = () => {
                           value={row.name}
                           onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
                           placeholder={t('settings.providers.page.custom.placeholder.modelName')}
+                          className="font-mono text-xs"
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          value={row.context}
+                          onChange={(event) => updateCustomProviderModelRow(index, 'context', event.target.value)}
+                          placeholder={t('settings.providers.page.custom.placeholder.contextLimit')}
+                          className="font-mono text-xs"
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          value={row.output}
+                          onChange={(event) => updateCustomProviderModelRow(index, 'output', event.target.value)}
+                          placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
                           className="font-mono text-xs"
                         />
                         <Tooltip>

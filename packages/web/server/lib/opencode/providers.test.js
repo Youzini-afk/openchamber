@@ -105,6 +105,35 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('writes custom model context and output token limits', async () => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      id: 'context-provider',
+      name: 'Context Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'long-context-model',
+          name: 'Long Context Model',
+          context: 200000,
+          output: 8192,
+        },
+      ],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider['context-provider'].models['long-context-model']).toEqual({
+      name: 'Long Context Model',
+      limit: {
+        context: 200000,
+        output: 8192,
+      },
+    });
+  });
+
   it.each([
     ['openai-compatible', '@ai-sdk/openai-compatible'],
     ['openai-responses', '@ai-sdk/openai'],
@@ -187,7 +216,7 @@ describe('provider config helpers', () => {
       status: 200,
       json: async () => ({
         models: [
-          { name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+          { name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', inputTokenLimit: 1048576, outputTokenLimit: 65536 },
           { name: 'models/gemini-2.5-flash' },
         ],
       }),
@@ -207,7 +236,14 @@ describe('provider config helpers', () => {
       },
     });
     expect(result.models).toEqual([
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        limit: {
+          context: 1048576,
+          output: 65536,
+        },
+      },
       { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash' },
     ]);
   });
