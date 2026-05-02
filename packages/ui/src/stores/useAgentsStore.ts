@@ -555,6 +555,14 @@ async function waitForOpenCodeConnection(delayMs?: number) {
 
 type ConfigRefreshMode = "active" | "projects";
 
+const notifyRealtimePipelineReconnect = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(new Event("openchamber:system-resume"));
+};
+
 const normalizeRefreshScopes = (scopes?: ConfigChangeScope[]): ConfigChangeScope[] => {
   if (!scopes || scopes.length === 0) {
     return ["all"];
@@ -585,6 +593,7 @@ async function performConfigRefresh(options: {
   }
 
   try {
+    notifyRealtimePipelineReconnect();
     await waitForOpenCodeConnection(delayMs);
 
     const configStore = useConfigStore.getState();
