@@ -10,6 +10,7 @@ import { registerProjectIconRoutes } from './project-icon-routes.js';
 import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
+import { registerOpenAgentRoutes } from './openagent-routes.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -60,7 +61,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
     } = routeDependencies;
 
-    const { getProviderSources, getProviderConfig, upsertProviderConfig, removeProviderConfig, fetchProviderModels } = await import('./index.js');
+    const {
+      getProviderSources,
+      getProviderConfig,
+      upsertProviderConfig,
+      removeProviderConfig,
+      fetchProviderModels,
+      readOpenAgentConfig,
+      saveOpenAgentConfig,
+    } = await import('./index.js');
 
     registerSettingsUtilityRoutes(app, {
       readCustomThemesFromDisk,
@@ -85,6 +94,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       removeProviderConfig,
       fetchProviderModels,
       refreshOpenCodeAfterConfigChange,
+    });
+
+    registerOpenAgentRoutes(app, {
+      clientReloadDelayMs,
+      readOpenAgentConfig,
+      saveOpenAgentConfig,
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory,
     });
 
     registerProjectIconRoutes(app, {

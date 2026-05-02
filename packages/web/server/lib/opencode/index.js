@@ -49,6 +49,13 @@ export {
 } from './providers.js';
 
 export {
+  readOpenAgentConfig,
+  saveOpenAgentConfig,
+  sanitizeOverride as sanitizeOpenAgentOverride,
+  sanitizeOverrideRecord as sanitizeOpenAgentOverrideRecord,
+} from './openagent-config.js';
+
+export {
   readAuthFile,
   writeAuthFile,
   removeProviderAuth,
