@@ -23,7 +23,7 @@ describe('custom provider form helpers', () => {
   test('normalizes model names and token limits for custom provider saving', () => {
     expect(normalizeCustomProviderModelRows([
       { id: ' gpt-test ', name: ' GPT Test ', context: '200000', output: '8192' },
-      { id: 'context-only', name: 'Context Only', context: '128000', output: '' },
+      { id: 'context-only', name: 'Context Only', context: '128000', output: '', attachment: true },
       { id: 'empty-limits', name: '', context: '', output: ' ' },
       { id: 'bad-limits', name: 'Bad Limits', context: '0', output: '-10' },
       { id: 'gpt-test', name: 'Duplicate', context: '128000', output: '4096' },
@@ -39,6 +39,7 @@ describe('custom provider form helpers', () => {
       {
         id: 'context-only',
         name: 'Context Only',
+        attachment: true,
         limit: {
           context: 128000,
         },
@@ -56,7 +57,7 @@ describe('custom provider form helpers', () => {
       baseURL: 'https://api.example.com/v1',
       scope: 'project',
       models: [
-        { id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192 },
+        { id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192, attachment: true },
         { id: 'nameless-model' },
       ],
     })).toEqual({
@@ -67,8 +68,8 @@ describe('custom provider form helpers', () => {
       apiKey: '',
       scope: 'project',
       models: [
-        { id: 'claude-test', name: 'Claude Test', context: '200000', output: '8192' },
-        { id: 'nameless-model', name: '', context: '', output: '' },
+        { id: 'claude-test', name: 'Claude Test', context: '200000', output: '8192', attachment: true },
+        { id: 'nameless-model', name: '', context: '', output: '', attachment: false },
       ],
     });
   });

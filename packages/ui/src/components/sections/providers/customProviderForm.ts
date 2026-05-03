@@ -7,6 +7,7 @@ export interface CustomProviderModelRowInput {
   name?: string;
   context?: string | number;
   output?: string | number;
+  attachment?: boolean;
 }
 
 export type CustomProviderApiTypeValue = 'openai-compatible' | 'openai-responses' | 'anthropic' | 'google';
@@ -21,6 +22,7 @@ export interface CustomProviderEditableFormState {
     name: string;
     context: string;
     output: string;
+    attachment: boolean;
   }>;
   apiKey: string;
   scope: 'user' | 'project' | 'custom';
@@ -52,6 +54,7 @@ export interface ProviderSourcesInput {
 interface CustomProviderModelPayload {
   id: string;
   name?: string;
+  attachment?: true;
   limit?: {
     context?: number;
     output?: number;
@@ -102,7 +105,7 @@ const buildModelLimit = (context?: number, output?: number): CustomProviderModel
   };
 };
 
-const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '' });
+const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '', attachment: false });
 
 export const resolveCustomProviderApiKey = (
   controlledValue: string,
@@ -137,6 +140,7 @@ export const normalizeCustomProviderModelRows = (
     models.push({
       id,
       ...(name ? { name } : {}),
+      ...(row.attachment === true ? { attachment: true } : {}),
       ...(limit ? { limit } : {}),
     });
   }
@@ -154,6 +158,7 @@ export const createCustomProviderFormStateFromConfig = (
           name: trimString(model.name),
           context: normalizePositiveIntegerInputValue(model.context),
           output: normalizePositiveIntegerInputValue(model.output),
+          attachment: model.attachment === true,
         }))
         .filter((model) => model.id.length > 0)
     : [];

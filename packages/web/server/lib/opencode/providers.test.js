@@ -144,6 +144,31 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('writes custom model image input capability', async () => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      id: 'vision-provider',
+      name: 'Vision Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'vision-model',
+          name: 'Vision Model',
+          attachment: true,
+        },
+      ],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider['vision-provider'].models['vision-model']).toEqual({
+      name: 'Vision Model',
+      attachment: true,
+    });
+  });
+
   it('preserves the context token limit when the output token limit is not configured', async () => {
     const { upsertProviderConfig } = await loadProvidersModule();
 
@@ -222,6 +247,7 @@ describe('provider config helpers', () => {
           models: {
             'claude-test': {
               name: 'Claude Test',
+              attachment: true,
               limit: {
                 context: 200000,
                 output: 8192,
@@ -248,6 +274,7 @@ describe('provider config helpers', () => {
           name: 'Claude Test',
           context: 200000,
           output: 8192,
+          attachment: true,
         },
         {
           id: 'nameless-model',
@@ -308,7 +335,7 @@ describe('provider config helpers', () => {
       json: async () => ({
         data: [
           { id: 'gpt-4o', owned_by: 'openai' },
-          { id: 'deepseek-chat' },
+          { id: 'deepseek-chat', modalities: { input: ['text', 'image'], output: ['text'] } },
         ],
       }),
     }));
@@ -329,7 +356,7 @@ describe('provider config helpers', () => {
     });
     expect(result.models).toEqual([
       { id: 'gpt-4o', name: 'gpt-4o' },
-      { id: 'deepseek-chat', name: 'deepseek-chat' },
+      { id: 'deepseek-chat', name: 'deepseek-chat', attachment: true },
     ]);
   });
 

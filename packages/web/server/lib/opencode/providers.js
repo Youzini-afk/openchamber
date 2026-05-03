@@ -66,6 +66,10 @@ function buildModelLimit(context, output) {
   };
 }
 
+function normalizeBooleanTrue(value) {
+  return value === true;
+}
+
 function normalizeProviderId(value) {
   const id = normalizeNonEmptyString(value);
   if (!id) {
@@ -117,6 +121,7 @@ function normalizeModels(models) {
     normalized[modelId] = {
       ...(modelName ? { name: modelName } : {}),
       ...(limit ? { limit } : {}),
+      ...(normalizeBooleanTrue(entry?.attachment) ? { attachment: true } : {}),
     };
   }
 
@@ -200,6 +205,7 @@ function normalizeProviderConfigModels(models) {
         return {
           id,
           name: normalizeNonEmptyString(entry.name),
+          ...(normalizeBooleanTrue(entry.attachment) ? { attachment: true } : {}),
           ...(() => {
             const context = normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length);
             const output = normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit);
@@ -234,6 +240,7 @@ function normalizeProviderConfigModels(models) {
         name: normalizeNonEmptyString(modelEntry.name),
         ...(context ? { context } : {}),
         ...(output ? { output } : {}),
+        ...(normalizeBooleanTrue(modelEntry.attachment) ? { attachment: true } : {}),
       };
     })
     .filter(Boolean);
@@ -331,6 +338,50 @@ function getModelEntries(providerType, payload) {
   return Array.isArray(payload.data) ? payload.data : [];
 }
 
+function containsImageModality(value) {
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsImageModality(entry));
+  }
+
+  const normalized = normalizeNonEmptyString(value).toLowerCase();
+  return normalized === 'image'
+    || normalized === 'images'
+    || normalized === 'vision'
+    || normalized.includes('image');
+}
+
+function supportsImageInput(entry) {
+  if (!isPlainObject(entry)) {
+    return false;
+  }
+
+  if (
+    normalizeBooleanTrue(entry.attachment)
+    || normalizeBooleanTrue(entry.image)
+    || normalizeBooleanTrue(entry.imageInput)
+    || normalizeBooleanTrue(entry.vision)
+    || normalizeBooleanTrue(entry.supportsImages)
+    || normalizeBooleanTrue(entry.supports_images)
+  ) {
+    return true;
+  }
+
+  const modalities = isPlainObject(entry.modalities) ? entry.modalities : {};
+  const capabilities = isPlainObject(entry.capabilities) ? entry.capabilities : {};
+  const architecture = isPlainObject(entry.architecture) ? entry.architecture : {};
+
+  return containsImageModality(modalities.input)
+    || containsImageModality(entry.input_modalities)
+    || containsImageModality(entry.inputModalities)
+    || containsImageModality(entry.supported_input_modalities)
+    || containsImageModality(entry.supportedInputModalities)
+    || containsImageModality(capabilities.input)
+    || containsImageModality(capabilities.modalities)
+    || containsImageModality(architecture.input_modalities)
+    || containsImageModality(architecture.inputModalities)
+    || containsImageModality(architecture.modality);
+}
+
 function normalizeFetchedModel(providerType, entry) {
   if (!isPlainObject(entry)) {
     return null;
@@ -378,6 +429,7 @@ function normalizeFetchedModel(providerType, entry) {
     id: rawId,
     name: displayName || rawId,
     ...(limit ? { limit } : {}),
+    ...(supportsImageInput(entry) ? { attachment: true } : {}),
   };
 }
 

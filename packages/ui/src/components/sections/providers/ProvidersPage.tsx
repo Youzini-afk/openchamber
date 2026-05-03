@@ -5,6 +5,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -100,6 +101,7 @@ interface CustomProviderModelRow {
   name: string;
   context: string;
   output: string;
+  attachment: boolean;
 }
 
 interface CustomProviderFormState {
@@ -112,7 +114,7 @@ interface CustomProviderFormState {
   scope: 'user' | 'project' | 'custom';
 }
 
-const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '', context: '', output: '' });
+const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '', context: '', output: '', attachment: false });
 
 const createEmptyCustomProviderForm = (): CustomProviderFormState => ({
   type: 'openai-compatible',
@@ -716,7 +718,7 @@ export const ProvidersPage: React.FC = () => {
   const updateCustomProviderModelRow = (
     index: number,
     key: keyof CustomProviderModelRow,
-    value: string
+    value: string | boolean
   ) => {
     setCustomProviderForm((prev) => ({
       ...prev,
@@ -795,6 +797,7 @@ export const ProvidersPage: React.FC = () => {
                 name: name || id,
                 context: getFetchedModelLimitInputValue(entry, 'context'),
                 output: getFetchedModelLimitInputValue(entry, 'output'),
+                attachment: entry.attachment === true,
               };
             })
             .filter((entry): entry is CustomProviderModelRow => Boolean(entry))
@@ -1047,7 +1050,7 @@ export const ProvidersPage: React.FC = () => {
             {customProviderForm.models.map((row, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_auto] sm:items-center"
+                className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_minmax(6rem,0.5fr)_auto] sm:items-center"
               >
                 <Input
                   value={row.id}
@@ -1081,6 +1084,14 @@ export const ProvidersPage: React.FC = () => {
                   placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
                   className="font-mono text-xs"
                 />
+                <label className="flex h-8 items-center gap-2 rounded-md border border-border/60 px-2 typography-micro text-muted-foreground">
+                  <Checkbox
+                    checked={row.attachment}
+                    onChange={(checked) => updateCustomProviderModelRow(index, 'attachment', checked)}
+                    ariaLabel={t('settings.providers.page.models.capability.imageInput')}
+                  />
+                  <span className="truncate">{t('settings.providers.page.models.capability.imageInput')}</span>
+                </label>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
