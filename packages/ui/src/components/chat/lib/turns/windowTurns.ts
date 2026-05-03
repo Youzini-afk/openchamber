@@ -174,8 +174,10 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
 
         const parentId = resolveParentMessageId(message);
         const parentTurnIndex = parentId ? userMessageToTurnIndex.get(parentId) : undefined;
-        const targetTurnIndex = typeof parentTurnIndex === 'number' ? parentTurnIndex : currentTurnIndex;
-        if (targetTurnIndex < 0) {
+        const targetTurnIndex = parentId
+            ? parentTurnIndex
+            : currentTurnIndex;
+        if (typeof targetTurnIndex !== 'number' || targetTurnIndex < 0) {
             return;
         }
 

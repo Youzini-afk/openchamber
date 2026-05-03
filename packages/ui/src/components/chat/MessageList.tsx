@@ -1190,7 +1190,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         });
     }), [baseDisplayMessages, retryOverlay]);
 
-    const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
+    const { projection, staticTurns, streamingTurn, trailingUngroupedMessageId } = useTurnRecords(displayMessages, {
         sessionKey,
         showTextJustificationActivity: chatRenderMode === 'sorted',
     });
@@ -1222,6 +1222,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             if (!projection.ungroupedMessageIds.has(message.info.id)) {
                 return;
             }
+            if (message.info.id === trailingUngroupedMessageId) {
+                return;
+            }
 
             orderedEntries.push({
                 kind: 'ungrouped',
@@ -1233,7 +1236,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         });
 
         return orderedEntries;
-    }), [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, staticTurns]);
+    }), [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, staticTurns, trailingUngroupedMessageId]);
 
     const trailingStreamingEntry = React.useMemo<RenderEntry | undefined>(() => {
         if (streamingTurn) {
@@ -1245,12 +1248,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             } satisfies RenderEntry;
         }
 
-        if (projection.ungroupedMessageIds.size === 0) {
+        if (!trailingUngroupedMessageId) {
             return undefined;
         }
 
         const lastMessage = displayMessages[displayMessages.length - 1];
-        if (!lastMessage || !projection.ungroupedMessageIds.has(lastMessage.info.id)) {
+        if (!lastMessage || lastMessage.info.id !== trailingUngroupedMessageId) {
             return undefined;
         }
 
@@ -1261,7 +1264,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             previousMessage: displayMessages.length > 1 ? displayMessages[displayMessages.length - 2] : undefined,
             nextMessage: undefined,
         } satisfies RenderEntry;
-    }, [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, streamingTurn]);
+    }, [displayMessages, projection.lastTurnId, streamingTurn, trailingUngroupedMessageId]);
 
     if (trailingStreamingEntry) {
         streamPerfCount('ui.message_list.render.streaming');

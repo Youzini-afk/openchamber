@@ -12,7 +12,45 @@ export interface TurnRecordsResult {
     projection: TurnProjectionResult;
     staticTurns: TurnProjectionResult['turns'];
     streamingTurn: TurnProjectionResult['turns'][number] | undefined;
+    trailingUngroupedMessageId?: string;
 }
+
+export const splitTurnProjectionForStreaming = (
+    projection: TurnProjectionResult,
+    messages: ChatMessageEntry[],
+): Pick<TurnRecordsResult, 'staticTurns' | 'streamingTurn' | 'trailingUngroupedMessageId'> => {
+    const lastTurn = projection.turns[projection.turns.length - 1];
+    if (!lastTurn) {
+        const lastMessage = messages[messages.length - 1];
+        return {
+            staticTurns: [],
+            streamingTurn: undefined,
+            trailingUngroupedMessageId: lastMessage && projection.ungroupedMessageIds.has(lastMessage.info.id)
+                ? lastMessage.info.id
+                : undefined,
+        };
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    const lastMessageTurnId = lastMessage
+        ? projection.indexes.messageToTurnId.get(lastMessage.info.id)
+        : undefined;
+    if (lastMessageTurnId !== lastTurn.turnId) {
+        return {
+            staticTurns: projection.turns,
+            streamingTurn: undefined,
+            trailingUngroupedMessageId: lastMessage && projection.ungroupedMessageIds.has(lastMessage.info.id)
+                ? lastMessage.info.id
+                : undefined,
+        };
+    }
+
+    return {
+        staticTurns: projection.turns.length <= 1 ? [] : projection.turns.slice(0, -1),
+        streamingTurn: lastTurn,
+        trailingUngroupedMessageId: undefined,
+    };
+};
 
 export const useTurnRecords = (
     messages: ChatMessageEntry[],
@@ -47,10 +85,13 @@ export const useTurnRecords = (
         });
     }, [messages, options.showTextJustificationActivity]);
 
+    const splitProjection = React.useMemo(
+        () => splitTurnProjectionForStreaming(projection, messages),
+        [messages, projection],
+    );
+
     const staticTurns = React.useMemo(() => {
-        const nextStatic = projection.turns.length <= 1
-            ? []
-            : projection.turns.slice(0, -1);
+        const nextStatic = splitProjection.staticTurns;
         const previousStatic = staticTurnsRef.current;
 
         if (previousStatic.length === nextStatic.length) {
@@ -68,22 +109,21 @@ export const useTurnRecords = (
 
         staticTurnsRef.current = nextStatic;
         return nextStatic;
-    }, [projection.turns]);
+    }, [splitProjection.staticTurns]);
 
     const streamingTurn = React.useMemo(() => {
-        const nextStreamingTurn = projection.turns.length === 0
-            ? undefined
-            : projection.turns[projection.turns.length - 1];
+        const nextStreamingTurn = splitProjection.streamingTurn;
         if (streamingTurnRef.current === nextStreamingTurn) {
             return streamingTurnRef.current;
         }
         streamingTurnRef.current = nextStreamingTurn;
         return nextStreamingTurn;
-    }, [projection.turns]);
+    }, [splitProjection.streamingTurn]);
 
     return {
         projection,
         staticTurns,
         streamingTurn,
+        trailingUngroupedMessageId: splitProjection.trailingUngroupedMessageId,
     };
 };

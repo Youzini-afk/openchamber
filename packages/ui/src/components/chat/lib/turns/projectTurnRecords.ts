@@ -141,7 +141,7 @@ export const projectTurnRecords = (
 
         const parentId = getMessageParentId(message);
         const parentTurn = parentId ? turnByUserId.get(parentId) : undefined;
-        const targetTurn = parentTurn ?? currentTurn;
+        const targetTurn = parentId ? parentTurn : currentTurn;
         if (!targetTurn) {
             return;
         }
