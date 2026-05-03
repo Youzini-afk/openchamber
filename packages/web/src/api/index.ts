@@ -8,11 +8,13 @@ import { createWebNotificationsAPI } from './notifications';
 import { createWebToolsAPI } from './tools';
 import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
+import { createWebWorkspaceAPI } from './workspace';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
   terminal: createWebTerminalAPI(),
   git: createWebGitAPI(),
+  workspace: createWebWorkspaceAPI(),
   files: createWebFilesAPI(),
   settings: createWebSettingsAPI(),
   permissions: createWebPermissionsAPI(),

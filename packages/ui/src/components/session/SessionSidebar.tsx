@@ -43,6 +43,9 @@ import { SidebarActivitySections } from './sidebar/SidebarActivitySections';
 import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
+import { WorkspaceGitPanel } from '@/components/workspace/WorkspaceGitPanel';
+import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
+import { WorkspaceTerminalDialog } from '@/components/workspace/WorkspaceTerminalDialog';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
@@ -1413,10 +1416,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
 
   const topContent = !hasSessionSearchQuery ? (
-    <SidebarActivitySections
-      sections={activitySections}
-      renderSessionNode={renderSessionNode}
-    />
+    <>
+      {!isVSCode ? (
+        <WorkspaceSidebarSection
+          mobileVariant={mobileVariant}
+          setSessionSwitcherOpen={setSessionSwitcherOpen}
+        />
+      ) : null}
+      <SidebarActivitySections
+        sections={activitySections}
+        renderSessionNode={renderSessionNode}
+      />
+    </>
   ) : null;
   const isInlineEditing = Boolean(renamingFolderId || editingId || editingProjectDialogId);
 
@@ -1764,6 +1775,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       />
 
       <ScheduledTasksDialog />
+      {!isVSCode ? (
+        <>
+          <WorkspaceTerminalDialog />
+          <WorkspaceGitPanel />
+        </>
+      ) : null}
 
       <SessionDeleteConfirmDialog
         value={deleteSessionConfirm}

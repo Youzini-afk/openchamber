@@ -32,7 +32,8 @@ export interface TerminalStreamEvent {
 }
 
 export interface CreateTerminalOptions {
-  cwd: string;
+  cwd?: string;
+  workspacePath?: string;
   cols?: number;
   rows?: number;
 }
@@ -746,14 +747,20 @@ const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<v
 };
 
 export async function createTerminalSession(options: CreateTerminalOptions): Promise<TerminalSession> {
+  const body: Record<string, unknown> = {
+    cols: options.cols ?? 80,
+    rows: options.rows ?? 24,
+  };
+  if (options.workspacePath !== undefined) {
+    body.workspacePath = options.workspacePath;
+  } else {
+    body.cwd = options.cwd ?? '';
+  }
+
   const response = await fetch('/api/terminal/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      cwd: options.cwd,
-      cols: options.cols ?? 80,
-      rows: options.rows ?? 24,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -962,18 +969,23 @@ export async function closeTerminal(sessionId: string): Promise<void> {
 
 export async function restartTerminalSession(
   currentSessionId: string,
-  options: { cwd: string; cols?: number; rows?: number }
+  options: { cwd?: string; workspacePath?: string; cols?: number; rows?: number }
 ): Promise<TerminalSession> {
   getTerminalTransportGlobalState().manager?.unbindSession(currentSessionId);
+  const body: Record<string, unknown> = {
+    cols: options.cols ?? 80,
+    rows: options.rows ?? 24,
+  };
+  if (options.workspacePath !== undefined) {
+    body.workspacePath = options.workspacePath;
+  } else {
+    body.cwd = options.cwd ?? '';
+  }
 
   const response = await fetch(`/api/terminal/${currentSessionId}/restart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      cwd: options.cwd,
-      cols: options.cols ?? 80,
-      rows: options.rows ?? 24,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -989,6 +1001,7 @@ export async function restartTerminalSession(
 export async function forceKillTerminal(options: {
   sessionId?: string;
   cwd?: string;
+  workspacePath?: string;
 }): Promise<void> {
   const response = await fetch('/api/terminal/force-kill', {
     method: 'POST',

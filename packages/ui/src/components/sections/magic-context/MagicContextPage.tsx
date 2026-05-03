@@ -52,8 +52,7 @@ import {
 } from './magicContextConfig';
 
 const INHERIT_VALUE = '__inherit__';
-const AGENT_IDS = ['historian', 'dreamer', 'sidekick'] as const;
-type MagicAgentId = typeof AGENT_IDS[number];
+type MagicAgentId = 'historian' | 'dreamer' | 'sidekick';
 
 type MapValueType = 'string' | 'number';
 type MapRow = {

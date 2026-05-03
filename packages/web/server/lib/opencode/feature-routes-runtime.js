@@ -2,6 +2,7 @@ import { registerFsRoutes } from '../fs/routes.js';
 import { registerQuotaRoutes } from '../quota/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
+import { registerWorkspaceRoutes } from '../workspace/workspace-routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
 import { registerConfigEntityRoutes } from './config-entity-routes.js';
@@ -243,6 +244,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerQuotaRoutes(app, { getQuotaProviders });
     registerGitHubRoutes(app);
     registerGitRoutes(app);
+    registerWorkspaceRoutes(app, {
+      fsPromises,
+      pathModule: path,
+      osModule: os,
+      env: process.env,
+      readSettingsFromDiskMigrated,
+      persistSettings,
+      sanitizeProjects,
+    });
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,

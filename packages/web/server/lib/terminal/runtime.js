@@ -1,4 +1,6 @@
 import { WebSocketServer } from 'ws';
+import { createWorkspaceConfig, ensureWorkspaceRoot } from '../workspace/workspace-config.js';
+import { assertAbsolutePathInWorkspace, resolveWorkspacePath } from '../workspace/path-safety.js';
 import {
   TERMINAL_INPUT_WS_MAX_PAYLOAD_BYTES,
   TERMINAL_INPUT_WS_PATH,
@@ -170,6 +172,47 @@ export function createTerminalRuntime({
     delete next.BASH_ENV;
     delete next.ENV;
     return next;
+  };
+  const resolveTerminalWorkingDirectory = async ({ cwd, workspacePath }) => {
+    const config = createWorkspaceConfig({ env: process.env, pathModule: path });
+
+    if (workspacePath !== undefined && workspacePath !== null) {
+      await ensureWorkspaceRoot(config, fs.promises);
+      const resolved = await resolveWorkspacePath(String(workspacePath), {
+        root: config.root,
+        fsPromises: fs.promises,
+        pathModule: path,
+      });
+      const stats = await fs.promises.stat(resolved.absolutePath);
+      if (!stats.isDirectory()) {
+        throw new Error('Invalid working directory: not a directory');
+      }
+      return resolved.absolutePath;
+    }
+
+    if (!cwd) {
+      throw new Error('cwd is required');
+    }
+
+    if (config.lockdown) {
+      const resolved = await assertAbsolutePathInWorkspace(String(cwd), {
+        root: config.root,
+        fsPromises: fs.promises,
+        pathModule: path,
+      });
+      const stats = await fs.promises.stat(resolved.absolutePath);
+      if (!stats.isDirectory()) {
+        throw new Error('Invalid working directory: not a directory');
+      }
+      return resolved.absolutePath;
+    }
+
+    const resolvedCwd = path.resolve(String(cwd));
+    const stats = await fs.promises.stat(resolvedCwd);
+    if (!stats.isDirectory()) {
+      throw new Error('Invalid working directory: not a directory');
+    }
+    return resolvedCwd;
   };
   const terminalTransportCapabilities = {
     input: {
@@ -490,15 +533,12 @@ export function createTerminalRuntime({
         return res.status(429).json({ error: 'Maximum terminal sessions reached' });
       }
 
-      const { cwd, cols, rows } = req.body;
-      if (!cwd) {
-        return res.status(400).json({ error: 'cwd is required' });
-      }
-
+      const { cwd, workspacePath, cols, rows } = req.body;
+      let resolvedCwd = '';
       try {
-        await fs.promises.access(cwd);
-      } catch {
-        return res.status(400).json({ error: 'Invalid working directory' });
+        resolvedCwd = await resolveTerminalWorkingDirectory({ cwd, workspacePath });
+      } catch (error) {
+        return res.status(error?.statusCode || 400).json({ error: error.message || 'Invalid working directory' });
       }
 
       const sessionId = Math.random().toString(36).substring(2, 15) +
@@ -511,14 +551,14 @@ export function createTerminalRuntime({
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {
         cols,
         rows,
-        cwd,
+        cwd: resolvedCwd,
         env: resolvedEnv,
       });
 
       const session = {
         ptyProcess,
         ptyBackend: pty.backend,
-        cwd,
+        cwd: resolvedCwd,
         lastActivity: Date.now(),
         clients: new Set(),
         outputReplayBuffer: createTerminalOutputReplayBuffer(),
@@ -527,7 +567,7 @@ export function createTerminalRuntime({
       terminalSessions.set(sessionId, session);
       wireTerminalSession(sessionId, session);
 
-      console.log(`Created terminal session: ${sessionId} in ${cwd} using shell ${shell}`);
+      console.log(`Created terminal session: ${sessionId} in ${resolvedCwd} using shell ${shell}`);
       res.json({ sessionId, cols: cols || 80, rows: rows || 24, capabilities: terminalTransportCapabilities });
     } catch (error) {
       console.error('Failed to create terminal session:', error);
@@ -686,11 +726,7 @@ export function createTerminalRuntime({
 
   app.post('/api/terminal/:sessionId/restart', async (req, res) => {
     const { sessionId } = req.params;
-    const { cwd, cols, rows } = req.body;
-
-    if (!cwd) {
-      return res.status(400).json({ error: 'cwd is required' });
-    }
+    const { cwd, workspacePath, cols, rows } = req.body;
 
     const existingSession = terminalSessions.get(sessionId);
     if (existingSession) {
@@ -702,13 +738,11 @@ export function createTerminalRuntime({
     }
 
     try {
+      let resolvedCwd = '';
       try {
-        const stats = await fs.promises.stat(cwd);
-        if (!stats.isDirectory()) {
-          return res.status(400).json({ error: 'Invalid working directory: not a directory' });
-        }
+        resolvedCwd = await resolveTerminalWorkingDirectory({ cwd, workspacePath });
       } catch (error) {
-        return res.status(400).json({ error: 'Invalid working directory: not accessible' });
+        return res.status(error?.statusCode || 400).json({ error: error.message || 'Invalid working directory: not accessible' });
       }
 
       const newSessionId = Math.random().toString(36).substring(2, 15) +
@@ -721,14 +755,14 @@ export function createTerminalRuntime({
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {
         cols,
         rows,
-        cwd,
+        cwd: resolvedCwd,
         env: resolvedEnv,
       });
 
       const session = {
         ptyProcess,
         ptyBackend: pty.backend,
-        cwd,
+        cwd: resolvedCwd,
         lastActivity: Date.now(),
         clients: new Set(),
         outputReplayBuffer: createTerminalOutputReplayBuffer(),
@@ -737,7 +771,7 @@ export function createTerminalRuntime({
       terminalSessions.set(newSessionId, session);
       wireTerminalSession(newSessionId, session);
 
-      console.log(`Restarted terminal session: ${sessionId} -> ${newSessionId} in ${cwd} using shell ${shell}`);
+      console.log(`Restarted terminal session: ${sessionId} -> ${newSessionId} in ${resolvedCwd} using shell ${shell}`);
       res.json({ sessionId: newSessionId, cols: cols || 80, rows: rows || 24, capabilities: terminalTransportCapabilities });
     } catch (error) {
       console.error('Failed to restart terminal session:', error);

@@ -62,7 +62,8 @@ export interface TerminalStreamEvent {
 }
 
 export interface CreateTerminalOptions {
-  cwd: string;
+  cwd?: string;
+  workspacePath?: string;
   cols?: number;
   rows?: number;
 }
@@ -86,6 +87,7 @@ export interface TerminalHandlers {
 export interface ForceKillOptions {
   sessionId?: string;
   cwd?: string;
+  workspacePath?: string;
 }
 
 export interface TerminalAPI {
@@ -467,6 +469,112 @@ export interface GitAPI {
     attentionReason?: 'merge' | 'rebase' | 'cherry-pick' | 'revert' | 'bisect' | null;
   }>;
   worktree?: GitWorktreeAPI;
+}
+
+export interface WorkspaceGitSummary {
+  branch: string | null;
+  remote?: string | null;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+}
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  type: 'file' | 'directory' | 'symlink';
+  size: number;
+  modifiedAt: string;
+  mtimeMs: number;
+  isProject?: boolean;
+  git?: WorkspaceGitSummary | null;
+  children?: WorkspaceEntry[];
+}
+
+export interface WorkspaceRootInfo {
+  root: string;
+  relativeRoot: string;
+  exists: boolean;
+  mtimeMs: number;
+  limits: {
+    maxReadBytes: number;
+    maxUploadBytes: number;
+  };
+  features: {
+    lockdown: boolean;
+    trash: boolean;
+    customCommands: boolean;
+  };
+  separator: string;
+}
+
+export interface WorkspaceListResult {
+  path: string;
+  relativePath: string;
+  entries: WorkspaceEntry[];
+}
+
+export interface WorkspaceReadResult {
+  content: string;
+  path: string;
+  relativePath: string;
+  mtimeMs: number;
+}
+
+export interface WorkspaceMutationResult {
+  success: boolean;
+  entry: WorkspaceEntry;
+}
+
+export interface WorkspaceDeleteResult {
+  success: boolean;
+  trashed: boolean;
+  trashPath?: string;
+}
+
+export interface WorkspaceUploadFile {
+  name: string;
+  contentBase64: string;
+}
+
+export interface WorkspaceUploadResult {
+  success: boolean;
+  entries: WorkspaceEntry[];
+}
+
+export interface WorkspaceProjectOpenResult {
+  success: boolean;
+  project: ProjectEntry;
+  settings: SettingsPayload;
+}
+
+export type WorkspaceGitStatus = GitStatus & {
+  isGitRepository?: boolean;
+};
+
+export interface WorkspaceAPI {
+  getRoot(): Promise<WorkspaceRootInfo>;
+  list(path?: string): Promise<WorkspaceListResult>;
+  tree(path?: string, depth?: number): Promise<WorkspaceListResult>;
+  entry(path: string): Promise<WorkspaceEntry>;
+  createFolder(path: string): Promise<WorkspaceMutationResult>;
+  createFile(path: string, content?: string): Promise<WorkspaceMutationResult>;
+  move(from: string, to: string): Promise<WorkspaceMutationResult>;
+  deleteEntry(path: string, options?: { permanent?: boolean }): Promise<WorkspaceDeleteResult>;
+  readFile(path: string): Promise<WorkspaceReadResult>;
+  writeFile(path: string, content: string, expectedMtimeMs?: number | null): Promise<WorkspaceMutationResult>;
+  upload(path: string, files: WorkspaceUploadFile[]): Promise<WorkspaceUploadResult>;
+  download(path: string): Promise<void>;
+  openProject(path: string): Promise<WorkspaceProjectOpenResult>;
+  gitStatus(path: string, options?: { mode?: 'light' }): Promise<WorkspaceGitStatus>;
+  gitFetch(path: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
+  gitPull(path: string, options?: { remote?: string; branch?: string }): Promise<GitPullResult>;
+  gitPush(path: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
+  gitCheckout(path: string, branch: string): Promise<{ success: boolean; branch: string }>;
+  gitCommit(path: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
+  gitLog(path: string, options?: GitLogOptions): Promise<GitLogResponse>;
+  gitRemotes(path: string): Promise<GitRemote[]>;
 }
 
 export interface FileListEntry {
@@ -999,6 +1107,7 @@ export interface RuntimeAPIs {
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
   git: GitAPI;
+  workspace?: WorkspaceAPI;
   files: FilesAPI;
   settings: SettingsAPI;
   permissions: PermissionsAPI;
