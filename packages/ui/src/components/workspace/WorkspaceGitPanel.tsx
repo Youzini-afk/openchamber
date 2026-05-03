@@ -22,13 +22,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import type { GitRemote, GitStatusFile } from '@/lib/api/types';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
+
+const EMPTY_GIT_REMOTES: GitRemote[] = [];
+const EMPTY_GIT_FILES: GitStatusFile[] = [];
 
 export const WorkspaceGitPanel: React.FC = () => {
   const gitPanel = useWorkspaceStore((state) => state.gitPanel);
   const status = useWorkspaceStore((state) => state.gitStatusByPath[gitPanel.path]);
   const log = useWorkspaceStore((state) => state.gitLogByPath[gitPanel.path]);
-  const remotes = useWorkspaceStore((state) => state.gitRemotesByPath[gitPanel.path] ?? []);
+  const remotes = useWorkspaceStore((state) => state.gitRemotesByPath[gitPanel.path] ?? EMPTY_GIT_REMOTES);
   const actionPending = useWorkspaceStore((state) => state.actionPending);
   const error = useWorkspaceStore((state) => state.error);
   const closeGitPanel = useWorkspaceStore((state) => state.closeGitPanel);
@@ -47,7 +51,7 @@ export const WorkspaceGitPanel: React.FC = () => {
   const [stageAll, setStageAll] = React.useState(false);
   const [selectedFiles, setSelectedFiles] = React.useState<Record<string, boolean>>({});
 
-  const files = React.useMemo(() => status?.files ?? [], [status?.files]);
+  const files = React.useMemo(() => status?.files ?? EMPTY_GIT_FILES, [status?.files]);
   const isRepo = status?.isGitRepository !== false && Boolean(status);
   const isBusy = Boolean(actionPending?.startsWith('git-'));
 

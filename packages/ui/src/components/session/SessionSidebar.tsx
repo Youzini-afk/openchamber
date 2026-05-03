@@ -17,6 +17,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
+import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { NewWorktreeDialog } from './NewWorktreeDialog';
 import { ScheduledTasksDialog } from './ScheduledTasksDialog';
@@ -439,6 +440,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  const workspaceTerminalOpen = useWorkspaceStore((state) => state.terminalDialog.open);
+  const workspaceGitPanelOpen = useWorkspaceStore((state) => state.gitPanel.open);
   const isMacPlatform = React.useMemo(() => {
     if (typeof navigator === 'undefined') {
       return false;
@@ -1775,12 +1778,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       />
 
       <ScheduledTasksDialog />
-      {!isVSCode ? (
-        <>
-          <WorkspaceTerminalDialog />
-          <WorkspaceGitPanel />
-        </>
-      ) : null}
+      {!isVSCode && workspaceTerminalOpen ? <WorkspaceTerminalDialog /> : null}
+      {!isVSCode && workspaceGitPanelOpen ? <WorkspaceGitPanel /> : null}
 
       <SessionDeleteConfirmDialog
         value={deleteSessionConfirm}

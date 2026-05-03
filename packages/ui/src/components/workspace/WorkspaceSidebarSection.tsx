@@ -86,12 +86,17 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const refreshGitStatus = useWorkspaceStore((state) => state.refreshGitStatus);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
+  const didInitialLoadRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = React.useRef('');
 
   React.useEffect(() => {
-    void refreshWorkspace();
-  }, [refreshWorkspace]);
+    if (didInitialLoadRef.current) {
+      return;
+    }
+    didInitialLoadRef.current = true;
+    void useWorkspaceStore.getState().refreshWorkspace();
+  }, []);
 
   const rootEntries = entriesByPath[''] ?? [];
   const isBusy = Boolean(loadingRoot || loadingPaths[''] || actionPending);
@@ -429,4 +434,3 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     </section>
   );
 };
-
