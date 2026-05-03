@@ -500,16 +500,16 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     onClick={isReady ? () => setIsMobilePanelOpen(true) : undefined}
                     disabled={!isReady}
                     className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded-lg border border-border/40 bg-[var(--surface-elevated)] px-2 py-1.5 text-left',
+                        'flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border border-border/40 bg-[var(--surface-elevated)] px-2 py-1.5 text-left',
                         !isReady && 'opacity-60 cursor-not-allowed',
                         className
                     )}
                 >
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                         {!isReady ? (
                             <>
                                 <RiLoader4Line className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                                <span className="typography-meta text-muted-foreground">{isUnavailable ? t('common.unavailable') : t('common.loading')}</span>
+                                <span className="min-w-0 truncate typography-meta text-muted-foreground">{isUnavailable ? t('common.unavailable') : t('common.loading')}</span>
                             </>
                         ) : providerId ? (
                             <ProviderLogo
@@ -520,7 +520,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             <RiPencilAiLine className="h-3 w-3 text-muted-foreground" />
                         )}
                         {isReady && (
-                            <span className="typography-meta font-medium text-foreground">
+                            <span className="min-w-0 truncate typography-meta font-medium text-foreground">
                                 {providerId && modelId ? `${providerId}/${modelId}` : (placeholder || t('settings.agents.modelSelector.selectPlaceholder'))}
                             </span>
                         )}
@@ -531,13 +531,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 <DropdownMenu open={isReady && isDropdownOpen} onOpenChange={isReady ? setIsDropdownOpen : undefined}>
                     <DropdownMenuTrigger asChild>
                         <div className={cn(
-                            'border-input data-[placeholder]:text-muted-foreground flex items-center justify-between gap-2 rounded-lg border bg-transparent px-2 py-2 typography-ui-label whitespace-nowrap shadow-none outline-none hover:bg-interactive-hover data-[popup-open]:bg-interactive-active h-6 w-fit',
+                            'border-input data-[placeholder]:text-muted-foreground flex min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border bg-transparent px-2 py-2 typography-ui-label whitespace-nowrap shadow-none outline-none hover:bg-interactive-hover data-[popup-open]:bg-interactive-active h-6 w-fit',
                             className
                         )}>
                             {!isReady ? (
                                 <>
                                     <RiLoader4Line className="h-3.5 w-3.5 animate-spin text-muted-foreground flex-shrink-0" />
-                                    <span className="typography-ui-label font-normal whitespace-nowrap text-muted-foreground">
+                                    <span className="min-w-0 truncate typography-ui-label font-normal text-muted-foreground">
                                         {isUnavailable ? t('common.unavailable') : t('common.loading')}
                                     </span>
                                 </>
@@ -554,7 +554,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                                     ) : (
                                         <RiPencilAiLine className="h-3.5 w-3.5 text-muted-foreground" />
                                     )}
-                                    <span className="typography-ui-label font-normal whitespace-nowrap text-foreground">
+                                    <span className="min-w-0 truncate typography-ui-label font-normal text-foreground">
                                         {providerId && modelId ? `${providerId}/${modelId}` : (placeholder || t('settings.agents.modelSelector.notSelected'))}
                                     </span>
                                 </>

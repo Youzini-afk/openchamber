@@ -206,19 +206,19 @@ function CompactModelEditor({
   const parsed = parseModelRef(model);
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <ModelSelector
         providerId={parsed.providerId}
         modelId={parsed.modelId}
         onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
         placeholder={placeholder}
-        className="h-7 max-w-[210px]"
+        className="h-7 min-w-[120px] max-w-[210px] flex-1"
       />
       <Input
         value={model}
         onChange={(event) => onChange(event.target.value)}
         placeholder="provider/model"
-        className="h-7 min-w-[150px] font-mono typography-meta"
+        className="h-7 min-w-[140px] flex-1 font-mono typography-meta"
       />
     </div>
   );
