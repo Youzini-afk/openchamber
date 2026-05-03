@@ -109,4 +109,15 @@ describe('workspace sidebar messages', () => {
     expect(terminalSource).toContain("t('workspace.terminal.actions.restart')");
     expect(gitSource).toContain("t('workspace.git.actions.refresh')");
   });
+
+  test('workspace terminal stream does not reconnect on ordinary re-renders', () => {
+    const source = readFileSync(
+      resolve(testDir, '../../../components/workspace/WorkspaceTerminalDialog.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('activeTerminalIdRef.current === sessionId');
+    expect(source).toContain('startStream(dialog.directoryKey, activeTabId, terminalSessionId)');
+    expect(source).not.toContain('cleanupRef.current?.();');
+  });
 });

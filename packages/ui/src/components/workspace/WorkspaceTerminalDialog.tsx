@@ -65,8 +65,21 @@ export const WorkspaceTerminalDialog: React.FC = () => {
   const [isMaximized, setIsMaximized] = React.useState(false);
   const [connectionError, setConnectionError] = React.useState<string | null>(null);
   const controllerRef = React.useRef<TerminalController | null>(null);
-  const cleanupRef = React.useRef<(() => void) | null>(null);
+  const streamCleanupRef = React.useRef<(() => void) | null>(null);
+  const activeTerminalIdRef = React.useRef<string | null>(null);
   const lastSizeRef = React.useRef<{ cols: number; rows: number } | null>(null);
+
+  const terminalMessages = React.useMemo(() => ({
+    createFailed: t('workspace.terminal.error.createFailed'),
+    connectionFailed: t('workspace.terminal.error.connectionFailed'),
+    processExited: t('workspace.terminal.status.processExited'),
+    sendFailed: t('workspace.terminal.error.sendFailed'),
+  }), [t]);
+  const terminalMessagesRef = React.useRef(terminalMessages);
+
+  React.useEffect(() => {
+    terminalMessagesRef.current = terminalMessages;
+  }, [terminalMessages]);
 
   const xtermTheme = React.useMemo(() => convertThemeToXterm(currentTheme), [currentTheme]);
   const resolvedFontStack = React.useMemo(() => {
@@ -122,7 +135,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        setConnectionError(message || t('workspace.terminal.error.createFailed'));
+        setConnectionError(message || terminalMessages.createFailed);
         setConnecting(directoryKey, activeTabId, false);
         setTabLifecycle(directoryKey, activeTabId, 'exited');
       }
@@ -140,25 +153,32 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     setConnecting,
     setTabLifecycle,
     setTabSessionId,
-    t,
+    terminalMessages.createFailed,
     terminal,
   ]);
 
-  React.useEffect(() => {
-    cleanupRef.current?.();
-    cleanupRef.current = null;
+  const disconnectStream = React.useCallback(() => {
+    streamCleanupRef.current?.();
+    streamCleanupRef.current = null;
+    activeTerminalIdRef.current = null;
+  }, []);
 
-    if (!dialog.open || !activeTabId || !terminalSessionId) {
+  const startStream = React.useCallback((directoryKey: string, tabId: string, sessionId: string) => {
+    if (activeTerminalIdRef.current === sessionId) {
       return;
     }
 
-    const directoryKey = dialog.directoryKey;
-    const tabId = activeTabId;
-    const sessionId = terminalSessionId;
+    disconnectStream();
+    activeTerminalIdRef.current = sessionId;
+
     const subscription = terminal.connect(
       sessionId,
       {
         onEvent: (event: TerminalStreamEvent) => {
+          if (activeTerminalIdRef.current !== sessionId) {
+            return;
+          }
+
           switch (event.type) {
             case 'connected':
               setConnectionError(null);
@@ -174,7 +194,8 @@ export const WorkspaceTerminalDialog: React.FC = () => {
               setTabLifecycle(directoryKey, tabId, 'exited');
               setTabSessionId(directoryKey, tabId, null);
               setConnecting(directoryKey, tabId, false);
-              appendToBuffer(directoryKey, tabId, `\r\n[${t('workspace.terminal.status.processExited')}]\r\n`);
+              appendToBuffer(directoryKey, tabId, `\r\n[${terminalMessagesRef.current.processExited}]\r\n`);
+              disconnectStream();
               break;
             case 'reconnecting':
               setConnectionError(null);
@@ -182,39 +203,47 @@ export const WorkspaceTerminalDialog: React.FC = () => {
           }
         },
         onError: (error, fatal) => {
+          if (activeTerminalIdRef.current !== sessionId) {
+            return;
+          }
+
           if (!fatal) {
             return;
           }
-          setConnectionError(error.message || t('workspace.terminal.error.connectionFailed'));
+          setConnectionError(error.message || terminalMessagesRef.current.connectionFailed);
           setConnecting(directoryKey, tabId, false);
+          setTabLifecycle(directoryKey, tabId, 'exited');
+          setTabSessionId(directoryKey, tabId, null);
+          disconnectStream();
         },
       },
       STREAM_OPTIONS,
     );
-    cleanupRef.current = () => subscription.close();
-    return () => {
+    streamCleanupRef.current = () => {
       subscription.close();
-      cleanupRef.current = null;
+      if (activeTerminalIdRef.current === sessionId) {
+        activeTerminalIdRef.current = null;
+      }
     };
   }, [
-    activeTabId,
     appendToBuffer,
-    dialog.directoryKey,
-    dialog.open,
+    disconnectStream,
     setConnecting,
     setTabLifecycle,
     setTabSessionId,
-    t,
     terminal,
-    terminalSessionId,
   ]);
 
   React.useEffect(() => {
-    if (!dialog.open) {
-      cleanupRef.current?.();
-      cleanupRef.current = null;
+    if (!dialog.open || !activeTabId || !terminalSessionId) {
+      disconnectStream();
+      return;
     }
-  }, [dialog.open]);
+
+    startStream(dialog.directoryKey, activeTabId, terminalSessionId);
+  }, [activeTabId, dialog.directoryKey, dialog.open, disconnectStream, startStream, terminalSessionId]);
+
+  React.useEffect(() => () => disconnectStream(), [disconnectStream]);
 
   React.useEffect(() => {
     if (!dialog.open) {
@@ -237,9 +266,9 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     }
     void terminal.sendInput(terminalSessionId, input).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      setConnectionError(message || t('workspace.terminal.error.sendFailed'));
+      setConnectionError(message || terminalMessagesRef.current.sendFailed);
     });
-  }, [t, terminal, terminalSessionId]);
+  }, [terminal, terminalSessionId]);
 
   const handleResize = React.useCallback((cols: number, rows: number) => {
     lastSizeRef.current = { cols, rows };
