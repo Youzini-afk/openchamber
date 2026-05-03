@@ -52,6 +52,7 @@ import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import { opencodeClient } from '@/lib/opencode/client';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { modelSupportsVariant } from '@/lib/modelVariants';
 import { rankBranchesForQuery } from '@/lib/worktrees/branchSearch';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitBranches, useGitStore, useGitLoadingBranches } from '@/stores/useGitStore';
@@ -444,12 +445,8 @@ export function NewWorktreeDialog({
     if (!settingsDefaultVariant) return undefined;
 
     const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
-    if (!variants) return undefined;
-    if (!Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) return undefined;
+    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID);
+    if (!modelSupportsVariant(model, settingsDefaultVariant)) return undefined;
     return settingsDefaultVariant;
   }, []);
 

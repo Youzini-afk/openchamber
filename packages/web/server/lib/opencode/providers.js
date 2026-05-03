@@ -10,7 +10,9 @@ const DEFAULT_OPENAI_COMPATIBLE_NPM = '@ai-sdk/openai-compatible';
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const DEFAULT_CUSTOM_PROVIDER_TYPE = 'openai-compatible';
 const ANTHROPIC_API_VERSION = '2023-06-01';
-const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const REASONING_EFFORT_LIST = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const REASONING_EFFORTS = new Set(REASONING_EFFORT_LIST);
+const MODEL_MODALITIES = new Set(['text', 'audio', 'image', 'video', 'pdf']);
 
 const CUSTOM_PROVIDER_TYPES = Object.freeze({
   'openai-compatible': {
@@ -96,6 +98,107 @@ function normalizeModelOptions(entry) {
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
+function normalizeModalityList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result = [];
+  for (const item of value) {
+    const normalized = normalizeNonEmptyString(item).toLowerCase();
+    if (!MODEL_MODALITIES.has(normalized) || result.includes(normalized)) {
+      continue;
+    }
+    result.push(normalized);
+  }
+  return result;
+}
+
+function ensureListValue(list, value, position = 'end') {
+  if (list.includes(value)) {
+    return list;
+  }
+  if (position === 'start') {
+    return [value, ...list];
+  }
+  return [...list, value];
+}
+
+function normalizeModelModalities(entry, attachment) {
+  if (!isPlainObject(entry)) {
+    return undefined;
+  }
+
+  const modalities = isPlainObject(entry.modalities) ? entry.modalities : {};
+  let input = normalizeModalityList(modalities.input);
+  let output = normalizeModalityList(modalities.output);
+
+  if (!attachment && input.length === 0 && output.length === 0) {
+    return undefined;
+  }
+
+  input = input.length > 0 ? input : ['text'];
+  output = output.length > 0 ? output : ['text'];
+  input = ensureListValue(input, 'text', 'start');
+  output = ensureListValue(output, 'text', 'start');
+
+  if (attachment) {
+    input = ensureListValue(input, 'image');
+  }
+
+  return { input, output };
+}
+
+function normalizeModelVariants(entry) {
+  if (!isPlainObject(entry?.variants)) {
+    return undefined;
+  }
+
+  const variants = {};
+  for (const [variantKey, variantValue] of Object.entries(entry.variants)) {
+    const normalizedKey = normalizeNonEmptyString(variantKey);
+    if (!normalizedKey) {
+      continue;
+    }
+    variants[normalizedKey] = isPlainObject(variantValue) ? { ...variantValue } : {};
+  }
+
+  return Object.keys(variants).length > 0 ? variants : undefined;
+}
+
+function hasReasoningVariantConfig(variants) {
+  if (!isPlainObject(variants)) {
+    return false;
+  }
+
+  return Object.entries(variants).some(([key, value]) => (
+    REASONING_EFFORTS.has(normalizeNonEmptyString(key).toLowerCase())
+    || normalizeReasoningEffort(isPlainObject(value) ? value.reasoningEffort ?? value.reasoning_effort : undefined)
+  ));
+}
+
+function buildModelVariants(entry, options, reasoning) {
+  const variants = normalizeModelVariants(entry) || {};
+  const reasoningEffort = normalizeReasoningEffort(
+    options?.reasoningEffort ?? options?.reasoning_effort ?? entry?.reasoningEffort ?? entry?.reasoning_effort,
+  );
+  const shouldExposeReasoningVariants = reasoning || Boolean(reasoningEffort) || hasReasoningVariantConfig(variants);
+
+  if (!shouldExposeReasoningVariants) {
+    return Object.keys(variants).length > 0 ? variants : undefined;
+  }
+
+  for (const effort of REASONING_EFFORT_LIST) {
+    const existing = isPlainObject(variants[effort]) ? variants[effort] : {};
+    variants[effort] = Object.prototype.hasOwnProperty.call(existing, 'reasoningEffort')
+      || Object.prototype.hasOwnProperty.call(existing, 'reasoning_effort')
+      ? existing
+      : { ...existing, reasoningEffort: effort };
+  }
+
+  return variants;
+}
+
 function normalizeModelCapability(entry, key) {
   if (!isPlainObject(entry)) {
     return false;
@@ -157,14 +260,20 @@ function normalizeModels(models) {
       : undefined;
     const limit = buildModelLimit(context, output);
     const options = normalizeModelOptions(modelEntry);
+    const attachment = normalizeModelCapability(modelEntry, 'attachment') || supportsImageInput(modelEntry);
+    const reasoning = normalizeModelCapability(modelEntry, 'reasoning');
+    const modalities = normalizeModelModalities(modelEntry, attachment);
+    const variants = buildModelVariants(modelEntry, options, reasoning);
 
     normalized[modelId] = {
       ...(modelName ? { name: modelName } : {}),
       ...(limit ? { limit } : {}),
-      ...(normalizeModelCapability(modelEntry, 'attachment') ? { attachment: true } : {}),
+      ...(attachment ? { attachment: true } : {}),
       ...(normalizeModelCapability(modelEntry, 'tool_call') ? { tool_call: true } : {}),
-      ...(normalizeModelCapability(modelEntry, 'reasoning') ? { reasoning: true } : {}),
+      ...(reasoning ? { reasoning: true } : {}),
+      ...(modalities ? { modalities } : {}),
       ...(options ? { options } : {}),
+      ...(variants ? { variants } : {}),
     };
   }
 
@@ -251,14 +360,17 @@ function normalizeProviderConfigModels(models) {
         if (editableOptions) {
           delete editableOptions.reasoningEffort;
         }
+        const attachment = normalizeBooleanTrue(entry.attachment) || supportsImageInput(entry);
+        const variants = normalizeModelVariants(entry);
 
         return {
           id,
           name: normalizeNonEmptyString(entry.name),
-          ...(normalizeBooleanTrue(entry.attachment) ? { attachment: true } : {}),
+          ...(attachment ? { attachment: true } : {}),
           ...(normalizeModelCapability(entry, 'tool_call') ? { tool_call: true } : {}),
           ...(normalizeModelCapability(entry, 'reasoning') ? { reasoning: true } : {}),
           ...(reasoningEffort ? { reasoningEffort } : {}),
+          ...(variants ? { variants } : {}),
           ...(editableOptions && Object.keys(editableOptions).length > 0 ? { options: editableOptions } : {}),
           ...(() => {
             const context = normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length);
@@ -294,16 +406,19 @@ function normalizeProviderConfigModels(models) {
       if (editableOptions) {
         delete editableOptions.reasoningEffort;
       }
+      const attachment = normalizeBooleanTrue(modelEntry.attachment) || supportsImageInput(modelEntry);
+      const variants = normalizeModelVariants(modelEntry);
 
       return {
         id,
         name: normalizeNonEmptyString(modelEntry.name),
         ...(context ? { context } : {}),
         ...(output ? { output } : {}),
-        ...(normalizeBooleanTrue(modelEntry.attachment) ? { attachment: true } : {}),
+        ...(attachment ? { attachment: true } : {}),
         ...(normalizeModelCapability(modelEntry, 'tool_call') ? { tool_call: true } : {}),
         ...(normalizeModelCapability(modelEntry, 'reasoning') ? { reasoning: true } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
+        ...(variants ? { variants } : {}),
         ...(editableOptions && Object.keys(editableOptions).length > 0 ? { options: editableOptions } : {}),
       };
     })

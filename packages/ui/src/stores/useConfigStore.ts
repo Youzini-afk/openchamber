@@ -14,6 +14,7 @@ import { updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
 import { parseModelIdentifier } from "@/lib/modelIdentifier";
+import { getModelVariantKeys, modelSupportsVariant } from "@/lib/modelVariants";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
@@ -921,7 +922,7 @@ export const useConfigStore = create<ConfigStore>()(
                                             const settingsProvider = processedProviders.find((p) => p.id === parsed.providerId);
                                             if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
                                                 const model = settingsProvider.models.find((m) => m.id === parsed.modelId);
-                                                const currentVariant = state.settingsDefaultVariant && (model as { variants?: Record<string, unknown> } | undefined)?.variants?.[state.settingsDefaultVariant]
+                                                const currentVariant = state.settingsDefaultVariant && modelSupportsVariant(model, state.settingsDefaultVariant)
                                                     ? state.settingsDefaultVariant
                                                     : undefined;
 
@@ -987,7 +988,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     const settingsProvider = previousProviders.find((p) => p.id === parsed.providerId);
                                     if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
                                         const model = settingsProvider.models.find((m) => m.id === parsed.modelId);
-                                        const currentVariant = state.settingsDefaultVariant && (model as { variants?: Record<string, unknown> } | undefined)?.variants?.[state.settingsDefaultVariant]
+                                        const currentVariant = state.settingsDefaultVariant && modelSupportsVariant(model, state.settingsDefaultVariant)
                                             ? state.settingsDefaultVariant
                                             : undefined;
 
@@ -1123,11 +1124,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                 getCurrentModelVariants: () => {
                     const model = get().getCurrentModel();
-                    const variants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-                    if (!variants) {
-                        return [];
-                    }
-                    return Object.keys(variants);
+                    return getModelVariantKeys(model);
                 },
 
                 cycleCurrentVariant: () => {
@@ -1399,9 +1396,8 @@ export const useConfigStore = create<ConfigStore>()(
 
                                      if (openChamberDefaults.defaultVariant) {
                                          const provider = providers.find((p) => p.id === parsed.providerId);
-                                         const model = provider?.models.find((m) => m.id === parsed.modelId) as { variants?: Record<string, unknown> } | undefined;
-                                         const variants = model?.variants;
-                                         if (variants && Object.prototype.hasOwnProperty.call(variants, openChamberDefaults.defaultVariant)) {
+                                         const model = provider?.models.find((m) => m.id === parsed.modelId);
+                                         if (modelSupportsVariant(model, openChamberDefaults.defaultVariant)) {
                                              resolvedVariant = openChamberDefaults.defaultVariant;
                                          } else {
                                              invalidSettings.defaultVariant = '';
@@ -1674,9 +1670,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 if (settingsProvider?.models.some((m) => m.id === parsed.modelId)) {
                                     let nextVariant: string | undefined;
                                     if (settingsDefaultVariant) {
-                                        const model = settingsProvider.models.find((m) => m.id === parsed.modelId) as { variants?: Record<string, unknown> } | undefined;
-                                        const variants = model?.variants;
-                                        if (variants && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
+                                        const model = settingsProvider.models.find((m) => m.id === parsed.modelId);
+                                        if (modelSupportsVariant(model, settingsDefaultVariant)) {
                                             nextVariant = settingsDefaultVariant;
                                         }
                                     }

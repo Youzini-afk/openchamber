@@ -13,6 +13,11 @@ export interface CustomProviderModelRowInput {
   reasoning?: boolean;
   reasoningEffort?: string;
   options?: Record<string, unknown>;
+  modalities?: {
+    input?: string[];
+    output?: string[];
+  };
+  variants?: Record<string, Record<string, unknown>>;
 }
 
 export type CustomProviderApiTypeValue = 'openai-compatible' | 'openai-responses' | 'anthropic' | 'google';
@@ -32,6 +37,7 @@ export interface CustomProviderEditableFormState {
     reasoning: boolean;
     reasoningEffort: string;
     options?: Record<string, unknown>;
+    variants?: Record<string, Record<string, unknown>>;
   }>;
   apiKey: string;
   scope: 'user' | 'project' | 'custom';
@@ -67,13 +73,19 @@ interface CustomProviderModelPayload {
   tool_call?: true;
   reasoning?: true;
   options?: Record<string, unknown>;
+  modalities?: {
+    input: string[];
+    output: string[];
+  };
+  variants?: Record<string, Record<string, unknown>>;
   limit?: {
     context?: number;
     output?: number;
   };
 }
 
-const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const REASONING_EFFORT_LIST = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const REASONING_EFFORTS = new Set<string>(REASONING_EFFORT_LIST);
 
 const trimString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
@@ -128,6 +140,19 @@ const buildModelLimit = (context?: number, output?: number): CustomProviderModel
   };
 };
 
+const containsImageModality = (value: unknown): boolean => {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+  return value.some((item) => trimString(item).toLowerCase().includes('image'));
+};
+
+const buildModelModalities = (attachment: boolean): CustomProviderModelPayload['modalities'] | undefined => (
+  attachment
+    ? { input: ['text', 'image'], output: ['text'] }
+    : undefined
+);
+
 const buildModelOptions = (
   optionsInput: unknown,
   reasoningEffortInput: unknown,
@@ -156,6 +181,56 @@ const buildPreservedEditableModelOptions = (optionsInput: unknown): Record<strin
   delete options.reasoningEffort;
   delete options.reasoning_effort;
   return Object.keys(options).length > 0 ? options : undefined;
+};
+
+const normalizeModelVariants = (value: unknown): Record<string, Record<string, unknown>> | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const variants: Record<string, Record<string, unknown>> = {};
+  for (const [key, variant] of Object.entries(value)) {
+    const variantKey = trimString(key);
+    if (!variantKey) {
+      continue;
+    }
+    variants[variantKey] = isRecord(variant) ? { ...variant } : {};
+  }
+
+  return Object.keys(variants).length > 0 ? variants : undefined;
+};
+
+const hasReasoningVariantConfig = (variants: Record<string, Record<string, unknown>> | undefined): boolean => {
+  if (!variants) {
+    return false;
+  }
+  return Object.entries(variants).some(([key, variant]) => (
+    REASONING_EFFORTS.has(trimString(key).toLowerCase())
+    || normalizeReasoningEffort(variant.reasoningEffort || variant.reasoning_effort).length > 0
+  ));
+};
+
+const buildModelVariants = (
+  row: CustomProviderModelRowInput,
+  options: Record<string, unknown> | undefined,
+): Record<string, Record<string, unknown>> | undefined => {
+  const variants = normalizeModelVariants(row.variants) || {};
+  const reasoningEffort = normalizeReasoningEffort(row.reasoningEffort || options?.reasoningEffort || options?.reasoning_effort);
+  const shouldExposeReasoningVariants = row.reasoning === true || reasoningEffort.length > 0 || hasReasoningVariantConfig(variants);
+
+  if (!shouldExposeReasoningVariants) {
+    return Object.keys(variants).length > 0 ? variants : undefined;
+  }
+
+  for (const effort of REASONING_EFFORT_LIST) {
+    const existing = isRecord(variants[effort]) ? variants[effort] : {};
+    variants[effort] = Object.prototype.hasOwnProperty.call(existing, 'reasoningEffort')
+      || Object.prototype.hasOwnProperty.call(existing, 'reasoning_effort')
+      ? existing
+      : { ...existing, reasoningEffort: effort };
+  }
+
+  return variants;
 };
 
 const createEmptyEditableModelRow = () => ({
@@ -199,14 +274,19 @@ export const normalizeCustomProviderModelRows = (
     const output = normalizePositiveInteger(row.output);
     const limit = buildModelLimit(context, output);
     const options = buildModelOptions(row.options, row.reasoningEffort);
+    const attachment = row.attachment === true;
+    const modalities = buildModelModalities(attachment);
+    const variants = buildModelVariants(row, options);
 
     models.push({
       id,
       ...(name ? { name } : {}),
-      ...(row.attachment === true ? { attachment: true } : {}),
+      ...(attachment ? { attachment: true } : {}),
       ...(row.tool_call === true || row.toolCall === true ? { tool_call: true } : {}),
       ...(row.reasoning === true ? { reasoning: true } : {}),
+      ...(modalities ? { modalities } : {}),
       ...(options ? { options } : {}),
+      ...(variants ? { variants } : {}),
       ...(limit ? { limit } : {}),
     });
   }
@@ -221,16 +301,18 @@ export const createCustomProviderFormStateFromConfig = (
     ? config.models
         .map((model) => {
           const options = buildPreservedEditableModelOptions(model.options);
+          const variants = normalizeModelVariants(model.variants);
           return {
             id: trimString(model.id),
             name: trimString(model.name),
             context: normalizePositiveIntegerInputValue(model.context),
             output: normalizePositiveIntegerInputValue(model.output),
-            attachment: model.attachment === true,
+            attachment: model.attachment === true || containsImageModality(model.modalities?.input),
             tool_call: model.tool_call === true || model.toolCall === true,
             reasoning: model.reasoning === true,
             reasoningEffort: normalizeReasoningEffort(model.reasoningEffort || model.options?.reasoningEffort || model.options?.reasoning_effort),
             ...(options ? { options } : {}),
+            ...(variants ? { variants } : {}),
           };
         })
         .filter((model) => model.id.length > 0)

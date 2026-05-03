@@ -56,6 +56,7 @@ import { isDesktopShell } from '@/lib/desktop';
 import { getAgentColor } from '@/lib/agentColors';
 import { useDeviceInfo } from '@/lib/device';
 import { getEditModeColors } from '@/lib/permissions/editModeColors';
+import { getModelVariantKeys } from '@/lib/modelVariants';
 import { cn, fuzzyMatch } from '@/lib/utils';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -847,9 +848,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const getModelVariantOptions = React.useCallback((providerId: string, modelId: string) => {
         const provider = providers.find((entry) => entry.id === providerId);
-        const model = provider?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-        const variants = model?.variants;
-        return variants ? Object.keys(variants) : [];
+        const model = provider?.models.find((entry) => entry.id === modelId);
+        return getModelVariantKeys(model);
     }, [providers]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
@@ -2250,8 +2250,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const showProviderLogo = keyPrefix === 'fav' || keyPrefix === 'recent';
 
         // Check if model supports thinking variants - variants are on the model object, not metadata
-        const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-        const hasThinkingVariants = modelVariants && Object.keys(modelVariants).length > 0;
+        const variantKeys = getModelVariantKeys(model);
+        const hasThinkingVariants = variantKeys.length > 0;
         const mapKey = buildModelRefKey(providerID, modelID);
         const wasAdjusted = adjustedThinkingModels.has(mapKey);
         const pendingVariant = pendingThinkingVariants.get(mapKey);
@@ -2534,8 +2534,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         // Check if currently highlighted model supports thinking variants
         const highlightedItem = flatModelList[modelSelectedIndex];
         const highlightedSupportsThinking = highlightedItem ? (() => {
-            const modelVariants = (highlightedItem.model as { variants?: Record<string, unknown> } | undefined)?.variants;
-            return modelVariants && Object.keys(modelVariants).length > 0;
+            return getModelVariantKeys(highlightedItem.model).length > 0;
         })() : false;
 
         // Handle keyboard navigation
@@ -2568,10 +2567,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 if (!selectedItem) return;
 
                 const { providerID, modelID, model } = selectedItem;
-                const modelVariants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-                if (!modelVariants) return;
-
-                const variantKeys = Object.keys(modelVariants);
+                const variantKeys = getModelVariantKeys(model);
                 if (variantKeys.length === 0) return;
 
                 const mapKey = buildModelRefKey(providerID, modelID);

@@ -13,6 +13,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { checkIsGitRepository, previewGitWorktree } from '@/lib/gitApi';
 import { generateBranchName } from '@/lib/git/branchNameGenerator';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { modelSupportsVariant } from '@/lib/modelVariants';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
 import {
@@ -108,12 +109,9 @@ const applyDefaultAgentAndModelSelection = (sessionId: string, configState = use
     }
 
     const provider = configState.providers.find((p) => p.id === providerId);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelId) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
+    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelId);
 
-    if (variants && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
+    if (modelSupportsVariant(model, settingsDefaultVariant)) {
       configState.setCurrentVariant(settingsDefaultVariant);
       useContextStore
         .getState()

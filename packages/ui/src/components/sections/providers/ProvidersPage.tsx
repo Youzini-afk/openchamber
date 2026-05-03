@@ -109,6 +109,7 @@ interface CustomProviderModelRow {
   reasoning: boolean;
   reasoningEffort: string;
   options?: Record<string, unknown>;
+  variants?: Record<string, Record<string, unknown>>;
 }
 
 interface CustomProviderFormState {
@@ -821,6 +822,11 @@ export const ProvidersPage: React.FC = () => {
               const reasoningEffort = normalizeCustomProviderReasoningEffort(
                 entry.reasoningEffort || entry.reasoning_effort || options?.reasoningEffort || options?.reasoning_effort,
               );
+              const variants = isRecord(entry.variants)
+                ? Object.fromEntries(
+                    Object.entries(entry.variants).map(([key, value]) => [key, isRecord(value) ? { ...value } : {}]),
+                  )
+                : undefined;
               return {
                 id,
                 name: name || id,
@@ -831,6 +837,7 @@ export const ProvidersPage: React.FC = () => {
                 reasoning: entry.reasoning === true,
                 reasoningEffort,
                 ...(options ? { options } : {}),
+                ...(variants ? { variants } : {}),
               };
             })
             .filter((entry): entry is CustomProviderModelRow => Boolean(entry))

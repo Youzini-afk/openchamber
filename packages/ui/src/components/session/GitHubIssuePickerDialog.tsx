@@ -32,6 +32,7 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { modelSupportsVariant } from '@/lib/modelVariants';
 import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary, GitHubRepoSelector } from '@/lib/api/types';
@@ -257,14 +258,8 @@ export function GitHubIssuePickerDialog({
     }
 
     const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
-    if (!variants) {
-      return undefined;
-    }
-    if (!Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
+    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID);
+    if (!modelSupportsVariant(model, settingsDefaultVariant)) {
       return undefined;
     }
     return settingsDefaultVariant;

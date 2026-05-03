@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { defaultCodeDark, defaultCodeLight } from '@/lib/codeTheme';
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { getModelVariantKeys } from '@/lib/modelVariants';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useContextStore } from '@/stores/contextStore';
@@ -382,12 +383,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             return false;
         }
 
-        const model = provider.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === modelID) as
-            | { variants?: Record<string, unknown> }
-            | undefined;
-
-        const variants = model?.variants;
-        return Boolean(variants && Object.keys(variants).length > 0);
+        const model = provider.models.find((m: Record<string, unknown>) => (m as Record<string, unknown>).id === modelID);
+        return getModelVariantKeys(model).length > 0;
     }, [isUser, modelID, providerID, providers]);
 
     const displayAgentName = useStickyDisplayValue<string>(agentName);

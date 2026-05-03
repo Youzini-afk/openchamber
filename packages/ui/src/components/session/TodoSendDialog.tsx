@@ -17,6 +17,7 @@ import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
+import { getModelVariantKeys } from '@/lib/modelVariants';
 import { cn } from '@/lib/utils';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
@@ -160,8 +161,8 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
 
   const variantOptions = React.useMemo(() => {
     const provider = providers.find((item) => item.id === execution.providerID);
-    const model = provider?.models?.find((item) => item.id === execution.modelID) as { variants?: Record<string, unknown> } | undefined;
-    return model?.variants ? Object.keys(model.variants) : [];
+    const model = provider?.models?.find((item) => item.id === execution.modelID);
+    return getModelVariantKeys(model);
   }, [providers, execution.providerID, execution.modelID]);
 
   const hasVariantOptions = variantOptions.length > 0;

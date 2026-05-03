@@ -54,9 +54,22 @@ describe('custom provider form helpers', () => {
         attachment: true,
         tool_call: true,
         reasoning: true,
+        modalities: {
+          input: ['text', 'image'],
+          output: ['text'],
+        },
         options: {
           providerSpecific: 'keep-me',
           reasoningEffort: 'xhigh',
+        },
+        variants: {
+          none: { reasoningEffort: 'none' },
+          minimal: { reasoningEffort: 'minimal' },
+          low: { reasoningEffort: 'low' },
+          medium: { reasoningEffort: 'medium' },
+          high: { reasoningEffort: 'high' },
+          xhigh: { reasoningEffort: 'xhigh' },
+          max: { reasoningEffort: 'max' },
         },
         limit: {
           context: 128000,
@@ -84,6 +97,10 @@ describe('custom provider form helpers', () => {
           tool_call: true,
           reasoning: true,
           reasoningEffort: 'max',
+          variants: {
+            high: { reasoningEffort: 'high', textVerbosity: 'low' },
+            max: { reasoningEffort: 'max' },
+          },
           options: { providerSpecific: 'keep-me' },
         },
         { id: 'nameless-model' },
@@ -105,6 +122,10 @@ describe('custom provider form helpers', () => {
           tool_call: true,
           reasoning: true,
           reasoningEffort: 'max',
+          variants: {
+            high: { reasoningEffort: 'high', textVerbosity: 'low' },
+            max: { reasoningEffort: 'max' },
+          },
           options: { providerSpecific: 'keep-me' },
         },
         {
@@ -135,6 +156,9 @@ describe('custom provider form helpers', () => {
             providerSpecific: 'keep-me',
             reasoningEffort: 'high',
           },
+          variants: {
+            xhigh: { reasoningEffort: 'xhigh' },
+          },
         },
       ],
     });
@@ -151,6 +175,9 @@ describe('custom provider form helpers', () => {
       options: {
         providerSpecific: 'keep-me',
       },
+      variants: {
+        xhigh: { reasoningEffort: 'xhigh' },
+      },
     });
 
     expect(normalizeCustomProviderModelRows([
@@ -164,6 +191,15 @@ describe('custom provider form helpers', () => {
         reasoning: true,
         options: {
           providerSpecific: 'keep-me',
+        },
+        variants: {
+          xhigh: { reasoningEffort: 'xhigh' },
+          none: { reasoningEffort: 'none' },
+          minimal: { reasoningEffort: 'minimal' },
+          low: { reasoningEffort: 'low' },
+          medium: { reasoningEffort: 'medium' },
+          high: { reasoningEffort: 'high' },
+          max: { reasoningEffort: 'max' },
         },
       },
     ]);

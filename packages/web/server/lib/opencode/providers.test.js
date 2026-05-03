@@ -166,6 +166,10 @@ describe('provider config helpers', () => {
     expect(config.provider['vision-provider'].models['vision-model']).toEqual({
       name: 'Vision Model',
       attachment: true,
+      modalities: {
+        input: ['text', 'image'],
+        output: ['text'],
+      },
     });
   });
 
@@ -196,6 +200,15 @@ describe('provider config helpers', () => {
       reasoning: true,
       options: {
         reasoningEffort: 'xhigh',
+      },
+      variants: {
+        none: { reasoningEffort: 'none' },
+        minimal: { reasoningEffort: 'minimal' },
+        low: { reasoningEffort: 'low' },
+        medium: { reasoningEffort: 'medium' },
+        high: { reasoningEffort: 'high' },
+        xhigh: { reasoningEffort: 'xhigh' },
+        max: { reasoningEffort: 'max' },
       },
     });
   });
@@ -281,9 +294,22 @@ describe('provider config helpers', () => {
               attachment: true,
               tool_call: true,
               reasoning: true,
+              modalities: {
+                input: ['text', 'image'],
+                output: ['text'],
+              },
               options: {
                 reasoningEffort: 'max',
                 providerSpecific: 'keep-me',
+              },
+              variants: {
+                high: {
+                  reasoningEffort: 'high',
+                  textVerbosity: 'low',
+                },
+                max: {
+                  reasoningEffort: 'max',
+                },
               },
               limit: {
                 context: 200000,
@@ -315,6 +341,15 @@ describe('provider config helpers', () => {
           tool_call: true,
           reasoning: true,
           reasoningEffort: 'max',
+          variants: {
+            high: {
+              reasoningEffort: 'high',
+              textVerbosity: 'low',
+            },
+            max: {
+              reasoningEffort: 'max',
+            },
+          },
           options: {
             providerSpecific: 'keep-me',
           },

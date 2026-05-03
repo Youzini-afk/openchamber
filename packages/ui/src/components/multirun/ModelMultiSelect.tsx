@@ -7,6 +7,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
+import { getModelVariantKeys } from '@/lib/modelVariants';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import type { ModelMetadata } from '@/types';
@@ -509,10 +510,8 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
               const instanceIndex = getInstanceIndex(model);
 
               const provider = providers.find((p) => p.id === model.providerID);
-              const providerModel = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === model.modelID) as
-                | { variants?: Record<string, unknown> }
-                | undefined;
-              const variantKeys = providerModel?.variants ? Object.keys(providerModel.variants) : [];
+              const providerModel = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === model.modelID);
+              const variantKeys = getModelVariantKeys(providerModel);
               const hasVariants = variantKeys.length > 0;
 
               const DEFAULT_VARIANT_VALUE = '__default__';
