@@ -10,7 +10,7 @@ afterEach(() => {
   process.env.PATH = originalPath;
 });
 
-const createRuntime = (loginShellPath) => createServerUtilsRuntime({
+const createRuntime = (loginShellPath, overrides = {}) => createServerUtilsRuntime({
   fs: {},
   os,
   path,
@@ -29,6 +29,8 @@ const createRuntime = (loginShellPath) => createServerUtilsRuntime({
   setOpenCodeNotReadySince: () => {},
   clearLastOpenCodeError: () => {},
   getLoginShellPath: () => loginShellPath,
+  augmentPathWithBundledRipgrep: () => ({ added: false, binDir: null }),
+  ...overrides,
 });
 
 describe('server utils runtime', () => {
@@ -84,6 +86,19 @@ describe('server utils runtime', () => {
     ].join(path.delimiter));
   });
 
+  it('prepends bundled ripgrep for managed OpenCode processes', () => {
+    const bundledRgPath = path.join(os.tmpdir(), 'openchamber-rg-bin');
+    process.env.PATH = ['/usr/local/bin', '/usr/bin'].join(path.delimiter);
+    const runtime = createRuntime('/usr/bin', {
+      augmentPathWithBundledRipgrep: ({ env }) => {
+        env.PATH = [bundledRgPath, env.PATH].filter(Boolean).join(path.delimiter);
+        return { added: true, binDir: bundledRgPath };
+      },
+    });
+
+    expect(runtime.buildManagedOpenCodePath().split(path.delimiter)[0]).toBe(bundledRgPath);
+  });
+
   it('preserves user-configured process PATH order before appending shell-only entries', () => {
     const home = os.homedir();
     process.env.PATH = [
@@ -126,5 +141,18 @@ describe('server utils runtime', () => {
       '/usr/local/bin',
       '/bin',
     ].join(path.delimiter));
+  });
+
+  it('prepends bundled ripgrep for terminal PATHs', () => {
+    const bundledRgPath = path.join(os.tmpdir(), 'openchamber-rg-bin');
+    process.env.PATH = ['/usr/local/bin', '/usr/bin'].join(path.delimiter);
+    const runtime = createRuntime('/usr/bin', {
+      augmentPathWithBundledRipgrep: ({ env }) => {
+        env.PATH = [bundledRgPath, env.PATH].filter(Boolean).join(path.delimiter);
+        return { added: true, binDir: bundledRgPath };
+      },
+    });
+
+    expect(runtime.buildAugmentedPath().split(path.delimiter)[0]).toBe(bundledRgPath);
   });
 });

@@ -1,5 +1,6 @@
 import { registerOpenCodeProxy } from './proxy.js';
 import { pathLooksUserConfigured, mergePathValues } from './path-utils.js';
+import { augmentPathWithBundledRipgrep as defaultAugmentPathWithBundledRipgrep } from './bundled-tools.js';
 
 export const createServerUtilsRuntime = (dependencies) => {
   const {
@@ -21,6 +22,7 @@ export const createServerUtilsRuntime = (dependencies) => {
     setOpenCodeNotReadySince,
     clearLastOpenCodeError,
     getLoginShellPath,
+    augmentPathWithBundledRipgrep = defaultAugmentPathWithBundledRipgrep,
   } = dependencies;
 
   const setOpenCodePort = (port) => {
@@ -70,14 +72,18 @@ export const createServerUtilsRuntime = (dependencies) => {
     const primaryPath = currentPathLooksUserConfigured ? currentPath : loginShellPath;
     const fallbackPath = currentPathLooksUserConfigured ? loginShellPath : currentPath;
 
-    return mergePathValues(primaryPath, fallbackPath, path.delimiter);
+    const env = { PATH: mergePathValues(primaryPath, fallbackPath, path.delimiter) };
+    augmentPathWithBundledRipgrep({ env });
+    return env.PATH || '';
   };
 
   const buildManagedOpenCodePath = () => {
     const currentPath = process.env.PATH || '';
     const loginShellPath = getLoginShellPath();
 
-    return mergePathValues(loginShellPath || '', currentPath, path.delimiter);
+    const env = { PATH: mergePathValues(loginShellPath || '', currentPath, path.delimiter) };
+    augmentPathWithBundledRipgrep({ env });
+    return env.PATH || '';
   };
 
   const parseSseDataPayload = (block) => {

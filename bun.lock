@@ -95,7 +95,7 @@
     },
     "packages/desktop": {
       "name": "@openchamber/desktop",
-      "version": "1.9.8",
+      "version": "1.9.10",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -104,7 +104,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.9.8",
+      "version": "1.9.10",
       "dependencies": {
         "@openchamber/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -119,7 +119,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.9.8",
+      "version": "1.9.10",
       "dependencies": {
         "@base-ui/react": "^1.4.0",
         "@codemirror/autocomplete": "^6.20.0",
@@ -218,7 +218,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "1.9.8",
+      "version": "1.9.10",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode-ai/sdk": "^1.4.25",
@@ -241,7 +241,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.9.8",
+      "version": "1.9.10",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
@@ -264,6 +264,7 @@
         "openai": "^4.79.0",
         "qrcode-terminal": "^0.12.0",
         "reflect-metadata": "^0.2.2",
+        "ripgrep": "^0.3.1",
         "simple-git": "^3.28.0",
         "web-push": "^3.6.7",
         "ws": "^8.18.3",
@@ -2756,6 +2757,8 @@
     "reusify": ["reusify@1.1.0", "", {}, "sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw=="],
 
     "rimraf": ["rimraf@3.0.2", "", { "dependencies": { "glob": "^7.1.3" }, "bin": { "rimraf": "bin.js" } }, "sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA=="],
+
+    "ripgrep": ["ripgrep@0.3.1", "", { "bin": { "rg": "lib/rg.mjs", "ripgrep": "lib/rg.mjs" } }, "sha512-6bDtNIBh1qPviVIU685/4uv0Ap5t8eS4wiJhy/tR2LdIeIey9CVasENlGS+ul3HnTmGANIp7AjnfsztsRmALfQ=="],
 
     "roarr": ["roarr@2.15.4", "", { "dependencies": { "boolean": "^3.0.1", "detect-node": "^2.0.4", "globalthis": "^1.0.1", "json-stringify-safe": "^5.0.1", "semver-compare": "^1.0.0", "sprintf-js": "^1.1.2" } }, "sha512-CHhPh+UNHD2GTXNYhPWLnU8ONHdI+5DI+4EYIAOaiD63rHeYlZvyh8P+in5999TTSFgUYuKUAjzRI4mdh/p+2A=="],
 
