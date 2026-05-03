@@ -13,6 +13,7 @@ import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
+import { partitionMessagesByRevert } from "./revert-filter"
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
 let _sdk: OpencodeClient | null = null
@@ -589,11 +590,12 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const sessions = [...state.session]
   const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
 
-  // Remove messages at and after the revert point from the store
+  // Remove the target message and its later descendants from the store.
+  // Message ids are not a reliable chronological boundary, so use the same
+  // revert-aware filtering as the render path.
   const prevMessages = state.message[sessionId] ?? []
   const prevPart = { ...state.part }
-  const keptMessages = prevMessages.filter((m) => m.id < messageId)
-  const removedMessages = prevMessages.filter((m) => m.id >= messageId)
+  const { kept: keptMessages, removed: removedMessages } = partitionMessagesByRevert(prevMessages, messageId)
   for (const m of removedMessages) {
     delete prevPart[m.id]
   }

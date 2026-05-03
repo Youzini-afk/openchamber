@@ -23,6 +23,7 @@ import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
 import { setSyncRefs } from "./sync-refs"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
+import { getMessagesBeforeRevert } from "./revert-filter"
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
@@ -1520,14 +1521,14 @@ export function useSessionMessages(sessionID: string, directory?: string) {
 
 /**
  * Get visible session messages — filters out reverted messages.
- * Filters out reverted messages (id >= session.revert.messageID).
+ * Filters out the reverted message and later descendants.
  */
 export function useVisibleSessionMessages(sessionID: string, directory?: string) {
   const messages = useSessionMessages(sessionID, directory)
   const revertMessageID = useSessionRevertMessageID(sessionID, directory)
   return useMemo(() => {
     if (!revertMessageID) return messages
-    return messages.filter((m) => m.id < revertMessageID)
+    return getMessagesBeforeRevert(messages, revertMessageID)
   }, [messages, revertMessageID])
 }
 
@@ -1795,7 +1796,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 
   return {
     sourceMessages,
-    visibleMessages: revertMessageID ? sourceMessages.filter((message) => message.id < revertMessageID) : sourceMessages,
+    visibleMessages: revertMessageID ? getMessagesBeforeRevert(sourceMessages, revertMessageID) : sourceMessages,
     revertMessageID,
   }
 }
