@@ -17,6 +17,7 @@ import {
 import { TerminalViewport, type TerminalController } from '@/components/terminal/TerminalViewport';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
+import { useI18n } from '@/lib/i18n';
 import { CODE_FONT_OPTION_MAP, DEFAULT_MONO_FONT } from '@/lib/fontOptions';
 import { convertThemeToXterm } from '@/lib/terminalTheme';
 import { cn } from '@/lib/utils';
@@ -36,6 +37,7 @@ const STREAM_OPTIONS = {
 };
 
 export const WorkspaceTerminalDialog: React.FC = () => {
+  const { t } = useI18n();
   const { terminal } = useRuntimeAPIs();
   const { currentTheme } = useThemeSystem();
   const { monoFont } = useFontPreferences();
@@ -120,7 +122,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        setConnectionError(message || 'Failed to create terminal');
+        setConnectionError(message || t('workspace.terminal.error.createFailed'));
         setConnecting(directoryKey, activeTabId, false);
         setTabLifecycle(directoryKey, activeTabId, 'exited');
       }
@@ -138,6 +140,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     setConnecting,
     setTabLifecycle,
     setTabSessionId,
+    t,
     terminal,
   ]);
 
@@ -171,7 +174,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
               setTabLifecycle(directoryKey, tabId, 'exited');
               setTabSessionId(directoryKey, tabId, null);
               setConnecting(directoryKey, tabId, false);
-              appendToBuffer(directoryKey, tabId, '\r\n[process exited]\r\n');
+              appendToBuffer(directoryKey, tabId, `\r\n[${t('workspace.terminal.status.processExited')}]\r\n`);
               break;
             case 'reconnecting':
               setConnectionError(null);
@@ -182,7 +185,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
           if (!fatal) {
             return;
           }
-          setConnectionError(error.message || 'Terminal connection failed');
+          setConnectionError(error.message || t('workspace.terminal.error.connectionFailed'));
           setConnecting(directoryKey, tabId, false);
         },
       },
@@ -201,6 +204,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     setConnecting,
     setTabLifecycle,
     setTabSessionId,
+    t,
     terminal,
     terminalSessionId,
   ]);
@@ -233,9 +237,9 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     }
     void terminal.sendInput(terminalSessionId, input).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      setConnectionError(message || 'Failed to send input');
+      setConnectionError(message || t('workspace.terminal.error.sendFailed'));
     });
-  }, [terminal, terminalSessionId]);
+  }, [t, terminal, terminalSessionId]);
 
   const handleResize = React.useCallback((cols: number, rows: number) => {
     lastSizeRef.current = { cols, rows };
@@ -285,7 +289,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
           <div className="flex shrink-0 items-center gap-1">
             {lifecycle === 'exited' ? (
               <Button type="button" size="xs" variant="outline" onClick={handleRestart}>
-                restart
+                {t('workspace.terminal.actions.restart')}
               </Button>
             ) : null}
             <Button
@@ -295,7 +299,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
               className="h-7 w-7 p-0"
               onClick={handleStop}
               disabled={!terminalSessionId}
-              title="Stop"
+              title={t('workspace.terminal.actions.stop')}
             >
               <RiStopCircleLine className="h-4 w-4" />
             </Button>
@@ -305,7 +309,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
               variant="ghost"
               className="h-7 w-7 p-0"
               onClick={() => setIsMaximized((value) => !value)}
-              title={isMaximized ? 'Restore' : 'Maximize'}
+              title={isMaximized ? t('workspace.terminal.actions.restore') : t('workspace.terminal.actions.maximize')}
             >
               {isMaximized ? <RiFullscreenExitLine className="h-4 w-4" /> : <RiFullscreenLine className="h-4 w-4" />}
             </Button>
@@ -315,7 +319,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
               variant="ghost"
               className="h-7 w-7 p-0"
               onClick={closeTerminalDialog}
-              title="Hide"
+              title={t('workspace.terminal.actions.hide')}
             >
               <RiCloseLine className="h-4 w-4" />
             </Button>
@@ -345,7 +349,7 @@ export const WorkspaceTerminalDialog: React.FC = () => {
                 ? 'bg-[var(--status-error-background)] text-[var(--status-error-foreground)]'
                 : 'bg-[var(--surface-elevated)] text-muted-foreground',
             )}>
-              {connectionError || 'connecting...'}
+              {connectionError || t('workspace.terminal.status.connecting')}
             </div>
           ) : null}
         </div>
@@ -353,4 +357,3 @@ export const WorkspaceTerminalDialog: React.FC = () => {
     </Dialog>
   );
 };
-

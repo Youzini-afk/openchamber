@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { WorkspaceEntry } from '@/lib/api/types';
+import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -65,6 +66,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   mobileVariant = false,
   setSessionSwitcherOpen,
 }) => {
+  const { t } = useI18n();
   const root = useWorkspaceStore((state) => state.root);
   const entriesByPath = useWorkspaceStore((state) => state.entriesByPath);
   const expandedPaths = useWorkspaceStore((state) => state.expandedPaths);
@@ -89,6 +91,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const didInitialLoadRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = React.useRef('');
+  const [contextMenuPath, setContextMenuPath] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (didInitialLoadRef.current) {
@@ -102,34 +105,34 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const isBusy = Boolean(loadingRoot || loadingPaths[''] || actionPending);
 
   const handleCreateFolder = React.useCallback(async (parent = '') => {
-    const name = window.prompt('New folder name');
+    const name = window.prompt(t('workspace.sidebar.prompt.newFolderName'));
     if (!name?.trim()) return;
     const entry = await createFolder(childPath(parent, name));
-    if (entry) toast.success('Folder created');
-  }, [createFolder]);
+    if (entry) toast.success(t('workspace.sidebar.toast.folderCreated'));
+  }, [createFolder, t]);
 
   const handleCreateFile = React.useCallback(async (parent = '') => {
-    const name = window.prompt('New file name');
+    const name = window.prompt(t('workspace.sidebar.prompt.newFileName'));
     if (!name?.trim()) return;
     const entry = await createFile(childPath(parent, name), '');
-    if (entry) toast.success('File created');
-  }, [createFile]);
+    if (entry) toast.success(t('workspace.sidebar.toast.fileCreated'));
+  }, [createFile, t]);
 
   const handleRename = React.useCallback(async (entry: WorkspaceEntry) => {
-    const nextName = window.prompt('Rename to', entry.name);
+    const nextName = window.prompt(t('workspace.sidebar.prompt.renameTo'), entry.name);
     if (!nextName?.trim() || nextName.trim() === entry.name) return;
     const parent = entry.relativePath.includes('/')
       ? entry.relativePath.slice(0, entry.relativePath.lastIndexOf('/'))
       : '';
     const moved = await moveEntry(entry.relativePath, childPath(parent, nextName));
-    if (moved) toast.success('Renamed');
-  }, [moveEntry]);
+    if (moved) toast.success(t('workspace.sidebar.toast.renamed'));
+  }, [moveEntry, t]);
 
   const handleDelete = React.useCallback(async (entry: WorkspaceEntry) => {
-    if (!window.confirm(`Move "${entry.name}" to trash?`)) return;
+    if (!window.confirm(t('workspace.sidebar.confirm.moveToTrash', { name: entry.name }))) return;
     const ok = await deleteEntry(entry.relativePath);
-    if (ok) toast.success('Moved to trash');
-  }, [deleteEntry]);
+    if (ok) toast.success(t('workspace.sidebar.toast.movedToTrash'));
+  }, [deleteEntry, t]);
 
   const handleOpenChat = React.useCallback(async (entry: WorkspaceEntry) => {
     if (entry.type !== 'directory') return;
@@ -164,25 +167,39 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       })));
       const uploaded = await uploadFiles(uploadTargetRef.current, payload);
       if (uploaded.length > 0) {
-        toast.success(`${uploaded.length} uploaded`);
+        toast.success(t('workspace.sidebar.toast.uploaded', { count: uploaded.length }));
       }
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : String(uploadError);
-      toast.error(message || 'Upload failed');
+      toast.error(message || t('workspace.sidebar.toast.uploadFailed'));
     }
-  }, [uploadFiles]);
+  }, [t, uploadFiles]);
+
+  const handleCopyPath = React.useCallback(async (entry: WorkspaceEntry) => {
+    try {
+      await navigator.clipboard?.writeText(entry.path || entry.relativePath);
+      toast.success(t('workspace.sidebar.toast.pathCopied'));
+    } catch {
+      toast.error(t('workspace.sidebar.toast.copyFailed'));
+    }
+  }, [t]);
 
   const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number): React.ReactNode => {
     const isDirectory = entry.type === 'directory';
     const isExpanded = Boolean(expandedPaths[entry.relativePath]);
     const children = entriesByPath[entry.relativePath] ?? [];
     const gitLabel = getEntryGitLabel(entry);
+    const menuOpen = contextMenuPath === entry.relativePath;
 
     return (
       <React.Fragment key={entry.relativePath}>
         <div
           className="group/workspace-row flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-interactive-hover"
           style={entryDepthPadding(depth)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setContextMenuPath(entry.relativePath);
+          }}
         >
           <button
             type="button"
@@ -226,7 +243,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       <RiChatNewLine className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Open Chat</TooltipContent>
+                  <TooltipContent side="bottom">{t('workspace.sidebar.menu.openChat')}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -238,16 +255,17 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       <RiTerminalLine className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Terminal</TooltipContent>
+                  <TooltipContent side="bottom">{t('workspace.sidebar.menu.terminal')}</TooltipContent>
                 </Tooltip>
               </>
             ) : null}
-            <DropdownMenu>
+            <DropdownMenu open={menuOpen} onOpenChange={(open) => setContextMenuPath(open ? entry.relativePath : null)}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-                  aria-label="Workspace menu"
+                  aria-label={t('workspace.sidebar.menu.aria')}
+                  onClick={() => setContextMenuPath(entry.relativePath)}
                 >
                   <RiMore2Line className="h-3.5 w-3.5" />
                 </button>
@@ -257,51 +275,51 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                   <>
                     <DropdownMenuItem onClick={() => void handleOpenChat(entry)}>
                       <RiChatNewLine className="mr-1.5 h-4 w-4" />
-                      Open Chat
+                      {t('workspace.sidebar.menu.openChat')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => void handleOpenFiles(entry)}>
                       <RiFolderLine className="mr-1.5 h-4 w-4" />
-                      Open Files
+                      {t('workspace.sidebar.menu.openFiles')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openGitPanel(entry.relativePath)}>
                       <RiGitBranchLine className="mr-1.5 h-4 w-4" />
-                      Git
+                      {t('workspace.sidebar.menu.git')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openTerminal(entry.relativePath)}>
                       <RiTerminalLine className="mr-1.5 h-4 w-4" />
-                      Terminal
+                      {t('workspace.sidebar.menu.terminal')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => void handleCreateFolder(entry.relativePath)}>
                       <RiFolderAddLine className="mr-1.5 h-4 w-4" />
-                      New Folder
+                      {t('workspace.sidebar.menu.newFolder')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => void handleCreateFile(entry.relativePath)}>
                       <RiFileAddLine className="mr-1.5 h-4 w-4" />
-                      New File
+                      {t('workspace.sidebar.menu.newFile')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleUploadClick(entry.relativePath)}>
                       <RiUpload2Line className="mr-1.5 h-4 w-4" />
-                      Upload
+                      {t('workspace.sidebar.menu.upload')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => void refreshGitStatus(entry.relativePath)}>
                       <RiRefreshLine className="mr-1.5 h-4 w-4" />
-                      Refresh Git Status
+                      {t('workspace.sidebar.menu.refreshGitStatus')}
                     </DropdownMenuItem>
                   </>
                 ) : null}
-                <DropdownMenuItem onClick={() => void navigator.clipboard?.writeText(entry.path || entry.relativePath)}>
-                  Copy Path
+                <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
+                  {t('workspace.sidebar.menu.copyPath')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => void handleRename(entry)}>
-                  Rename
+                  {t('workspace.sidebar.menu.rename')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
                   onClick={() => void handleDelete(entry)}
                 >
-                  Move to Trash
+                  {t('workspace.sidebar.menu.moveToTrash')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -311,7 +329,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
           <div className="space-y-0.5">
             {(loadingPaths[entry.relativePath] && children.length === 0) ? (
               <div className="px-2 py-1 typography-micro text-muted-foreground" style={entryDepthPadding(depth + 1)}>
-                loading...
+                {t('workspace.sidebar.state.loading')}
               </div>
             ) : null}
             {children.map((child) => renderEntry(child, depth + 1))}
@@ -325,6 +343,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleCreateFile,
     handleCreateFolder,
     handleDelete,
+    handleCopyPath,
     handleOpenChat,
     handleOpenFiles,
     handleRename,
@@ -332,9 +351,11 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     loadDirectory,
     loadingPaths,
     mobileVariant,
+    contextMenuPath,
     openGitPanel,
     openTerminal,
     refreshGitStatus,
+    t,
     toggleExpandedPath,
   ]);
 
@@ -343,7 +364,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       <div className="flex items-center gap-1 px-0.5">
         <div className="min-w-0 flex-1">
           <div className="truncate typography-ui-label font-medium lowercase text-foreground">
-            Workspace
+            {t('workspace.sidebar.title')}
           </div>
           <div className="truncate typography-micro text-muted-foreground">
             {root?.root || '/workspace'}
@@ -361,7 +382,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               <RiTerminalLine className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Terminal</TooltipContent>
+          <TooltipContent side="bottom">{t('workspace.sidebar.actions.terminal')}</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -375,7 +396,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               <RiFolderAddLine className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">New Folder</TooltipContent>
+          <TooltipContent side="bottom">{t('workspace.sidebar.actions.newFolder')}</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -389,7 +410,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               <RiUpload2Line className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Upload</TooltipContent>
+          <TooltipContent side="bottom">{t('workspace.sidebar.actions.upload')}</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -404,7 +425,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               <RiRefreshLine className={cn('h-4 w-4', isBusy && 'animate-spin')} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Refresh</TooltipContent>
+          <TooltipContent side="bottom">{t('workspace.sidebar.actions.refresh')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -425,7 +446,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       <div className="space-y-0.5">
         {rootEntries.length === 0 ? (
           <div className="px-1 py-1 typography-micro text-muted-foreground">
-            {isBusy ? 'loading...' : 'empty'}
+            {isBusy ? t('workspace.sidebar.state.loading') : t('workspace.sidebar.state.empty')}
           </div>
         ) : (
           rootEntries.map((entry) => renderEntry(entry, 0))
