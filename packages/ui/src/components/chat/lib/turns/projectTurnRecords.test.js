@@ -43,6 +43,19 @@ describe('projectTurnRecords', () => {
     expect(projection.turns[1].assistantMessageIds).toEqual([newAssistant.info.id]);
     expect(projection.ungroupedMessageIds.size).toBe(0);
   });
+
+  it('groups an assistant message with its parent user even when the assistant is ordered first', () => {
+    const user = message('msg-010-user', 'user');
+    const earlyAssistant = message('msg-009-assistant', 'assistant', user.info.id);
+
+    const projection = projectTurnRecords([earlyAssistant, user]);
+
+    expect(projection.turns).toHaveLength(1);
+    expect(projection.turns[0].userMessageId).toBe(user.info.id);
+    expect(projection.turns[0].assistantMessageIds).toEqual([earlyAssistant.info.id]);
+    expect(projection.ungroupedMessageIds.size).toBe(0);
+    expect(projection.indexes.messageToTurnId.get(earlyAssistant.info.id)).toBe(user.info.id);
+  });
 });
 
 describe('turn window model', () => {
@@ -73,5 +86,16 @@ describe('turn window model', () => {
     if (nextModel) {
       expect(nextModel.messageToTurnId.has(orphanAssistant.info.id)).toBe(false);
     }
+  });
+
+  it('maps assistant messages to their parent turn even when the assistant is ordered first', () => {
+    const user = message('msg-010-user', 'user');
+    const earlyAssistant = message('msg-009-assistant', 'assistant', user.info.id);
+
+    const model = buildTurnWindowModel([earlyAssistant, user]);
+
+    expect(model.turnIds).toEqual([user.info.id]);
+    expect(model.messageToTurnId.get(earlyAssistant.info.id)).toBe(user.info.id);
+    expect(model.messageToTurnIndex.get(earlyAssistant.info.id)).toBe(0);
   });
 });

@@ -40,6 +40,10 @@ const cloneTurnWindowModel = (model: TurnWindowModel): TurnWindowModel => ({
     turnCount: model.turnCount,
 });
 
+const hasAssistantForParent = (messages: ChatMessageEntry[], parentId: string): boolean => {
+    return messages.some((message) => resolveMessageRole(message) === 'assistant' && resolveParentMessageId(message) === parentId);
+};
+
 export const updateTurnWindowModelIncremental = (
     previousModel: TurnWindowModel | null,
     previousMessages: ChatMessageEntry[] | null,
@@ -94,6 +98,10 @@ export const updateTurnWindowModelIncremental = (
     const nextModel = cloneTurnWindowModel(previousModel);
 
     if (role === 'user') {
+        if (hasAssistantForParent(previousMessages, messageId)) {
+            return null;
+        }
+
         const nextTurnIndex = nextModel.turnIds.length;
         nextModel.turnIds.push(messageId);
         nextModel.turnMessageStartIndexes.push(nextMessages.length - 1);
@@ -143,8 +151,23 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
     const messageToTurnId = new Map<string, string>();
     const messageToTurnIndex = new Map<string, number>();
     const userMessageToTurnIndex = new Map<string, number>();
+    const pendingAssistantByParentId = new Map<string, Array<{ messageId: string; index: number }>>();
 
     let currentTurnIndex = -1;
+
+    const mapAssistantToTurn = (messageId: string, targetTurnIndex: number, messageIndex: number) => {
+        const turnId = turnIds[targetTurnIndex];
+        if (!turnId) {
+            return;
+        }
+
+        messageToTurnId.set(messageId, turnId);
+        messageToTurnIndex.set(messageId, targetTurnIndex);
+        const previousStart = turnMessageStartIndexes[targetTurnIndex];
+        turnMessageStartIndexes[targetTurnIndex] = typeof previousStart === 'number'
+            ? Math.min(previousStart, messageIndex)
+            : messageIndex;
+    };
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
@@ -158,6 +181,14 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
             userMessageToTurnIndex.set(messageId, currentTurnIndex);
             messageToTurnId.set(messageId, messageId);
             messageToTurnIndex.set(messageId, currentTurnIndex);
+
+            const pendingAssistants = pendingAssistantByParentId.get(messageId);
+            if (pendingAssistants) {
+                pendingAssistants.forEach((pending) => {
+                    mapAssistantToTurn(pending.messageId, currentTurnIndex, pending.index);
+                });
+                pendingAssistantByParentId.delete(messageId);
+            }
             return;
         }
 
@@ -174,6 +205,13 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
 
         const parentId = resolveParentMessageId(message);
         const parentTurnIndex = parentId ? userMessageToTurnIndex.get(parentId) : undefined;
+        if (parentId && typeof parentTurnIndex !== 'number') {
+            const pendingAssistants = pendingAssistantByParentId.get(parentId) ?? [];
+            pendingAssistants.push({ messageId, index });
+            pendingAssistantByParentId.set(parentId, pendingAssistants);
+            return;
+        }
+
         const targetTurnIndex = parentId
             ? parentTurnIndex
             : currentTurnIndex;
@@ -181,13 +219,7 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
             return;
         }
 
-        const turnId = turnIds[targetTurnIndex];
-        if (!turnId) {
-            return;
-        }
-
-        messageToTurnId.set(messageId, turnId);
-        messageToTurnIndex.set(messageId, targetTurnIndex);
+        mapAssistantToTurn(messageId, targetTurnIndex, index);
     });
 
     return {

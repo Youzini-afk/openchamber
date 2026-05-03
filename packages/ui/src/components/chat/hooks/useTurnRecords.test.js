@@ -41,4 +41,17 @@ describe('splitTurnProjectionForStreaming', () => {
     expect(result.streamingTurn?.turnId).toBe(newUser.info.id);
     expect(result.trailingUngroupedMessageId).toBeUndefined();
   });
+
+  it('keeps an assistant-before-user parented turn as the streaming turn without an ungrouped duplicate', () => {
+    const user = message('msg-010-user', 'user');
+    const earlyAssistant = message('msg-009-assistant', 'assistant', user.info.id);
+    const projection = projectTurnRecords([earlyAssistant, user]);
+
+    const result = splitTurnProjectionForStreaming(projection, [earlyAssistant, user]);
+
+    expect(result.staticTurns).toEqual([]);
+    expect(result.streamingTurn?.turnId).toBe(user.info.id);
+    expect(result.streamingTurn?.assistantMessageIds).toEqual([earlyAssistant.info.id]);
+    expect(result.trailingUngroupedMessageId).toBeUndefined();
+  });
 });

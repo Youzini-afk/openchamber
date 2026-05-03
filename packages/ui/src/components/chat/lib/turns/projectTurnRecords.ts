@@ -102,7 +102,18 @@ export const projectTurnRecords = (
     const turns: TurnRecord[] = [];
     const turnByUserId = new Map<string, TurnRecord>();
     const groupedMessageIds = new Set<string>();
+    const pendingAssistantByParentId = new Map<string, Array<{ message: ChatMessageEntry; index: number }>>();
     let currentTurn: TurnRecord | undefined;
+
+    const appendAssistantToTurn = (turn: TurnRecord, message: ChatMessageEntry, index: number) => {
+        turn.assistantMessages.push(message);
+        turn.assistantMessageIds.push(message.info.id);
+        turn.messages.push(createTurnMessageRecord(message, index));
+        if (!turn.headerMessageId) {
+            turn.headerMessageId = message.info.id;
+        }
+        groupedMessageIds.add(message.info.id);
+    };
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
@@ -132,6 +143,14 @@ export const projectTurnRecords = (
             turnByUserId.set(turn.userMessageId, turn);
             groupedMessageIds.add(message.info.id);
             currentTurn = turn;
+
+            const pendingAssistants = pendingAssistantByParentId.get(turn.userMessageId);
+            if (pendingAssistants) {
+                pendingAssistants.forEach((pending) => {
+                    appendAssistantToTurn(turn, pending.message, pending.index);
+                });
+                pendingAssistantByParentId.delete(turn.userMessageId);
+            }
             return;
         }
 
@@ -141,18 +160,19 @@ export const projectTurnRecords = (
 
         const parentId = getMessageParentId(message);
         const parentTurn = parentId ? turnByUserId.get(parentId) : undefined;
-        const targetTurn = parentId ? parentTurn : currentTurn;
+        if (parentId && !parentTurn) {
+            const pendingAssistants = pendingAssistantByParentId.get(parentId) ?? [];
+            pendingAssistants.push({ message, index });
+            pendingAssistantByParentId.set(parentId, pendingAssistants);
+            return;
+        }
+
+        const targetTurn = parentTurn ?? currentTurn;
         if (!targetTurn) {
             return;
         }
 
-        targetTurn.assistantMessages.push(message);
-        targetTurn.assistantMessageIds.push(message.info.id);
-        targetTurn.messages.push(createTurnMessageRecord(message, index));
-        if (!targetTurn.headerMessageId) {
-            targetTurn.headerMessageId = message.info.id;
-        }
-        groupedMessageIds.add(message.info.id);
+        appendAssistantToTurn(targetTurn, message, index);
 
         if (!parentTurn) {
             currentTurn = targetTurn;
