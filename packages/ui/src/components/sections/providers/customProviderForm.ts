@@ -91,6 +91,10 @@ const normalizePositiveIntegerInputValue = (value: unknown): string => {
   return normalized ? String(normalized) : '';
 };
 
+const buildModelLimit = (context?: number, output?: number): CustomProviderModelPayload['limit'] => (
+  context && output ? { context, output } : undefined
+);
+
 const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '' });
 
 export const resolveCustomProviderApiKey = (
@@ -121,10 +125,7 @@ export const normalizeCustomProviderModelRows = (
     const name = trimString(row.name);
     const context = normalizePositiveInteger(row.context);
     const output = normalizePositiveInteger(row.output);
-    const limit = context || output ? {
-      ...(context ? { context } : {}),
-      ...(output ? { output } : {}),
-    } : undefined;
+    const limit = buildModelLimit(context, output);
 
     models.push({
       id,

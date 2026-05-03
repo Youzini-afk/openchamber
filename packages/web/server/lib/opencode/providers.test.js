@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -13,19 +13,28 @@ const originalOpenCodeConfig = process.env.OPENCODE_CONFIG;
 let tempHome;
 
 async function loadProvidersModule() {
-  vi.resetModules();
-  return import('./providers.js');
+  return import(`./providers.js?test=${Date.now()}-${Math.random()}`);
 }
 
 describe('provider config helpers', () => {
-  beforeEach(() => {
+  beforeAll(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-provider-test-'));
     process.env.HOME = tempHome;
     process.env.USERPROFILE = tempHome;
     delete process.env.OPENCODE_CONFIG;
   });
 
-  afterEach(() => {
+  beforeEach(() => {
+    if (!tempHome) {
+      return;
+    }
+
+    for (const entry of fs.readdirSync(tempHome)) {
+      fs.rmSync(path.join(tempHome, entry), { recursive: true, force: true });
+    }
+  });
+
+  afterAll(() => {
     process.env.HOME = originalHome;
     process.env.USERPROFILE = originalUserProfile;
     if (originalOpenCodeConfig === undefined) {
@@ -33,9 +42,10 @@ describe('provider config helpers', () => {
     } else {
       process.env.OPENCODE_CONFIG = originalOpenCodeConfig;
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    if (tempHome) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     tempHome = undefined;
-    vi.resetModules();
   });
 
   it('writes an OpenAI-compatible custom provider to the user config', async () => {
@@ -134,7 +144,7 @@ describe('provider config helpers', () => {
     });
   });
 
-  it('omits the output token limit when it is not configured', async () => {
+  it('omits the model limit when the output token limit is not configured', async () => {
     const { upsertProviderConfig } = await loadProvidersModule();
 
     upsertProviderConfig({
@@ -156,10 +166,39 @@ describe('provider config helpers', () => {
 
     expect(config.provider['optional-output-provider'].models['context-only-model']).toEqual({
       name: 'Context Only Model',
-      limit: {
-        context: 128000,
-      },
     });
+  });
+
+  it('omits fetched model limits unless both context and output are available', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [
+          { id: 'context-only', context_window: 128000 },
+          { id: 'complete-limit', context_window: 128000, max_output_tokens: 8192 },
+        ],
+      }),
+    }));
+    const { fetchProviderModels } = await loadProvidersModule();
+
+    const result = await fetchProviderModels({
+      type: 'openai-compatible',
+      baseURL: 'https://api.example.com/v1',
+      apiKey: 'sk-test',
+    }, fetchMock);
+
+    expect(result.models).toEqual([
+      { id: 'context-only', name: 'context-only' },
+      {
+        id: 'complete-limit',
+        name: 'complete-limit',
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+      },
+    ]);
   });
 
   it('reads an existing custom provider config for editing', async () => {

@@ -55,6 +55,10 @@ function normalizePositiveInteger(value) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
 }
 
+function buildModelLimit(context, output) {
+  return context && output ? { context, output } : undefined;
+}
+
 function normalizeProviderId(value) {
   const id = normalizeNonEmptyString(value);
   if (!id) {
@@ -101,10 +105,7 @@ function normalizeModels(models) {
     const output = isPlainObject(entry)
       ? normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit)
       : undefined;
-    const limit = context || output ? {
-      ...(context ? { context } : {}),
-      ...(output ? { output } : {}),
-    } : undefined;
+    const limit = buildModelLimit(context, output);
 
     normalized[modelId] = {
       ...(modelName ? { name: modelName } : {}),
@@ -364,10 +365,7 @@ function normalizeFetchedModel(providerType, entry) {
     entry.maxOutputTokens ??
     entry.max_output_tokens,
   );
-  const limit = context || output ? {
-    ...(context ? { context } : {}),
-    ...(output ? { output } : {}),
-  } : undefined;
+  const limit = buildModelLimit(context, output);
 
   return {
     id: rawId,
