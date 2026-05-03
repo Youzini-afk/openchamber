@@ -59,7 +59,7 @@ RUN userdel bun \
 USER openchamber
 
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
-ENV PATH=${NPM_CONFIG_PREFIX}/bin:${PATH}
+ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${PATH}
 
 RUN npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
   mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh && \
