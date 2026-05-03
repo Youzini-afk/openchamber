@@ -241,6 +241,8 @@ environment:
 
 Managed-local path note: `OPENCHAMBER_TUNNEL_CONFIG` must point to a path inside the container user home (`/home/openchamber/...`). If your Cloudflare config references a credentials JSON file, that file path must also be accessible inside the container (mount with `volumes`).
 
+**Built-in cloud tools:** The Docker image includes common agent/terminal tools such as `git`, `ssh`, `gh`, `rg`, `curl`, `jq`, `python3`, `zip`, and `unzip`. In Settings -> GitHub, use **Sync to Terminal** after connecting GitHub so terminal `git` and `gh` commands can reuse the container-local account.
+
 ### Reverse proxy notes
 
 - For a complete reverse proxy setup guide, see [`docs/REVERSE_PROXY.md`](./docs/REVERSE_PROXY.md).
