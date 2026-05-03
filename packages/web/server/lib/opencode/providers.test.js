@@ -144,7 +144,7 @@ describe('provider config helpers', () => {
     });
   });
 
-  it('omits the model limit when the output token limit is not configured', async () => {
+  it('preserves the context token limit when the output token limit is not configured', async () => {
     const { upsertProviderConfig } = await loadProvidersModule();
 
     upsertProviderConfig({
@@ -166,10 +166,13 @@ describe('provider config helpers', () => {
 
     expect(config.provider['optional-output-provider'].models['context-only-model']).toEqual({
       name: 'Context Only Model',
+      limit: {
+        context: 128000,
+      },
     });
   });
 
-  it('omits fetched model limits unless both context and output are available', async () => {
+  it('preserves fetched model limits when only one side is available', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -189,7 +192,13 @@ describe('provider config helpers', () => {
     }, fetchMock);
 
     expect(result.models).toEqual([
-      { id: 'context-only', name: 'context-only' },
+      {
+        id: 'context-only',
+        name: 'context-only',
+        limit: {
+          context: 128000,
+        },
+      },
       {
         id: 'complete-limit',
         name: 'complete-limit',

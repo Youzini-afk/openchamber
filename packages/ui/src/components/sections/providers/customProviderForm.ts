@@ -91,9 +91,16 @@ const normalizePositiveIntegerInputValue = (value: unknown): string => {
   return normalized ? String(normalized) : '';
 };
 
-const buildModelLimit = (context?: number, output?: number): CustomProviderModelPayload['limit'] => (
-  context && output ? { context, output } : undefined
-);
+const buildModelLimit = (context?: number, output?: number): CustomProviderModelPayload['limit'] => {
+  if (!context && !output) {
+    return undefined;
+  }
+
+  return {
+    ...(context ? { context } : {}),
+    ...(output ? { output } : {}),
+  };
+};
 
 const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '' });
 

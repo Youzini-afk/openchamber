@@ -56,7 +56,14 @@ function normalizePositiveInteger(value) {
 }
 
 function buildModelLimit(context, output) {
-  return context && output ? { context, output } : undefined;
+  if (!context && !output) {
+    return undefined;
+  }
+
+  return {
+    ...(context ? { context } : {}),
+    ...(output ? { output } : {}),
+  };
 }
 
 function normalizeProviderId(value) {

@@ -39,6 +39,9 @@ describe('custom provider form helpers', () => {
       {
         id: 'context-only',
         name: 'Context Only',
+        limit: {
+          context: 128000,
+        },
       },
       { id: 'empty-limits' },
       { id: 'bad-limits', name: 'Bad Limits' },
