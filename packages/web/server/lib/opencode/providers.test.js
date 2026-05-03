@@ -169,6 +169,37 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('writes custom model tool, reasoning, and reasoning effort metadata', async () => {
+    const { upsertProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      id: 'reasoning-provider',
+      name: 'Reasoning Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'reasoning-model',
+          name: 'Reasoning Model',
+          tool_call: true,
+          reasoning: true,
+          reasoningEffort: 'xhigh',
+        },
+      ],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider['reasoning-provider'].models['reasoning-model']).toEqual({
+      name: 'Reasoning Model',
+      tool_call: true,
+      reasoning: true,
+      options: {
+        reasoningEffort: 'xhigh',
+      },
+    });
+  });
+
   it('preserves the context token limit when the output token limit is not configured', async () => {
     const { upsertProviderConfig } = await loadProvidersModule();
 
@@ -248,6 +279,12 @@ describe('provider config helpers', () => {
             'claude-test': {
               name: 'Claude Test',
               attachment: true,
+              tool_call: true,
+              reasoning: true,
+              options: {
+                reasoningEffort: 'max',
+                providerSpecific: 'keep-me',
+              },
               limit: {
                 context: 200000,
                 output: 8192,
@@ -275,6 +312,12 @@ describe('provider config helpers', () => {
           context: 200000,
           output: 8192,
           attachment: true,
+          tool_call: true,
+          reasoning: true,
+          reasoningEffort: 'max',
+          options: {
+            providerSpecific: 'keep-me',
+          },
         },
         {
           id: 'nameless-model',
@@ -335,7 +378,12 @@ describe('provider config helpers', () => {
       json: async () => ({
         data: [
           { id: 'gpt-4o', owned_by: 'openai' },
-          { id: 'deepseek-chat', modalities: { input: ['text', 'image'], output: ['text'] } },
+          {
+            id: 'deepseek-chat',
+            modalities: { input: ['text', 'image'], output: ['text'] },
+            capabilities: { tool_call: true, reasoning: true },
+            options: { reasoningEffort: 'high' },
+          },
         ],
       }),
     }));
@@ -356,7 +404,16 @@ describe('provider config helpers', () => {
     });
     expect(result.models).toEqual([
       { id: 'gpt-4o', name: 'gpt-4o' },
-      { id: 'deepseek-chat', name: 'deepseek-chat', attachment: true },
+      {
+        id: 'deepseek-chat',
+        name: 'deepseek-chat',
+        attachment: true,
+        tool_call: true,
+        reasoning: true,
+        options: {
+          reasoningEffort: 'high',
+        },
+      },
     ]);
   });
 

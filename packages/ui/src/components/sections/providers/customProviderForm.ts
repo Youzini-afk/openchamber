@@ -8,6 +8,11 @@ export interface CustomProviderModelRowInput {
   context?: string | number;
   output?: string | number;
   attachment?: boolean;
+  tool_call?: boolean;
+  toolCall?: boolean;
+  reasoning?: boolean;
+  reasoningEffort?: string;
+  options?: Record<string, unknown>;
 }
 
 export type CustomProviderApiTypeValue = 'openai-compatible' | 'openai-responses' | 'anthropic' | 'google';
@@ -23,6 +28,10 @@ export interface CustomProviderEditableFormState {
     context: string;
     output: string;
     attachment: boolean;
+    tool_call: boolean;
+    reasoning: boolean;
+    reasoningEffort: string;
+    options?: Record<string, unknown>;
   }>;
   apiKey: string;
   scope: 'user' | 'project' | 'custom';
@@ -55,15 +64,29 @@ interface CustomProviderModelPayload {
   id: string;
   name?: string;
   attachment?: true;
+  tool_call?: true;
+  reasoning?: true;
+  options?: Record<string, unknown>;
   limit?: {
     context?: number;
     output?: number;
   };
 }
 
+const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+
 const trimString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 );
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const normalizeReasoningEffort = (value: unknown): string => {
+  const normalized = trimString(value).toLowerCase();
+  return REASONING_EFFORTS.has(normalized) ? normalized : '';
+};
 
 const normalizeEditableApiType = (value: unknown): CustomProviderApiTypeValue => {
   const normalized = trimString(value);
@@ -105,7 +128,46 @@ const buildModelLimit = (context?: number, output?: number): CustomProviderModel
   };
 };
 
-const createEmptyEditableModelRow = () => ({ id: '', name: '', context: '', output: '', attachment: false });
+const buildModelOptions = (
+  optionsInput: unknown,
+  reasoningEffortInput: unknown,
+): Record<string, unknown> | undefined => {
+  const options = isRecord(optionsInput) ? { ...optionsInput } : {};
+  const reasoningEffort = normalizeReasoningEffort(
+    reasoningEffortInput || options.reasoningEffort || options.reasoning_effort,
+  );
+
+  delete options.reasoning_effort;
+  if (reasoningEffort) {
+    options.reasoningEffort = reasoningEffort;
+  } else {
+    delete options.reasoningEffort;
+  }
+
+  return Object.keys(options).length > 0 ? options : undefined;
+};
+
+const buildPreservedEditableModelOptions = (optionsInput: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(optionsInput)) {
+    return undefined;
+  }
+
+  const options = { ...optionsInput };
+  delete options.reasoningEffort;
+  delete options.reasoning_effort;
+  return Object.keys(options).length > 0 ? options : undefined;
+};
+
+const createEmptyEditableModelRow = () => ({
+  id: '',
+  name: '',
+  context: '',
+  output: '',
+  attachment: false,
+  tool_call: false,
+  reasoning: false,
+  reasoningEffort: '',
+});
 
 export const resolveCustomProviderApiKey = (
   controlledValue: string,
@@ -136,11 +198,15 @@ export const normalizeCustomProviderModelRows = (
     const context = normalizePositiveInteger(row.context);
     const output = normalizePositiveInteger(row.output);
     const limit = buildModelLimit(context, output);
+    const options = buildModelOptions(row.options, row.reasoningEffort);
 
     models.push({
       id,
       ...(name ? { name } : {}),
       ...(row.attachment === true ? { attachment: true } : {}),
+      ...(row.tool_call === true || row.toolCall === true ? { tool_call: true } : {}),
+      ...(row.reasoning === true ? { reasoning: true } : {}),
+      ...(options ? { options } : {}),
       ...(limit ? { limit } : {}),
     });
   }
@@ -153,13 +219,20 @@ export const createCustomProviderFormStateFromConfig = (
 ): CustomProviderEditableFormState => {
   const models = Array.isArray(config.models)
     ? config.models
-        .map((model) => ({
-          id: trimString(model.id),
-          name: trimString(model.name),
-          context: normalizePositiveIntegerInputValue(model.context),
-          output: normalizePositiveIntegerInputValue(model.output),
-          attachment: model.attachment === true,
-        }))
+        .map((model) => {
+          const options = buildPreservedEditableModelOptions(model.options);
+          return {
+            id: trimString(model.id),
+            name: trimString(model.name),
+            context: normalizePositiveIntegerInputValue(model.context),
+            output: normalizePositiveIntegerInputValue(model.output),
+            attachment: model.attachment === true,
+            tool_call: model.tool_call === true || model.toolCall === true,
+            reasoning: model.reasoning === true,
+            reasoningEffort: normalizeReasoningEffort(model.reasoningEffort || model.options?.reasoningEffort || model.options?.reasoning_effort),
+            ...(options ? { options } : {}),
+          };
+        })
         .filter((model) => model.id.length > 0)
     : [];
 

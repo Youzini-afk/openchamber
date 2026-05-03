@@ -23,7 +23,19 @@ describe('custom provider form helpers', () => {
   test('normalizes model names and token limits for custom provider saving', () => {
     expect(normalizeCustomProviderModelRows([
       { id: ' gpt-test ', name: ' GPT Test ', context: '200000', output: '8192' },
-      { id: 'context-only', name: 'Context Only', context: '128000', output: '', attachment: true },
+      {
+        id: 'context-only',
+        name: 'Context Only',
+        context: '128000',
+        output: '',
+        attachment: true,
+        tool_call: true,
+        reasoning: true,
+        reasoningEffort: 'xhigh',
+        options: {
+          providerSpecific: 'keep-me',
+        },
+      },
       { id: 'empty-limits', name: '', context: '', output: ' ' },
       { id: 'bad-limits', name: 'Bad Limits', context: '0', output: '-10' },
       { id: 'gpt-test', name: 'Duplicate', context: '128000', output: '4096' },
@@ -40,6 +52,12 @@ describe('custom provider form helpers', () => {
         id: 'context-only',
         name: 'Context Only',
         attachment: true,
+        tool_call: true,
+        reasoning: true,
+        options: {
+          providerSpecific: 'keep-me',
+          reasoningEffort: 'xhigh',
+        },
         limit: {
           context: 128000,
         },
@@ -57,7 +75,17 @@ describe('custom provider form helpers', () => {
       baseURL: 'https://api.example.com/v1',
       scope: 'project',
       models: [
-        { id: 'claude-test', name: 'Claude Test', context: 200000, output: 8192, attachment: true },
+        {
+          id: 'claude-test',
+          name: 'Claude Test',
+          context: 200000,
+          output: 8192,
+          attachment: true,
+          tool_call: true,
+          reasoning: true,
+          reasoningEffort: 'max',
+          options: { providerSpecific: 'keep-me' },
+        },
         { id: 'nameless-model' },
       ],
     })).toEqual({
@@ -68,10 +96,77 @@ describe('custom provider form helpers', () => {
       apiKey: '',
       scope: 'project',
       models: [
-        { id: 'claude-test', name: 'Claude Test', context: '200000', output: '8192', attachment: true },
-        { id: 'nameless-model', name: '', context: '', output: '', attachment: false },
+        {
+          id: 'claude-test',
+          name: 'Claude Test',
+          context: '200000',
+          output: '8192',
+          attachment: true,
+          tool_call: true,
+          reasoning: true,
+          reasoningEffort: 'max',
+          options: { providerSpecific: 'keep-me' },
+        },
+        {
+          id: 'nameless-model',
+          name: '',
+          context: '',
+          output: '',
+          attachment: false,
+          tool_call: false,
+          reasoning: false,
+          reasoningEffort: '',
+        },
       ],
     });
+  });
+
+  test('moves reasoning effort out of preserved custom model options for editing', () => {
+    const state = createCustomProviderFormStateFromConfig({
+      providerId: 'editable',
+      type: 'openai-compatible',
+      name: 'Editable Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'reasoning-model',
+          reasoning: true,
+          options: {
+            providerSpecific: 'keep-me',
+            reasoningEffort: 'high',
+          },
+        },
+      ],
+    });
+
+    expect(state.models[0]).toEqual({
+      id: 'reasoning-model',
+      name: '',
+      context: '',
+      output: '',
+      attachment: false,
+      tool_call: false,
+      reasoning: true,
+      reasoningEffort: 'high',
+      options: {
+        providerSpecific: 'keep-me',
+      },
+    });
+
+    expect(normalizeCustomProviderModelRows([
+      {
+        ...state.models[0],
+        reasoningEffort: '',
+      },
+    ])).toEqual([
+      {
+        id: 'reasoning-model',
+        reasoning: true,
+        options: {
+          providerSpecific: 'keep-me',
+        },
+      },
+    ]);
   });
 
   test('preserves custom config scope when editing an env-backed provider', () => {

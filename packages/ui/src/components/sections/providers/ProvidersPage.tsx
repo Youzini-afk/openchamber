@@ -90,6 +90,9 @@ const CUSTOM_PROVIDER_API_TYPES: CustomProviderApiTypeOption[] = [
   },
 ];
 
+const CUSTOM_PROVIDER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const CUSTOM_PROVIDER_REASONING_DEFAULT_VALUE = '__default__';
+
 const isCustomProviderApiType = (value: string): value is CustomProviderApiType =>
   CUSTOM_PROVIDER_API_TYPES.some((option) => option.value === value);
 
@@ -102,6 +105,10 @@ interface CustomProviderModelRow {
   context: string;
   output: string;
   attachment: boolean;
+  tool_call: boolean;
+  reasoning: boolean;
+  reasoningEffort: string;
+  options?: Record<string, unknown>;
 }
 
 interface CustomProviderFormState {
@@ -114,7 +121,16 @@ interface CustomProviderFormState {
   scope: 'user' | 'project' | 'custom';
 }
 
-const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({ id: '', name: '', context: '', output: '', attachment: false });
+const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({
+  id: '',
+  name: '',
+  context: '',
+  output: '',
+  attachment: false,
+  tool_call: false,
+  reasoning: false,
+  reasoningEffort: '',
+});
 
 const createEmptyCustomProviderForm = (): CustomProviderFormState => ({
   type: 'openai-compatible',
@@ -210,6 +226,15 @@ const getFetchedModelLimitInputValue = (entry: Record<string, unknown>, kind: 'c
   }
 
   return '';
+};
+
+const normalizeCustomProviderReasoningEffort = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return CUSTOM_PROVIDER_REASONING_EFFORTS.some((effort) => effort === normalized) ? normalized : '';
 };
 
 const normalizeAuthType = (method: AuthMethod) => {
@@ -792,12 +817,20 @@ export const ProvidersPage: React.FC = () => {
                 return null;
               }
               const name = typeof entry.name === 'string' ? entry.name.trim() : id;
+              const options = isRecord(entry.options) ? { ...entry.options } : undefined;
+              const reasoningEffort = normalizeCustomProviderReasoningEffort(
+                entry.reasoningEffort || entry.reasoning_effort || options?.reasoningEffort || options?.reasoning_effort,
+              );
               return {
                 id,
                 name: name || id,
                 context: getFetchedModelLimitInputValue(entry, 'context'),
                 output: getFetchedModelLimitInputValue(entry, 'output'),
                 attachment: entry.attachment === true,
+                tool_call: entry.tool_call === true,
+                reasoning: entry.reasoning === true,
+                reasoningEffort,
+                ...(options ? { options } : {}),
               };
             })
             .filter((entry): entry is CustomProviderModelRow => Boolean(entry))
@@ -1050,66 +1083,100 @@ export const ProvidersPage: React.FC = () => {
             {customProviderForm.models.map((row, index) => (
               <div
                 key={index}
-                className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_minmax(6rem,0.5fr)_auto] sm:items-center"
+                className="space-y-2 rounded-md border border-border/60 p-2"
               >
-                <Input
-                  value={row.id}
-                  onChange={(event) => updateCustomProviderModelRow(index, 'id', event.target.value)}
-                  placeholder={t('settings.providers.page.custom.placeholder.modelId')}
-                  className="font-mono text-xs"
-                />
-                <Input
-                  value={row.name}
-                  onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
-                  placeholder={t('settings.providers.page.custom.placeholder.modelName')}
-                  className="font-mono text-xs"
-                />
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  inputMode="numeric"
-                  value={row.context}
-                  onChange={(event) => updateCustomProviderModelRow(index, 'context', event.target.value)}
-                  placeholder={t('settings.providers.page.custom.placeholder.contextLimit')}
-                  className="font-mono text-xs"
-                />
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  inputMode="numeric"
-                  value={row.output}
-                  onChange={(event) => updateCustomProviderModelRow(index, 'output', event.target.value)}
-                  placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
-                  className="font-mono text-xs"
-                />
-                <label className="flex h-8 items-center gap-2 rounded-md border border-border/60 px-2 typography-micro text-muted-foreground">
-                  <Checkbox
-                    checked={row.attachment}
-                    onChange={(checked) => updateCustomProviderModelRow(index, 'attachment', checked)}
-                    ariaLabel={t('settings.providers.page.models.capability.imageInput')}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(5.5rem,0.65fr)_minmax(5.5rem,0.65fr)_auto] sm:items-center">
+                  <Input
+                    value={row.id}
+                    onChange={(event) => updateCustomProviderModelRow(index, 'id', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.modelId')}
+                    className="font-mono text-xs"
                   />
-                  <span className="truncate">{t('settings.providers.page.models.capability.imageInput')}</span>
-                </label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      className="h-8 w-8 px-0"
-                      onClick={() => removeCustomProviderModelRow(index)}
-                      disabled={customProviderForm.models.length <= 1}
-                      aria-label={t('settings.providers.page.actions.removeModel')}
-                    >
-                      <RiCloseLine className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent sideOffset={8}>
-                    {t('settings.providers.page.actions.removeModel')}
-                  </TooltipContent>
-                </Tooltip>
+                  <Input
+                    value={row.name}
+                    onChange={(event) => updateCustomProviderModelRow(index, 'name', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.modelName')}
+                    className="font-mono text-xs"
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={row.context}
+                    onChange={(event) => updateCustomProviderModelRow(index, 'context', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.contextLimit')}
+                    className="font-mono text-xs"
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={row.output}
+                    onChange={(event) => updateCustomProviderModelRow(index, 'output', event.target.value)}
+                    placeholder={t('settings.providers.page.custom.placeholder.outputLimit')}
+                    className="font-mono text-xs"
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="h-8 w-8 px-0"
+                        onClick={() => removeCustomProviderModelRow(index)}
+                        disabled={customProviderForm.models.length <= 1}
+                        aria-label={t('settings.providers.page.actions.removeModel')}
+                      >
+                        <RiCloseLine className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent sideOffset={8}>
+                      {t('settings.providers.page.actions.removeModel')}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    ['attachment', t('settings.providers.page.models.capability.imageInput')],
+                    ['tool_call', t('settings.providers.page.models.capability.toolCalling')],
+                    ['reasoning', t('settings.providers.page.models.capability.reasoning')],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex h-8 items-center gap-2 rounded-md border border-border/60 px-2 typography-micro text-muted-foreground">
+                      <Checkbox
+                        checked={Boolean(row[key as keyof Pick<CustomProviderModelRow, 'attachment' | 'tool_call' | 'reasoning'>])}
+                        onChange={(checked) => updateCustomProviderModelRow(index, key as keyof CustomProviderModelRow, checked)}
+                        ariaLabel={label}
+                      />
+                      <span className="truncate">{label}</span>
+                    </label>
+                  ))}
+
+                  <Select
+                    value={row.reasoningEffort || CUSTOM_PROVIDER_REASONING_DEFAULT_VALUE}
+                    onValueChange={(value) => updateCustomProviderModelRow(
+                      index,
+                      'reasoningEffort',
+                      value === CUSTOM_PROVIDER_REASONING_DEFAULT_VALUE ? '' : value,
+                    )}
+                  >
+                    <SelectTrigger className="h-8 min-w-[10rem] justify-between">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CUSTOM_PROVIDER_REASONING_DEFAULT_VALUE}>
+                        {t('settings.providers.page.custom.reasoningEffort.default')}
+                      </SelectItem>
+                      {CUSTOM_PROVIDER_REASONING_EFFORTS.map((effort) => (
+                        <SelectItem key={effort} value={effort}>
+                          {t(`settings.providers.page.custom.reasoningEffort.${effort}` as I18nKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             ))}
           </div>
