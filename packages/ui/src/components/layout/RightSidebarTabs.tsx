@@ -12,7 +12,8 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { formatDirectoryName } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { SidebarFilesTree } from './SidebarFilesTree';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
 
 type RightTab = 'git' | 'files' | 'context';
 
@@ -90,6 +91,14 @@ const ContextSidebarPanel: React.FC = () => {
   );
 };
 
+const WorkspaceFilesPanel: React.FC = () => (
+  <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
+    <ScrollableOverlay outerClassName="flex-1 min-h-0" className="px-3 py-2">
+      <WorkspaceSidebarSection />
+    </ScrollableOverlay>
+  </div>
+);
+
 export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
@@ -132,7 +141,7 @@ export const RightSidebarTabs: React.FC = () => {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {rightSidebarTab === 'git' && <GitView />}
-        {rightSidebarTab === 'files' && <SidebarFilesTree />}
+        {rightSidebarTab === 'files' && <WorkspaceFilesPanel />}
         {rightSidebarTab === 'context' && <ContextSidebarPanel />}
       </div>
     </div>

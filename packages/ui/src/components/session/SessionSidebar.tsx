@@ -17,7 +17,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
-import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { NewWorktreeDialog } from './NewWorktreeDialog';
 import { ScheduledTasksDialog } from './ScheduledTasksDialog';
@@ -44,9 +43,6 @@ import { SidebarActivitySections } from './sidebar/SidebarActivitySections';
 import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
-import { WorkspaceGitPanel } from '@/components/workspace/WorkspaceGitPanel';
-import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
-import { WorkspaceTerminalDialog } from '@/components/workspace/WorkspaceTerminalDialog';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
@@ -440,8 +436,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
-  const workspaceTerminalOpen = useWorkspaceStore((state) => state.terminalDialog.open);
-  const workspaceGitPanelOpen = useWorkspaceStore((state) => state.gitPanel.open);
   const isMacPlatform = React.useMemo(() => {
     if (typeof navigator === 'undefined') {
       return false;
@@ -1419,18 +1413,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
 
   const topContent = !hasSessionSearchQuery ? (
-    <>
-      {!isVSCode ? (
-        <WorkspaceSidebarSection
-          mobileVariant={mobileVariant}
-          setSessionSwitcherOpen={setSessionSwitcherOpen}
-        />
-      ) : null}
-      <SidebarActivitySections
-        sections={activitySections}
-        renderSessionNode={renderSessionNode}
-      />
-    </>
+    <SidebarActivitySections
+      sections={activitySections}
+      renderSessionNode={renderSessionNode}
+    />
   ) : null;
   const isInlineEditing = Boolean(renamingFolderId || editingId || editingProjectDialogId);
 
@@ -1778,8 +1764,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       />
 
       <ScheduledTasksDialog />
-      {!isVSCode && workspaceTerminalOpen ? <WorkspaceTerminalDialog /> : null}
-      {!isVSCode && workspaceGitPanelOpen ? <WorkspaceGitPanel /> : null}
 
       <SessionDeleteConfirmDialog
         value={deleteSessionConfirm}
