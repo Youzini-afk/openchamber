@@ -8,7 +8,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
-import { RiGithubFill, RiInformationLine } from '@remixicon/react';
+import { RiGithubFill, RiInformationLine, RiTerminalBoxLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type GitHubUser = {
@@ -231,6 +231,45 @@ export const GitHubSettings: React.FC = () => {
     }
   }, [runtimeGitHub, setStatus, t]);
 
+  const syncTerminalAuth = React.useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const result = runtimeGitHub?.authSyncTerminal
+        ? await runtimeGitHub.authSyncTerminal()
+        : await (async () => {
+            const response = await fetch('/api/github/auth/terminal', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              },
+              body: JSON.stringify({}),
+            });
+            const body = (await response.json().catch(() => null)) as {
+              success?: boolean;
+              gitCredentialHelperConfigured?: boolean;
+              gitCredentialHelperError?: string;
+              error?: string;
+            } | null;
+            if (!response.ok || !body?.success) {
+              throw new Error(body?.error || response.statusText);
+            }
+            return body;
+          })();
+
+      if (result.gitCredentialHelperConfigured) {
+        toast.success(t('settings.github.page.toast.terminalSyncSuccess'));
+      } else {
+        toast.message(t('settings.github.page.toast.terminalSyncPartial'));
+      }
+    } catch (error) {
+      console.error('Failed to sync GitHub auth to terminal:', error);
+      toast.error(t('settings.github.page.toast.terminalSyncFailed'));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [runtimeGitHub, t]);
+
   if (isLoading) {
     return null;
   }
@@ -289,9 +328,15 @@ export const GitHubSettings: React.FC = () => {
               </div>
             </div>
 
-            <Button size="sm" variant="outline" onClick={disconnect} disabled={isBusy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
-              {t('settings.github.page.actions.disconnect')}
-            </Button>
+            <div className={cn("flex gap-2", isMobile ? "w-full flex-col" : "shrink-0 items-center")}>
+              <Button size="sm" variant="outline" onClick={syncTerminalAuth} disabled={isBusy} className={cn(isMobile ? "w-full" : undefined)}>
+                <RiTerminalBoxLine className="h-4 w-4" />
+                {t('settings.github.page.actions.syncTerminal')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={disconnect} disabled={isBusy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
+                {t('settings.github.page.actions.disconnect')}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-between gap-4 px-4 py-4">

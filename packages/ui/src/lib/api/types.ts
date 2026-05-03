@@ -1075,12 +1075,21 @@ export type GitHubDeviceFlowComplete =
   | { connected: true; user: GitHubUserSummary; scope?: string }
   | { connected: false; status?: string; error?: string };
 
+export type GitHubTerminalAuthSyncResult = {
+  success: boolean;
+  ghConfigPath: string;
+  helperPath: string;
+  gitCredentialHelperConfigured: boolean;
+  gitCredentialHelperError?: string;
+};
+
 export interface GitHubAPI {
   authStatus(): Promise<GitHubAuthStatus>;
   authStart(): Promise<GitHubDeviceFlowStart>;
   authComplete(deviceCode: string): Promise<GitHubDeviceFlowComplete>;
   authDisconnect(): Promise<{ removed: boolean }>;
   authActivate(accountId: string): Promise<GitHubAuthStatus>;
+  authSyncTerminal?(): Promise<GitHubTerminalAuthSyncResult>;
   me?(): Promise<GitHubUserSummary>;
 
   prStatus(directory: string, branch: string, remote?: string, options?: { force?: boolean }): Promise<GitHubPullRequestStatus>;

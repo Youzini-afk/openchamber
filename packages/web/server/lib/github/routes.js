@@ -1,3 +1,5 @@
+import { installTerminalGitHubAuth as defaultInstallTerminalGitHubAuth } from './terminal-auth.js';
+
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
 const prStatusCache = new Map();
@@ -37,14 +39,15 @@ function setPrStatusCache(key, data, fetchedAt) {
   prStatusCache.set(key, { data, fetchedAt });
 }
 
-export function registerGitHubRoutes(app) {
+export function registerGitHubRoutes(app, dependencies = {}) {
   let githubLibraries = null;
-  const getGitHubLibraries = async () => {
+  const getGitHubLibraries = dependencies.getGitHubLibraries || (async () => {
     if (!githubLibraries) {
       githubLibraries = await import('./index.js');
     }
     return githubLibraries;
-  };
+  });
+  const installTerminalGitHubAuth = dependencies.installTerminalGitHubAuth || defaultInstallTerminalGitHubAuth;
 
   const getGitHubUserSummary = async (octokit) => {
     const me = await octokit.rest.users.getAuthenticated();
@@ -243,6 +246,33 @@ export function registerGitHubRoutes(app) {
     } catch (error) {
       console.error('Failed to activate GitHub account:', error);
       return res.status(500).json({ error: error.message || 'Failed to activate GitHub account' });
+    }
+  });
+
+  app.post('/api/github/auth/terminal', async (req, res) => {
+    try {
+      const { getGitHubAuth, GITHUB_AUTH_FILE } = await getGitHubLibraries();
+      const auth = getGitHubAuth();
+      if (!auth?.accessToken) {
+        return res.status(401).json({ error: 'GitHub not connected' });
+      }
+
+      const result = installTerminalGitHubAuth({
+        auth,
+        authFilePath: GITHUB_AUTH_FILE,
+        configureGit: req.body?.configureGit !== false,
+      });
+
+      return res.json({
+        success: true,
+        ghConfigPath: result.ghConfigPath,
+        helperPath: result.helperPath,
+        gitCredentialHelperConfigured: Boolean(result.gitCredentialHelperConfigured),
+        gitCredentialHelperError: result.gitCredentialHelperError || '',
+      });
+    } catch (error) {
+      console.error('Failed to sync GitHub auth to terminal:', error);
+      return res.status(500).json({ error: error.message || 'Failed to sync GitHub auth to terminal' });
     }
   });
 

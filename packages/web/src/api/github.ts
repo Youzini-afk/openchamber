@@ -17,6 +17,7 @@ import type {
   GitHubRepoUpstreamResult,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
+  GitHubTerminalAuthSyncResult,
   GitHubUserSummary,
 } from '@openchamber/ui/lib/api/types';
 
@@ -78,6 +79,19 @@ export const createWebGitHubAPI = (): GitHubAPI => ({
     const payload = await jsonOrNull<GitHubAuthStatus & { error?: string }>(response);
     if (!response.ok || !payload) {
       throw new Error(payload?.error || response.statusText || 'Failed to activate GitHub account');
+    }
+    return payload;
+  },
+
+  async authSyncTerminal(): Promise<GitHubTerminalAuthSyncResult> {
+    const response = await fetch('/api/github/auth/terminal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const payload = await jsonOrNull<GitHubTerminalAuthSyncResult & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to sync GitHub auth to terminal');
     }
     return payload;
   },
