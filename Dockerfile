@@ -22,16 +22,27 @@ WORKDIR /home/openchamber
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   bash \
+  build-essential \
   ca-certificates \
+  cargo \
+  cmake \
   curl \
   git \
+  golang-go \
   jq \
   less \
+  maven \
   nodejs \
   npm \
+  default-jdk-headless \
   openssh-client \
   python3 \
+  python3-dev \
+  python3-pip \
+  python3-venv \
+  pkg-config \
   ripgrep \
+  rustc \
   unzip \
   wget \
   zip \
@@ -45,6 +56,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && gh --version \
+  && go version \
+  && java -version \
+  && cargo --version \
+  && python3 --version \
   && rg --version \
   && rm -rf /var/lib/apt/lists/* /tmp/githubcli-archive-keyring.gpg
 
@@ -59,11 +74,13 @@ RUN userdel bun \
 USER openchamber
 
 ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
-ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${PATH}
+ENV GOPATH=/home/openchamber/go
+ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/bin:/home/openchamber/.cargo/bin:${PATH}
 
 RUN npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
-  mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh && \
-  npm install -g opencode-ai
+  mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo && \
+  npm install -g opencode-ai pnpm tsx typescript typescript-language-server yarn && \
+  tsc --version && typescript-language-server --version && pnpm --version && yarn --version
 
 # cloudflared 2026.3.0 - update digest explicitly when upgrading
 COPY --from=cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
