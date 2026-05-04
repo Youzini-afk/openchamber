@@ -94,6 +94,26 @@ describe('workspace routes', () => {
     expect(deleted.body.trashPath.startsWith(path.join(workspaceRoot, '.trash'))).toBe(true);
   });
 
+  it('lists an empty trash directory explicitly while keeping it hidden from root', async () => {
+    const app = await createApp();
+
+    const rootList = await request(app)
+      .get('/api/workspace/list')
+      .expect(200);
+    expect(rootList.body.entries.map((entry) => entry.name)).not.toContain('.trash');
+
+    const trashList = await request(app)
+      .get('/api/workspace/list')
+      .query({ path: '.trash' })
+      .expect(200);
+
+    expect(trashList.body).toMatchObject({
+      relativePath: '.trash',
+      entries: [],
+    });
+    expect(fs.existsSync(path.join(workspaceRoot, '.trash'))).toBe(true);
+  });
+
   it('rejects writes when expectedMtimeMs no longer matches disk state', async () => {
     const app = await createApp();
     fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });

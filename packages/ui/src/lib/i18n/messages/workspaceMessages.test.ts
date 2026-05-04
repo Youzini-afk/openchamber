@@ -23,6 +23,9 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.menu.copyPath',
   'workspace.sidebar.menu.rename',
   'workspace.sidebar.menu.moveToTrash',
+  'workspace.sidebar.menu.permanentDelete',
+  'workspace.sidebar.trash.title',
+  'workspace.sidebar.trash.empty',
   'workspace.sidebar.state.empty',
   'workspace.sidebar.state.loading',
   'workspace.sidebar.dialog.rename.title',
@@ -32,6 +35,8 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.dialog.rename.sameName',
   'workspace.sidebar.dialog.rename.cancel',
   'workspace.sidebar.dialog.rename.submit',
+  'workspace.sidebar.confirm.permanentDelete',
+  'workspace.sidebar.toast.permanentlyDeleted',
   'workspace.terminal.actions.restart',
   'workspace.terminal.actions.stop',
   'workspace.terminal.actions.restore',
@@ -112,6 +117,17 @@ describe('workspace sidebar messages', () => {
     expect(source).toContain("t('workspace.sidebar.dialog.rename.title')");
     expect(source).toContain("t('workspace.sidebar.dialog.rename.submit')");
     expect(source).not.toContain("window.prompt(t('workspace.sidebar.prompt.renameTo')");
+  });
+
+  test('workspace sidebar exposes the hidden trash directory', () => {
+    const source = readFileSync(
+      resolve(testDir, '../../../components/workspace/WorkspaceSidebarSection.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain('TRASH_PATH');
+    expect(source).toContain("t('workspace.sidebar.trash.title')");
+    expect(source).toContain("t('workspace.sidebar.menu.permanentDelete')");
   });
 
   test('workspace terminal and git overlays use localized messages', () => {

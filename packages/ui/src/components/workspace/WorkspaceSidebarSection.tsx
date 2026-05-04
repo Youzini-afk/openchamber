@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   RiChatNewLine,
+  RiDeleteBinLine,
   RiEditLine,
   RiFileAddLine,
   RiFileLine,
@@ -44,6 +45,8 @@ type WorkspaceSidebarSectionProps = {
   setSessionSwitcherOpen?: (open: boolean) => void;
 };
 
+const TRASH_PATH = '.trash';
+
 const entryDepthPadding = (depth: number): React.CSSProperties => ({
   paddingLeft: `${Math.min(depth, 6) * 12 + 4}px`,
 });
@@ -71,6 +74,10 @@ const getEntryGitLabel = (entry: WorkspaceEntry): string | null => {
   const sync = git.ahead || git.behind ? ` ${git.ahead}/${git.behind}` : '';
   return `${branch}${git.dirty ? '*' : ''}${sync}`;
 };
+
+const isTrashRelativePath = (path: string): boolean => (
+  path === TRASH_PATH || path.startsWith(`${TRASH_PATH}/`)
+);
 
 export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = ({
   mobileVariant = false,
@@ -117,6 +124,19 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
 
   const rootEntries = entriesByPath[''] ?? [];
   const isBusy = Boolean(loadingRoot || loadingPaths[''] || actionPending);
+  const trashEntry = React.useMemo<WorkspaceEntry | null>(() => {
+    if (!root?.features?.trash) return null;
+    const mtimeMs = root.mtimeMs || 0;
+    return {
+      name: t('workspace.sidebar.trash.title'),
+      path: `${root.root || '/workspace'}/${TRASH_PATH}`,
+      relativePath: TRASH_PATH,
+      type: 'directory',
+      size: 0,
+      modifiedAt: new Date(mtimeMs).toISOString(),
+      mtimeMs,
+    };
+  }, [root, t]);
 
   const handleCreateFolder = React.useCallback(async (parent = '') => {
     const name = window.prompt(t('workspace.sidebar.prompt.newFolderName'));
@@ -177,9 +197,18 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   }, [closeRenameDialog, renameDraft, renameEntry, renameTarget, t, validateRenameDraft]);
 
   const handleDelete = React.useCallback(async (entry: WorkspaceEntry) => {
-    if (!window.confirm(t('workspace.sidebar.confirm.moveToTrash', { name: entry.name }))) return;
-    const ok = await deleteEntry(entry.relativePath);
-    if (ok) toast.success(t('workspace.sidebar.toast.movedToTrash'));
+    if (entry.relativePath === TRASH_PATH) return;
+    const permanent = isTrashRelativePath(entry.relativePath);
+    const confirmKey = permanent
+      ? 'workspace.sidebar.confirm.permanentDelete'
+      : 'workspace.sidebar.confirm.moveToTrash';
+    if (!window.confirm(t(confirmKey, { name: entry.name }))) return;
+    const ok = await deleteEntry(entry.relativePath, permanent ? { permanent: true } : undefined);
+    if (ok) {
+      toast.success(t(permanent
+        ? 'workspace.sidebar.toast.permanentlyDeleted'
+        : 'workspace.sidebar.toast.movedToTrash'));
+    }
   }, [deleteEntry, t]);
 
   const handleOpenChat = React.useCallback(async (entry: WorkspaceEntry) => {
@@ -234,6 +263,9 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
 
   const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number): React.ReactNode => {
     const isDirectory = entry.type === 'directory';
+    const isTrashRoot = entry.relativePath === TRASH_PATH;
+    const isInsideTrash = isTrashRelativePath(entry.relativePath);
+    const canUseProjectActions = isDirectory && !isInsideTrash;
     const isExpanded = Boolean(expandedPaths[entry.relativePath]);
     const children = entriesByPath[entry.relativePath] ?? [];
     const gitLabel = getEntryGitLabel(entry);
@@ -260,7 +292,9 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               }
             }}
           >
-            {isDirectory ? (
+            {isTrashRoot ? (
+              <RiDeleteBinLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : isDirectory ? (
               <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             ) : (
               <RiFileLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -279,7 +313,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
             'flex shrink-0 items-center gap-0.5 transition-opacity',
             mobileVariant ? 'opacity-100' : 'opacity-0 group-hover/workspace-row:opacity-100 group-focus-within/workspace-row:opacity-100',
           )}>
-            {isDirectory ? (
+            {canUseProjectActions ? (
               <>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -331,7 +365,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[190px]">
-                {isDirectory ? (
+                {canUseProjectActions ? (
                   <>
                     <DropdownMenuItem onClick={() => void handleOpenChat(entry)}>
                       <RiChatNewLine className="mr-1.5 h-4 w-4" />
@@ -369,19 +403,32 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                     </DropdownMenuItem>
                   </>
                 ) : null}
-                <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
-                  {t('workspace.sidebar.menu.copyPath')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openRenameDialog(entry)}>
-                  <RiEditLine className="mr-1.5 h-4 w-4" />
-                  {t('workspace.sidebar.menu.rename')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => void handleDelete(entry)}
-                >
-                  {t('workspace.sidebar.menu.moveToTrash')}
-                </DropdownMenuItem>
+                {isTrashRoot ? (
+                  <DropdownMenuItem onClick={() => void loadDirectory(TRASH_PATH)}>
+                    <RiRefreshLine className="mr-1.5 h-4 w-4" />
+                    {t('workspace.sidebar.actions.refresh')}
+                  </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
+                      {t('workspace.sidebar.menu.copyPath')}
+                    </DropdownMenuItem>
+                    {!isInsideTrash ? (
+                      <DropdownMenuItem onClick={() => openRenameDialog(entry)}>
+                        <RiEditLine className="mr-1.5 h-4 w-4" />
+                        {t('workspace.sidebar.menu.rename')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => void handleDelete(entry)}
+                    >
+                      {isInsideTrash
+                        ? t('workspace.sidebar.menu.permanentDelete')
+                        : t('workspace.sidebar.menu.moveToTrash')}
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -391,6 +438,10 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
             {(loadingPaths[entry.relativePath] && children.length === 0) ? (
               <div className="px-2 py-1 typography-micro text-muted-foreground" style={entryDepthPadding(depth + 1)}>
                 {t('workspace.sidebar.state.loading')}
+              </div>
+            ) : isTrashRoot && children.length === 0 ? (
+              <div className="px-2 py-1 typography-micro text-muted-foreground" style={entryDepthPadding(depth + 1)}>
+                {t('workspace.sidebar.trash.empty')}
               </div>
             ) : null}
             {children.map((child) => renderEntry(child, depth + 1))}
@@ -553,13 +604,15 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       ) : null}
 
       <div className="space-y-0.5">
-        {rootEntries.length === 0 ? (
+        {rootEntries.length === 0 && !trashEntry ? (
           <div className="px-1 py-1 typography-micro text-muted-foreground">
             {isBusy ? t('workspace.sidebar.state.loading') : t('workspace.sidebar.state.empty')}
           </div>
-        ) : (
+        ) : null}
+        {rootEntries.length > 0 ? (
           rootEntries.map((entry) => renderEntry(entry, 0))
-        )}
+        ) : null}
+        {trashEntry ? renderEntry(trashEntry, 0) : null}
       </div>
     </section>
   );

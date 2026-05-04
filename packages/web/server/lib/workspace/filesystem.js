@@ -116,7 +116,11 @@ export const listWorkspaceDirectory = async (relativePathValue, config, dependen
     pathModule = path,
   } = dependencies;
   await ensureWorkspaceRoot(config, fsPromises);
-  const resolved = await resolveWorkspacePath(relativePathValue, {
+  const requestedPath = normalizeWorkspaceRelativePath(relativePathValue);
+  if (requestedPath === '.trash' && config.trashEnabled) {
+    await fsPromises.mkdir(pathModule.join(config.root, '.trash'), { recursive: true });
+  }
+  const resolved = await resolveWorkspacePath(requestedPath, {
     root: config.root,
     fsPromises,
     pathModule,
@@ -416,4 +420,3 @@ export const uploadWorkspaceFiles = async (targetPathValue, files, config, depen
 
   return { success: true, entries: uploaded };
 };
-

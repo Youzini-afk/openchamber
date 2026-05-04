@@ -60,9 +60,9 @@ const workspaceApi: WorkspaceAPI = {
     calls.push({ name: "move", payload: { from, to } });
     return { success: true, entry: makeEntry(to.split("/").pop() || to, to) };
   },
-  async deleteEntry(path) {
-    calls.push({ name: "deleteEntry", path });
-    return { success: true, trashed: true };
+  async deleteEntry(path, options) {
+    calls.push({ name: "deleteEntry", path, payload: options });
+    return { success: true, trashed: options?.permanent ? false : true };
   },
   async readFile(path) {
     calls.push({ name: "readFile", path });
@@ -213,6 +213,21 @@ describe("useWorkspaceStore", () => {
       && JSON.stringify(call.payload) === JSON.stringify({ from: "demo/src", to: "demo/source" })
     ))).toBe(true);
     expect(calls.some((call) => call.name === "list" && call.path === "demo")).toBe(true);
+  });
+
+  test("permanently deletes trash entries and refreshes the trash directory", async () => {
+    const { useWorkspaceStore } = await import("./useWorkspaceStore");
+    useWorkspaceStore.getState().resetForTests();
+
+    const deleted = await useWorkspaceStore.getState().deleteEntry(".trash/123-demo", { permanent: true });
+
+    expect(deleted).toBe(true);
+    expect(calls.some((call) => (
+      call.name === "deleteEntry"
+      && call.path === ".trash/123-demo"
+      && JSON.stringify(call.payload) === JSON.stringify({ permanent: true })
+    ))).toBe(true);
+    expect(calls.some((call) => call.name === "list" && call.path === ".trash")).toBe(true);
   });
 
   test("does not expose a clone action from the workspace store", async () => {
