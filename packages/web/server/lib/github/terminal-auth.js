@@ -217,3 +217,61 @@ export function isTerminalGitHubAuthConfigured({
     helperPath,
   };
 }
+
+const getGitHubAuthor = (auth) => {
+  getActiveToken(auth);
+
+  const user = auth?.user && typeof auth.user === 'object' ? auth.user : {};
+  const login = typeof user.login === 'string' ? user.login.trim() : '';
+  const name = typeof user.name === 'string' ? user.name.trim() : '';
+  const email = typeof user.email === 'string' ? user.email.trim() : '';
+  const id = typeof user.id === 'number' || typeof user.id === 'string' ? String(user.id).trim() : '';
+
+  const userName = name || login;
+  const userEmail = email || (id && login ? `${id}+${login}@users.noreply.github.com` : '');
+
+  if (!userName) {
+    throw new Error('GitHub user name is unavailable');
+  }
+  if (!userEmail) {
+    throw new Error('GitHub user email is unavailable');
+  }
+
+  return { userName, userEmail };
+};
+
+const getSpawnError = (result) => {
+  if (result?.error?.message) {
+    return result.error.message;
+  }
+  const stderr = result?.stderr == null ? '' : String(result.stderr).trim();
+  return stderr || 'git config failed';
+};
+
+const setGlobalGitConfig = ({ key, value, spawnSync }) => {
+  const result = spawnSync(
+    'git',
+    ['config', '--global', '--replace-all', key, value],
+    { encoding: 'utf8' },
+  );
+
+  if (result?.error || result?.status !== 0) {
+    throw new Error(`Failed to set ${key}: ${getSpawnError(result)}`);
+  }
+};
+
+export function configureGitHubGitAuthor({
+  auth,
+  spawnSync = defaultSpawnSync,
+} = {}) {
+  const { userName, userEmail } = getGitHubAuthor(auth);
+
+  setGlobalGitConfig({ key: 'user.name', value: userName, spawnSync });
+  setGlobalGitConfig({ key: 'user.email', value: userEmail, spawnSync });
+
+  return {
+    success: true,
+    userName,
+    userEmail,
+  };
+}

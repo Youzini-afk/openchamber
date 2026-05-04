@@ -61,4 +61,59 @@ describe('GitHub terminal auth routes', () => {
 
     expect(response.body).toEqual({ error: 'GitHub not connected' });
   });
+
+  it('configures global git author from the active GitHub account', async () => {
+    const app = express();
+    app.use(express.json());
+    const auth = {
+      accessToken: 'gho_test',
+      user: {
+        login: 'youzini-afk',
+        id: 12345,
+        name: 'youzini',
+        email: 'an48934293@gmail.com',
+      },
+    };
+    const configureGitHubGitAuthor = vi.fn(() => ({
+      success: true,
+      userName: 'youzini',
+      userEmail: 'an48934293@gmail.com',
+    }));
+
+    registerGitHubRoutes(app, {
+      getGitHubLibraries: async () => ({
+        getGitHubAuth: () => auth,
+      }),
+      configureGitHubGitAuthor,
+    });
+
+    const response = await request(app)
+      .post('/api/github/auth/git-author')
+      .send({})
+      .expect(200);
+
+    expect(configureGitHubGitAuthor).toHaveBeenCalledWith({ auth });
+    expect(response.body).toEqual({
+      success: true,
+      userName: 'youzini',
+      userEmail: 'an48934293@gmail.com',
+    });
+  });
+
+  it('rejects git author sync when GitHub is not connected', async () => {
+    const app = express();
+    app.use(express.json());
+
+    registerGitHubRoutes(app, {
+      getGitHubLibraries: async () => ({ getGitHubAuth: () => null }),
+      configureGitHubGitAuthor: vi.fn(),
+    });
+
+    const response = await request(app)
+      .post('/api/github/auth/git-author')
+      .send({})
+      .expect(401);
+
+    expect(response.body).toEqual({ error: 'GitHub not connected' });
+  });
 });

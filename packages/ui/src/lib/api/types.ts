@@ -1083,6 +1083,12 @@ export type GitHubTerminalAuthSyncResult = {
   gitCredentialHelperError?: string;
 };
 
+export type GitHubGitAuthorSyncResult = {
+  success: boolean;
+  userName: string;
+  userEmail: string;
+};
+
 export interface GitHubAPI {
   authStatus(): Promise<GitHubAuthStatus>;
   authStart(): Promise<GitHubDeviceFlowStart>;
@@ -1090,6 +1096,7 @@ export interface GitHubAPI {
   authDisconnect(): Promise<{ removed: boolean }>;
   authActivate(accountId: string): Promise<GitHubAuthStatus>;
   authSyncTerminal?(): Promise<GitHubTerminalAuthSyncResult>;
+  authConfigureGitAuthor?(): Promise<GitHubGitAuthorSyncResult>;
   me?(): Promise<GitHubUserSummary>;
 
   prStatus(directory: string, branch: string, remote?: string, options?: { force?: boolean }): Promise<GitHubPullRequestStatus>;

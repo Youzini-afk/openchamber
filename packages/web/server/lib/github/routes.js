@@ -1,4 +1,7 @@
-import { installTerminalGitHubAuth as defaultInstallTerminalGitHubAuth } from './terminal-auth.js';
+import {
+  configureGitHubGitAuthor as defaultConfigureGitHubGitAuthor,
+  installTerminalGitHubAuth as defaultInstallTerminalGitHubAuth,
+} from './terminal-auth.js';
 
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
@@ -48,6 +51,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
     return githubLibraries;
   });
   const installTerminalGitHubAuth = dependencies.installTerminalGitHubAuth || defaultInstallTerminalGitHubAuth;
+  const configureGitHubGitAuthor = dependencies.configureGitHubGitAuthor || defaultConfigureGitHubGitAuthor;
 
   const getGitHubUserSummary = async (octokit) => {
     const me = await octokit.rest.users.getAuthenticated();
@@ -273,6 +277,27 @@ export function registerGitHubRoutes(app, dependencies = {}) {
     } catch (error) {
       console.error('Failed to sync GitHub auth to terminal:', error);
       return res.status(500).json({ error: error.message || 'Failed to sync GitHub auth to terminal' });
+    }
+  });
+
+  app.post('/api/github/auth/git-author', async (_req, res) => {
+    try {
+      const { getGitHubAuth } = await getGitHubLibraries();
+      const auth = getGitHubAuth();
+      if (!auth?.accessToken) {
+        return res.status(401).json({ error: 'GitHub not connected' });
+      }
+
+      const result = configureGitHubGitAuthor({ auth });
+
+      return res.json({
+        success: true,
+        userName: result.userName,
+        userEmail: result.userEmail,
+      });
+    } catch (error) {
+      console.error('Failed to configure Git author from GitHub:', error);
+      return res.status(500).json({ error: error.message || 'Failed to configure Git author from GitHub' });
     }
   });
 

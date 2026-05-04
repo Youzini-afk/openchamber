@@ -5,6 +5,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import {
+  configureGitHubGitAuthor,
   installTerminalGitHubAuth,
   isTerminalGitHubAuthConfigured,
 } from './terminal-auth.js';
@@ -81,5 +82,60 @@ describe('terminal GitHub auth helpers', () => {
       homeDir: makeTempHome(),
       authFilePath: path.join(makeTempHome(), 'github-auth.json'),
     })).toThrow('GitHub is not connected');
+  });
+
+  it('configures global git author from the active GitHub user', () => {
+    const spawnSync = vi.fn(() => ({ status: 0, error: null, stderr: Buffer.from('') }));
+
+    const result = configureGitHubGitAuthor({
+      auth: {
+        accessToken: 'gho_test',
+        user: {
+          login: 'youzini-afk',
+          id: 12345,
+          name: 'youzini',
+          email: 'an48934293@gmail.com',
+        },
+      },
+      spawnSync,
+    });
+
+    expect(result).toEqual({
+      success: true,
+      userName: 'youzini',
+      userEmail: 'an48934293@gmail.com',
+    });
+    expect(spawnSync).toHaveBeenNthCalledWith(
+      1,
+      'git',
+      ['config', '--global', '--replace-all', 'user.name', 'youzini'],
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
+    expect(spawnSync).toHaveBeenNthCalledWith(
+      2,
+      'git',
+      ['config', '--global', '--replace-all', 'user.email', 'an48934293@gmail.com'],
+      expect.objectContaining({ encoding: 'utf8' }),
+    );
+  });
+
+  it('falls back to the GitHub noreply email when the account email is private', () => {
+    const spawnSync = vi.fn(() => ({ status: 0, error: null, stderr: Buffer.from('') }));
+
+    const result = configureGitHubGitAuthor({
+      auth: {
+        accessToken: 'gho_test',
+        user: {
+          login: 'youzini-afk',
+          id: 12345,
+          name: '',
+          email: null,
+        },
+      },
+      spawnSync,
+    });
+
+    expect(result.userName).toBe('youzini-afk');
+    expect(result.userEmail).toBe('12345+youzini-afk@users.noreply.github.com');
   });
 });

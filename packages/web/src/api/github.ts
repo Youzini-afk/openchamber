@@ -17,6 +17,7 @@ import type {
   GitHubRepoUpstreamResult,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
+  GitHubGitAuthorSyncResult,
   GitHubTerminalAuthSyncResult,
   GitHubUserSummary,
 } from '@openchamber/ui/lib/api/types';
@@ -92,6 +93,19 @@ export const createWebGitHubAPI = (): GitHubAPI => ({
     const payload = await jsonOrNull<GitHubTerminalAuthSyncResult & { error?: string }>(response);
     if (!response.ok || !payload) {
       throw new Error(payload?.error || response.statusText || 'Failed to sync GitHub auth to terminal');
+    }
+    return payload;
+  },
+
+  async authConfigureGitAuthor(): Promise<GitHubGitAuthorSyncResult> {
+    const response = await fetch('/api/github/auth/git-author', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const payload = await jsonOrNull<GitHubGitAuthorSyncResult & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to configure Git author');
     }
     return payload;
   },
