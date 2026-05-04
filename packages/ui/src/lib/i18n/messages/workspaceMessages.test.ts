@@ -25,6 +25,13 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.menu.moveToTrash',
   'workspace.sidebar.state.empty',
   'workspace.sidebar.state.loading',
+  'workspace.sidebar.dialog.rename.title',
+  'workspace.sidebar.dialog.rename.description',
+  'workspace.sidebar.dialog.rename.placeholder',
+  'workspace.sidebar.dialog.rename.invalidName',
+  'workspace.sidebar.dialog.rename.sameName',
+  'workspace.sidebar.dialog.rename.cancel',
+  'workspace.sidebar.dialog.rename.submit',
   'workspace.terminal.actions.restart',
   'workspace.terminal.actions.stop',
   'workspace.terminal.actions.restore',
@@ -94,6 +101,17 @@ describe('workspace sidebar messages', () => {
     );
 
     expect(source).toContain('onContextMenu');
+  });
+
+  test('workspace rename uses a localized dialog instead of a native prompt', () => {
+    const source = readFileSync(
+      resolve(testDir, '../../../components/workspace/WorkspaceSidebarSection.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain("t('workspace.sidebar.dialog.rename.title')");
+    expect(source).toContain("t('workspace.sidebar.dialog.rename.submit')");
+    expect(source).not.toContain("window.prompt(t('workspace.sidebar.prompt.renameTo')");
   });
 
   test('workspace terminal and git overlays use localized messages', () => {

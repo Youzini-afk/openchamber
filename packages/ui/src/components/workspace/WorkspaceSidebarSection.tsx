@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   RiChatNewLine,
+  RiEditLine,
   RiFileAddLine,
   RiFileLine,
   RiFolderAddLine,
@@ -15,12 +16,21 @@ import {
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { WorkspaceEntry } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
@@ -79,7 +89,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const toggleExpandedPath = useWorkspaceStore((state) => state.toggleExpandedPath);
   const createFolder = useWorkspaceStore((state) => state.createFolder);
   const createFile = useWorkspaceStore((state) => state.createFile);
-  const moveEntry = useWorkspaceStore((state) => state.moveEntry);
+  const renameEntry = useWorkspaceStore((state) => state.renameEntry);
   const deleteEntry = useWorkspaceStore((state) => state.deleteEntry);
   const uploadFiles = useWorkspaceStore((state) => state.uploadFiles);
   const openProject = useWorkspaceStore((state) => state.openProject);
@@ -92,6 +102,10 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = React.useRef('');
   const [contextMenuPath, setContextMenuPath] = React.useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = React.useState<WorkspaceEntry | null>(null);
+  const [renameDraft, setRenameDraft] = React.useState('');
+  const [renameError, setRenameError] = React.useState<string | null>(null);
+  const [renameSubmitting, setRenameSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     if (didInitialLoadRef.current) {
@@ -118,15 +132,49 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     if (entry) toast.success(t('workspace.sidebar.toast.fileCreated'));
   }, [createFile, t]);
 
-  const handleRename = React.useCallback(async (entry: WorkspaceEntry) => {
-    const nextName = window.prompt(t('workspace.sidebar.prompt.renameTo'), entry.name);
-    if (!nextName?.trim() || nextName.trim() === entry.name) return;
-    const parent = entry.relativePath.includes('/')
-      ? entry.relativePath.slice(0, entry.relativePath.lastIndexOf('/'))
-      : '';
-    const moved = await moveEntry(entry.relativePath, childPath(parent, nextName));
-    if (moved) toast.success(t('workspace.sidebar.toast.renamed'));
-  }, [moveEntry, t]);
+  const closeRenameDialog = React.useCallback(() => {
+    setRenameTarget(null);
+    setRenameDraft('');
+    setRenameError(null);
+    setRenameSubmitting(false);
+  }, []);
+
+  const openRenameDialog = React.useCallback((entry: WorkspaceEntry) => {
+    setContextMenuPath(null);
+    setRenameTarget(entry);
+    setRenameDraft(entry.name);
+    setRenameError(null);
+  }, []);
+
+  const validateRenameDraft = React.useCallback((name: string, currentName: string): string | null => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === '.' || trimmed === '..' || trimmed.includes('/') || trimmed.includes('\\')) {
+      return t('workspace.sidebar.dialog.rename.invalidName');
+    }
+    if (trimmed === currentName) {
+      return t('workspace.sidebar.dialog.rename.sameName');
+    }
+    return null;
+  }, [t]);
+
+  const handleRenameSubmit = React.useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!renameTarget) return;
+
+    const validation = validateRenameDraft(renameDraft, renameTarget.name);
+    if (validation) {
+      setRenameError(validation);
+      return;
+    }
+
+    setRenameSubmitting(true);
+    const renamed = await renameEntry(renameTarget.relativePath, renameDraft.trim());
+    setRenameSubmitting(false);
+    if (renamed) {
+      toast.success(t('workspace.sidebar.toast.renamed'));
+      closeRenameDialog();
+    }
+  }, [closeRenameDialog, renameDraft, renameEntry, renameTarget, t, validateRenameDraft]);
 
   const handleDelete = React.useCallback(async (entry: WorkspaceEntry) => {
     if (!window.confirm(t('workspace.sidebar.confirm.moveToTrash', { name: entry.name }))) return;
@@ -257,6 +305,18 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{t('workspace.sidebar.menu.terminal')}</TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                      onClick={() => openRenameDialog(entry)}
+                    >
+                      <RiEditLine className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{t('workspace.sidebar.menu.rename')}</TooltipContent>
+                </Tooltip>
               </>
             ) : null}
             <DropdownMenu open={menuOpen} onOpenChange={(open) => setContextMenuPath(open ? entry.relativePath : null)}>
@@ -312,7 +372,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                 <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
                   {t('workspace.sidebar.menu.copyPath')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void handleRename(entry)}>
+                <DropdownMenuItem onClick={() => openRenameDialog(entry)}>
+                  <RiEditLine className="mr-1.5 h-4 w-4" />
                   {t('workspace.sidebar.menu.rename')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -346,13 +407,13 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleCopyPath,
     handleOpenChat,
     handleOpenFiles,
-    handleRename,
     handleUploadClick,
     loadDirectory,
     loadingPaths,
     mobileVariant,
     contextMenuPath,
     openGitPanel,
+    openRenameDialog,
     openTerminal,
     refreshGitStatus,
     t,
@@ -436,6 +497,54 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
         className="hidden"
         onChange={handleUploadChange}
       />
+
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => {
+        if (!open) closeRenameDialog();
+      }}>
+        <DialogContent className="max-w-md">
+          <form className="space-y-4" onSubmit={handleRenameSubmit}>
+            <DialogHeader>
+              <DialogTitle>{t('workspace.sidebar.dialog.rename.title')}</DialogTitle>
+              <DialogDescription>
+                {t('workspace.sidebar.dialog.rename.description', { name: renameTarget?.name ?? '' })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Input
+                value={renameDraft}
+                onChange={(event) => {
+                  setRenameDraft(event.currentTarget.value);
+                  setRenameError(null);
+                }}
+                placeholder={t('workspace.sidebar.dialog.rename.placeholder')}
+                aria-invalid={renameError ? true : undefined}
+                autoFocus
+              />
+              {renameError ? (
+                <p className="typography-micro text-[var(--status-error)]">
+                  {renameError}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={closeRenameDialog}
+                disabled={renameSubmitting}
+              >
+                {t('workspace.sidebar.dialog.rename.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={renameSubmitting || !renameDraft.trim()}
+              >
+                {t('workspace.sidebar.dialog.rename.submit')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {error ? (
         <div className="rounded-md border border-[var(--status-error)]/30 px-2 py-1 typography-micro text-[var(--status-error)]">

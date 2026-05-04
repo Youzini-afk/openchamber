@@ -201,6 +201,20 @@ describe("useWorkspaceStore", () => {
     expect(calls.some((call) => call.name === "list" && call.path === "renamed")).toBe(true);
   });
 
+  test("renames an entry within its parent directory and refreshes that parent", async () => {
+    const { useWorkspaceStore } = await import("./useWorkspaceStore");
+    useWorkspaceStore.getState().resetForTests();
+
+    const renamed = await useWorkspaceStore.getState().renameEntry("demo/src", "source");
+
+    expect(renamed?.relativePath).toBe("demo/source");
+    expect(calls.some((call) => (
+      call.name === "move"
+      && JSON.stringify(call.payload) === JSON.stringify({ from: "demo/src", to: "demo/source" })
+    ))).toBe(true);
+    expect(calls.some((call) => call.name === "list" && call.path === "demo")).toBe(true);
+  });
+
   test("does not expose a clone action from the workspace store", async () => {
     const { useWorkspaceStore } = await import("./useWorkspaceStore");
     useWorkspaceStore.getState().resetForTests();

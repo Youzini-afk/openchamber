@@ -55,6 +55,7 @@ type WorkspaceStore = {
   createFolder: (path: string) => Promise<WorkspaceEntry | null>;
   createFile: (path: string, content?: string) => Promise<WorkspaceEntry | null>;
   moveEntry: (from: string, to: string) => Promise<WorkspaceEntry | null>;
+  renameEntry: (path: string, name: string) => Promise<WorkspaceEntry | null>;
   deleteEntry: (path: string, options?: { permanent?: boolean }) => Promise<boolean>;
   readFile: (path: string) => Promise<{ content: string; mtimeMs: number } | null>;
   writeFile: (path: string, content: string, expectedMtimeMs?: number | null) => Promise<WorkspaceEntry | null>;
@@ -97,6 +98,18 @@ const parentPathOf = (path: string): string => {
   if (!normalized) return '';
   const index = normalized.lastIndexOf('/');
   return index >= 0 ? normalized.slice(0, index) : '';
+};
+
+const isSafeEntryName = (name: string): boolean => {
+  const trimmed = name.trim();
+  return Boolean(
+    trimmed
+    && trimmed !== '.'
+    && trimmed !== '..'
+    && !trimmed.includes('/')
+    && !trimmed.includes('\\')
+    && !trimmed.includes('\0')
+  );
 };
 
 const pathAndParents = (path: string): string[] => {
@@ -277,6 +290,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         await Promise.all(Array.from(new Set([fromParent, toParent])).map((parent) => get().loadDirectory(parent)));
         return response.entry;
       });
+    },
+
+    renameEntry: async (path: string, name: string) => {
+      const fromPath = normalizeWorkspacePath(path);
+      const nextName = name.trim();
+      if (!fromPath || !isSafeEntryName(nextName)) return null;
+      const currentName = fromPath.split('/').pop() || fromPath;
+      if (nextName === currentName) return null;
+      const parent = parentPathOf(fromPath);
+      const toPath = parent ? `${parent}/${nextName}` : nextName;
+      return get().moveEntry(fromPath, toPath);
     },
 
     deleteEntry: async (path: string, options = {}) => {
