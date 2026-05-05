@@ -60,9 +60,9 @@ describe('workspace routes', () => {
       relativeRoot: '',
       limits: {
         maxReadBytes: 1024 * 1024,
-        maxArchiveBytes: 200 * 1024 * 1024,
-        maxExtractBytes: 500 * 1024 * 1024,
-        maxExtractFiles: 5000,
+        maxArchiveBytes: 1024 * 1024 * 1024,
+        maxExtractBytes: 3 * 1024 * 1024 * 1024,
+        maxExtractFiles: 30000,
         archivePreviewLimit: 500,
       },
     });
