@@ -311,10 +311,15 @@ const TableDownloadButton: React.FC<{ tableRef: React.RefObject<HTMLDivElement |
 // Table wrapper with custom controls
 const TableWrapper: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className }) => {
   const tableRef = React.useRef<HTMLDivElement>(null);
+  const { isMobile, isTablet } = useDeviceInfo();
+  const alwaysShowActions = isMobile || isTablet;
 
   return (
     <div className="group my-4 flex flex-col space-y-2" data-markdown="table-wrapper" ref={tableRef}>
-      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className={cn(
+        "flex items-center justify-end gap-1 transition-opacity",
+        alwaysShowActions ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+      )}>
         <TableCopyButton tableRef={tableRef} />
         <TableDownloadButton tableRef={tableRef} />
       </div>
@@ -330,7 +335,7 @@ const TableWrapper: React.FC<{ children?: React.ReactNode; className?: string }>
 const MermaidBlock: React.FC<{ source: string; mode: 'svg' | 'ascii' }> = ({ source, mode }) => {
   const { t } = useI18n();
   const currentTheme = useCurrentMermaidTheme();
-  const { isMobile } = useDeviceInfo();
+  const { isMobile, isTablet } = useDeviceInfo();
   const [copied, setCopied] = React.useState(false);
   const [downloaded, setDownloaded] = React.useState(false);
 
@@ -362,7 +367,7 @@ const MermaidBlock: React.FC<{ source: string; mode: 'svg' | 'ascii' }> = ({ sou
     }
   }, [mode, source]);
 
-  const copyVisibilityClass = isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100';
+  const copyVisibilityClass = isMobile || isTablet ? 'opacity-100' : 'opacity-0 group-hover:opacity-100';
 
   const handleCopyAscii = async (asciiText: string) => {
     if (!asciiText) return;
@@ -724,6 +729,7 @@ const MarkdownCodeBlock: React.FC<{
   const [viewMode, setViewMode] = React.useState<'code' | 'preview'>('code');
   const prevCodeRef = React.useRef<string>(code);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { isMobile, isTablet } = useDeviceInfo();
 
   const canPreview = language === 'html' || language === 'htm';
 
@@ -774,7 +780,10 @@ const MarkdownCodeBlock: React.FC<{
     <div data-component="markdown-code" className="my-4 group overflow-hidden rounded-2xl border border-border/80 bg-[var(--surface-elevated)]">
       <div className="flex items-center justify-between border-b border-border/70 px-3 py-1.5">
         <span className="font-mono text-[13px] text-muted-foreground">{language}</span>
-        <div className="flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+        <div className={cn(
+          "flex items-center gap-1 transition-opacity",
+          isMobile || isTablet ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        )}>
           {canPreview ? (
             <button
               type="button"
@@ -983,10 +992,15 @@ interface MarkdownRendererProps {
   disableStreamAnimation?: boolean;
   variant?: MarkdownVariant;
   onShowPopup?: (content: ToolPopupContent) => void;
+  enableFileReferences?: boolean;
 }
 
 const MERMAID_BLOCK_SELECTOR = '[data-markdown="mermaid-block"]';
 const FILE_LINK_SELECTOR = '[data-openchamber-file-link="true"]';
+const FILE_REFERENCE_STAT_CONCURRENCY = 4;
+const FILE_REFERENCE_STAT_CACHE = new Map<string, Promise<boolean>>();
+let activeFileReferenceStatCount = 0;
+const pendingFileReferenceStats: Array<() => void> = [];
 
 type ParsedFileReference = {
   path: string;
@@ -1253,6 +1267,44 @@ const getResolvedReference = (rawValue: string, effectiveDirectory: string): (Pa
   };
 };
 
+const fileReferenceExists = (resolvedPath: string): Promise<boolean> => {
+  const normalizedPath = normalizePath(resolvedPath);
+  if (!normalizedPath) {
+    return Promise.resolve(false);
+  }
+
+  const cached = FILE_REFERENCE_STAT_CACHE.get(normalizedPath);
+  if (cached) {
+    return cached;
+  }
+
+  const request = new Promise<boolean>((resolve) => {
+    const run = () => {
+      activeFileReferenceStatCount += 1;
+      void fetch(`/api/fs/stat?path=${encodeURIComponent(normalizedPath)}`, {
+        method: 'GET',
+        cache: 'no-store',
+      })
+        .then((response) => resolve(response.ok))
+        .catch(() => resolve(false))
+        .finally(() => {
+          activeFileReferenceStatCount = Math.max(0, activeFileReferenceStatCount - 1);
+          pendingFileReferenceStats.shift()?.();
+        });
+    };
+
+    if (activeFileReferenceStatCount < FILE_REFERENCE_STAT_CONCURRENCY) {
+      run();
+      return;
+    }
+
+    pendingFileReferenceStats.push(run);
+  });
+
+  FILE_REFERENCE_STAT_CACHE.set(normalizedPath, request);
+  return request;
+};
+
 const getContextDirectory = (effectiveDirectory: string, resolvedPath: string): string => {
   const normalizedDirectory = normalizePath(effectiveDirectory);
   if (normalizedDirectory) {
@@ -1269,11 +1321,13 @@ const useFileReferenceInteractions = ({
   effectiveDirectory,
   editor,
   preferRuntimeEditor,
+  enabled,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
+  enabled: boolean;
 }) => {
   const annotationDebounceRef = React.useRef<number | null>(null);
 
@@ -1282,6 +1336,20 @@ const useFileReferenceInteractions = ({
     if (!container) {
       return;
     }
+    let cancelled = false;
+
+    const clearFileLinkAttributes = (candidate: HTMLElement) => {
+      candidate.removeAttribute('data-openchamber-file-link');
+      candidate.removeAttribute('data-openchamber-file-ref');
+      candidate.removeAttribute('data-openchamber-file-path');
+      if (candidate.getAttribute('title') === 'Open file') {
+        candidate.removeAttribute('title');
+      }
+      if (candidate.tagName.toLowerCase() !== 'a') {
+        candidate.removeAttribute('role');
+        candidate.removeAttribute('tabindex');
+      }
+    };
 
     const annotateFileLinks = () => {
       const candidates = container.querySelectorAll<HTMLElement>('[data-markdown="inline-code"], a');
@@ -1289,28 +1357,32 @@ const useFileReferenceInteractions = ({
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
         const resolved = getResolvedReference(rawCandidate, effectiveDirectory);
-        if (!resolved) {
-          candidate.removeAttribute('data-openchamber-file-link');
-          candidate.removeAttribute('data-openchamber-file-ref');
-          candidate.removeAttribute('data-openchamber-file-path');
-          if (candidate.getAttribute('title') === 'Open file') {
-            candidate.removeAttribute('title');
-          }
-          if (candidate.tagName.toLowerCase() !== 'a') {
-            candidate.removeAttribute('role');
-            candidate.removeAttribute('tabindex');
-          }
+        clearFileLinkAttributes(candidate);
+
+        if (!enabled || !resolved) {
           continue;
         }
 
-        candidate.setAttribute('data-openchamber-file-link', 'true');
-        candidate.setAttribute('data-openchamber-file-ref', rawCandidate);
-        candidate.setAttribute('data-openchamber-file-path', resolved.resolvedPath);
-        candidate.setAttribute('title', 'Open file');
-        if (candidate.tagName.toLowerCase() !== 'a') {
-          candidate.setAttribute('role', 'button');
-          candidate.setAttribute('tabindex', '0');
-        }
+        void fileReferenceExists(resolved.resolvedPath).then((exists) => {
+          if (cancelled || !exists || !container.contains(candidate)) {
+            return;
+          }
+
+          const latestRawCandidate = extractPathCandidateFromElement(candidate);
+          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory);
+          if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
+            return;
+          }
+
+          candidate.setAttribute('data-openchamber-file-link', 'true');
+          candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
+          candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
+          candidate.setAttribute('title', 'Open file');
+          if (candidate.tagName.toLowerCase() !== 'a') {
+            candidate.setAttribute('role', 'button');
+            candidate.setAttribute('tabindex', '0');
+          }
+        });
       }
     };
 
@@ -1407,6 +1479,7 @@ const useFileReferenceInteractions = ({
     container.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      cancelled = true;
       if (annotationDebounceRef.current !== null && typeof window !== 'undefined') {
         window.clearTimeout(annotationDebounceRef.current);
       }
@@ -1415,7 +1488,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor]);
+  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1522,6 +1595,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   disableStreamAnimation = false,
   variant = 'assistant',
   onShowPopup,
+  enableFileReferences = true,
 }) => {
   const currentTheme = useCurrentMermaidTheme();
   const { editor, runtime } = useRuntimeAPIs();
@@ -1534,6 +1608,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    enabled: enableFileReferences && !isStreaming,
   });
   useExternalLinkInteractions({ containerRef });
   const openContextPreview = useUIStore((state) => state.openContextPreview);
@@ -1606,6 +1681,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   onShowPopup?: (content: ToolPopupContent) => void;
   mermaidControls?: MermaidControlOptions;
   allowMermaidWheelZoom?: boolean;
+  enableFileReferences?: boolean;
 }> = ({
   content,
   className,
@@ -1614,6 +1690,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   stripFrontmatter = false,
   onShowPopup,
   allowMermaidWheelZoom = false,
+  enableFileReferences = true,
 }) => {
   const { editor, runtime } = useRuntimeAPIs();
   const renderedContent = React.useMemo(
@@ -1635,6 +1712,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    enabled: enableFileReferences,
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
   const syntaxTheme = React.useMemo(() => generateSyntaxTheme(currentTheme), [currentTheme]);
@@ -1665,5 +1743,6 @@ export const SimpleMarkdownRenderer = React.memo(SimpleMarkdownRendererImpl, (pr
     && prev.disableLinkSafety === next.disableLinkSafety
     && prev.stripFrontmatter === next.stripFrontmatter
     && prev.onShowPopup === next.onShowPopup
-    && prev.allowMermaidWheelZoom === next.allowMermaidWheelZoom;
+    && prev.allowMermaidWheelZoom === next.allowMermaidWheelZoom
+    && prev.enableFileReferences === next.enableFileReferences;
 });

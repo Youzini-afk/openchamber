@@ -205,6 +205,12 @@ export interface GitPullResult {
   deletions: number;
 }
 
+export interface GitPullOptions {
+  remote?: string;
+  branch?: string;
+  rebase?: boolean;
+}
+
 export interface GitRemote {
   name: string;
   fetchUrl: string;
@@ -423,7 +429,7 @@ export interface GitAPI {
   deleteGitWorktree?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }>;
   createGitCommit(directory: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
   gitPush(directory: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
-  gitPull(directory: string, options?: { remote?: string; branch?: string }): Promise<GitPullResult>;
+  gitPull(directory: string, options?: GitPullOptions): Promise<GitPullResult>;
   gitFetch(directory: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
   checkoutBranch(directory: string, branch: string): Promise<{ success: boolean; branch: string }>;
   createBranch(directory: string, name: string, startPoint?: string): Promise<{ success: boolean; branch: string }>;
@@ -744,6 +750,7 @@ export interface SettingsPayload {
   gitProviderId?: string;
   gitModelId?: string;
   pwaAppName?: string;
+  mobileKeyboardMode?: 'native' | 'resize-content';
 
   [key: string]: unknown;
 }
