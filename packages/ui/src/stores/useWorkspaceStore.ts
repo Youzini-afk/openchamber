@@ -10,6 +10,9 @@ import type {
   GitPushResult,
   ProjectEntry,
   SettingsPayload,
+  WorkspaceArchiveExtractRequest,
+  WorkspaceArchiveExtractResult,
+  WorkspaceArchivePreview,
   WorkspaceEntry,
   WorkspaceGitStatus,
   WorkspaceListResult,
@@ -17,6 +20,7 @@ import type {
   WorkspaceUploadFile,
 } from '@/lib/api/types';
 import { getWorkspaceAPI } from '@/lib/workspaceApi';
+import type { WorkspaceArchiveMode } from '@/lib/workspaceArchive';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 
 export type WorkspaceTerminalDialogState = {
@@ -29,6 +33,12 @@ export type WorkspaceTerminalDialogState = {
 export type WorkspaceGitPanelState = {
   open: boolean;
   path: string;
+};
+
+export type WorkspaceArchiveDialogState = {
+  open: boolean;
+  path: string;
+  mode: WorkspaceArchiveMode;
 };
 
 type WorkspaceStore = {
@@ -46,6 +56,7 @@ type WorkspaceStore = {
   error: string | null;
   terminalDialog: WorkspaceTerminalDialogState;
   gitPanel: WorkspaceGitPanelState;
+  archiveDialog: WorkspaceArchiveDialogState;
 
   loadRoot: () => Promise<WorkspaceRootInfo | null>;
   refreshWorkspace: () => Promise<void>;
@@ -61,6 +72,8 @@ type WorkspaceStore = {
   writeFile: (path: string, content: string, expectedMtimeMs?: number | null) => Promise<WorkspaceEntry | null>;
   uploadFiles: (path: string, files: WorkspaceUploadFile[]) => Promise<WorkspaceEntry[]>;
   downloadFile: (path: string) => Promise<void>;
+  previewArchive: (path: string) => Promise<WorkspaceArchivePreview | null>;
+  extractArchive: (request: WorkspaceArchiveExtractRequest) => Promise<WorkspaceArchiveExtractResult | null>;
   openProject: (path: string) => Promise<ProjectEntry | null>;
   refreshGitStatus: (path: string) => Promise<WorkspaceGitStatus | null>;
   gitFetch: (path: string, options?: { remote?: string; branch?: string }) => Promise<boolean>;
@@ -74,6 +87,8 @@ type WorkspaceStore = {
   closeTerminal: () => void;
   openGitPanel: (path: string) => void;
   closeGitPanel: () => void;
+  openArchiveDialog: (path: string, mode?: WorkspaceArchiveMode) => void;
+  closeArchiveDialog: () => void;
   resetForTests: () => void;
 };
 
@@ -87,6 +102,12 @@ const EMPTY_TERMINAL_DIALOG: WorkspaceTerminalDialogState = {
 const EMPTY_GIT_PANEL: WorkspaceGitPanelState = {
   open: false,
   path: '',
+};
+
+const EMPTY_ARCHIVE_DIALOG: WorkspaceArchiveDialogState = {
+  open: false,
+  path: '',
+  mode: 'preview',
 };
 
 const normalizeWorkspacePath = (value = ''): string => (
@@ -183,6 +204,7 @@ const initialState = {
   error: null,
   terminalDialog: EMPTY_TERMINAL_DIALOG,
   gitPanel: EMPTY_GIT_PANEL,
+  archiveDialog: EMPTY_ARCHIVE_DIALOG,
 };
 
 export const useWorkspaceStore = create<WorkspaceStore>()(
@@ -353,6 +375,30 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       await getWorkspaceAPI().download(target);
     },
 
+    previewArchive: async (path: string) => {
+      const target = normalizeWorkspacePath(path);
+      return withAction(`archive-preview:${target}`, async () => getWorkspaceAPI().previewArchive(target));
+    },
+
+    extractArchive: async (request) => {
+      const target = normalizeWorkspacePath(request.path);
+      const destination = normalizeWorkspacePath(request.destination);
+      return withAction(`archive-extract:${target}`, async () => {
+        const response = await getWorkspaceAPI().extractArchive({
+          ...request,
+          path: target,
+          destination,
+        });
+        const destinationParent = parentPathOf(response.destination || destination);
+        await Promise.all(Array.from(new Set([
+          parentPathOf(target),
+          destinationParent,
+          response.destination,
+        ])).map((pathToLoad) => get().loadDirectory(pathToLoad)));
+        return response;
+      });
+    },
+
     openProject: async (path: string) => {
       const target = normalizeWorkspacePath(path);
       return withAction(`open-project:${target}`, async () => {
@@ -499,11 +545,26 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       set({ gitPanel: EMPTY_GIT_PANEL });
     },
 
+    openArchiveDialog: (path: string, mode = 'preview') => {
+      set({
+        archiveDialog: {
+          open: true,
+          path: normalizeWorkspacePath(path),
+          mode,
+        },
+      });
+    },
+
+    closeArchiveDialog: () => {
+      set({ archiveDialog: EMPTY_ARCHIVE_DIALOG });
+    },
+
     resetForTests: () => {
       set({
         ...initialState,
         terminalDialog: EMPTY_TERMINAL_DIALOG,
         gitPanel: EMPTY_GIT_PANEL,
+        archiveDialog: EMPTY_ARCHIVE_DIALOG,
       });
     },
   }), { name: 'workspace-store' })

@@ -20,6 +20,11 @@ const parseMegabytes = (value, fallbackMb) => {
   return Math.max(0, Math.round(mb * 1024 * 1024));
 };
 
+const parseNonNegativeInteger = (value, fallback) => {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 const resolveDefaultWorkspaceRoot = ({ env = process.env, cwd = process.cwd(), pathModule = path, osModule = os } = {}) => {
   const explicit = typeof env.OPENCHAMBER_WORKSPACE_ROOT === 'string'
     ? env.OPENCHAMBER_WORKSPACE_ROOT.trim()
@@ -54,6 +59,10 @@ export const createWorkspaceConfig = (options = {}) => {
     trashEnabled: parseBoolean(env.OPENCHAMBER_WORKSPACE_TRASH, true),
     maxReadBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_READ_MB, 2),
     maxUploadBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_UPLOAD_MB, 100),
+    maxArchiveBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_ARCHIVE_MB, 200),
+    maxExtractBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_EXTRACT_MB, 500),
+    maxExtractFiles: parseNonNegativeInteger(env.OPENCHAMBER_WORKSPACE_MAX_EXTRACT_FILES, 5000),
+    archivePreviewLimit: parseNonNegativeInteger(env.OPENCHAMBER_WORKSPACE_ARCHIVE_PREVIEW_LIMIT, 500),
     customCommandsEnabled: parseBoolean(env.OPENCHAMBER_WORKSPACE_CUSTOM_COMMANDS, false),
   };
 };

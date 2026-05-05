@@ -1,9 +1,14 @@
 import fs from 'fs';
+import multer from 'multer';
 import os from 'os';
 import path from 'path';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createWorkspaceConfig } from './workspace-config.js';
 import { resolveWorkspacePath } from './path-safety.js';
+import {
+  extractWorkspaceArchive,
+  previewWorkspaceArchive,
+} from './archive.js';
 import {
   createWorkspaceFile,
   createWorkspaceFolder,
@@ -14,6 +19,7 @@ import {
   moveWorkspaceEntry,
   readWorkspaceFile,
   uploadWorkspaceFiles,
+  uploadWorkspaceMultipartFiles,
   writeWorkspaceFile,
 } from './filesystem.js';
 import {
@@ -39,6 +45,7 @@ const toErrorStatus = (error) => {
   if (error?.code === 'ENOENT') return 404;
   if (error?.code === 'EEXIST') return 409;
   if (error?.code === 'EACCES' || error?.code === 'EPERM') return 403;
+  if (error?.name === 'MulterError') return 413;
   return 500;
 };
 
@@ -145,6 +152,24 @@ const openWorkspaceProject = async (relativePathValue, dependencies, context) =>
 
 export const registerWorkspaceRoutes = (app, dependencies = {}) => {
   const context = createRouteContext(dependencies);
+  const multipartUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: context.config.maxUploadBytes,
+      files: 1000,
+      fieldSize: 1024 * 1024,
+    },
+  });
+
+  const parseMultipartUpload = (req, res) => new Promise((resolve, reject) => {
+    multipartUpload.array('files')(req, res, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(req.files || []);
+    });
+  });
 
   app.get('/api/workspace/root', async (_req, res) => {
     try {
@@ -244,7 +269,28 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
 
   app.post('/api/workspace/upload', async (req, res) => {
     try {
+      if (req.is('multipart/form-data')) {
+        const files = await parseMultipartUpload(req, res);
+        res.json(await uploadWorkspaceMultipartFiles(getRequestPath(req), files, context.config, context));
+        return;
+      }
       res.json(await uploadWorkspaceFiles(getRequestPath(req), req.body?.files, context.config, context));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.get('/api/workspace/archive/preview', async (req, res) => {
+    try {
+      res.json(await previewWorkspaceArchive(getRequestPath(req), context.config, context));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post('/api/workspace/archive/extract', async (req, res) => {
+    try {
+      res.json(await extractWorkspaceArchive(req.body, context.config, context));
     } catch (error) {
       sendError(res, error);
     }
@@ -342,4 +388,3 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
     }
   });
 };
-

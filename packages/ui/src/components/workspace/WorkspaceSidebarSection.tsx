@@ -5,6 +5,7 @@ import {
   RiEditLine,
   RiFileAddLine,
   RiFileLine,
+  RiFileZipLine,
   RiFolderAddLine,
   RiFolderLine,
   RiGitBranchLine,
@@ -36,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { WorkspaceEntry } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { isWorkspaceArchivePath } from '@/lib/workspaceArchive';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
@@ -50,16 +52,6 @@ const TRASH_PATH = '.trash';
 const entryDepthPadding = (depth: number): React.CSSProperties => ({
   paddingLeft: `${Math.min(depth, 6) * 12 + 4}px`,
 });
-
-const toBase64 = async (file: File): Promise<string> => {
-  const buffer = await file.arrayBuffer();
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return window.btoa(binary);
-};
 
 const childPath = (parent: string, name: string): string => {
   const trimmedName = name.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
@@ -102,6 +94,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const openProject = useWorkspaceStore((state) => state.openProject);
   const openTerminal = useWorkspaceStore((state) => state.openTerminal);
   const openGitPanel = useWorkspaceStore((state) => state.openGitPanel);
+  const openArchiveDialog = useWorkspaceStore((state) => state.openArchiveDialog);
   const refreshGitStatus = useWorkspaceStore((state) => state.refreshGitStatus);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
@@ -238,19 +231,21 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     event.currentTarget.value = '';
     if (files.length === 0) return;
     try {
-      const payload = await Promise.all(files.map(async (file) => ({
-        name: file.name,
-        contentBase64: await toBase64(file),
-      })));
-      const uploaded = await uploadFiles(uploadTargetRef.current, payload);
+      const uploaded = await uploadFiles(uploadTargetRef.current, files);
       if (uploaded.length > 0) {
-        toast.success(t('workspace.sidebar.toast.uploaded', { count: uploaded.length }));
+        const firstArchive = uploaded.find((entry) => entry.type === 'file' && isWorkspaceArchivePath(entry.relativePath));
+        toast.success(t('workspace.sidebar.toast.uploaded', { count: uploaded.length }), firstArchive ? {
+          action: {
+            label: t('workspace.archive.actions.extract'),
+            onClick: () => openArchiveDialog(firstArchive.relativePath, 'new-folder'),
+          },
+        } : undefined);
       }
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : String(uploadError);
       toast.error(message || t('workspace.sidebar.toast.uploadFailed'));
     }
-  }, [t, uploadFiles]);
+  }, [openArchiveDialog, t, uploadFiles]);
 
   const handleCopyPath = React.useCallback(async (entry: WorkspaceEntry) => {
     try {
@@ -266,6 +261,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     const isTrashRoot = entry.relativePath === TRASH_PATH;
     const isInsideTrash = isTrashRelativePath(entry.relativePath);
     const canUseProjectActions = isDirectory && !isInsideTrash;
+    const isArchive = entry.type === 'file' && isWorkspaceArchivePath(entry.relativePath);
     const isExpanded = Boolean(expandedPaths[entry.relativePath]);
     const children = entriesByPath[entry.relativePath] ?? [];
     const gitLabel = getEntryGitLabel(entry);
@@ -296,6 +292,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               <RiDeleteBinLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             ) : isDirectory ? (
               <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : isArchive ? (
+              <RiFileZipLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             ) : (
               <RiFileLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
@@ -410,6 +408,23 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                   </DropdownMenuItem>
                 ) : (
                   <>
+                    {isArchive && !isInsideTrash ? (
+                      <>
+                        <DropdownMenuItem onClick={() => openArchiveDialog(entry.relativePath, 'preview')}>
+                          <RiFileZipLine className="mr-1.5 h-4 w-4" />
+                          {t('workspace.archive.menu.preview')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openArchiveDialog(entry.relativePath, 'new-folder')}>
+                          <RiFileZipLine className="mr-1.5 h-4 w-4" />
+                          {t('workspace.archive.menu.extractNewFolder')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openArchiveDialog(entry.relativePath, 'merge')}>
+                          <RiFileZipLine className="mr-1.5 h-4 w-4" />
+                          {t('workspace.archive.menu.extractHere')}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
                     <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
                       {t('workspace.sidebar.menu.copyPath')}
                     </DropdownMenuItem>
@@ -464,6 +479,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     mobileVariant,
     contextMenuPath,
     openGitPanel,
+    openArchiveDialog,
     openRenameDialog,
     openTerminal,
     refreshGitStatus,

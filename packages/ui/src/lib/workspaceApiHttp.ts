@@ -2,6 +2,9 @@ import type {
   CreateGitCommitOptions,
   GitLogOptions,
   WorkspaceAPI,
+  WorkspaceArchiveExtractRequest,
+  WorkspaceArchiveExtractResult,
+  WorkspaceArchivePreview,
   WorkspaceDeleteResult,
   WorkspaceEntry,
   WorkspaceGitStatus,
@@ -52,6 +55,10 @@ const jsonRequest = async <TResult>(
   await ensureOk(response, fallback);
   return response.json() as Promise<TResult>;
 };
+
+const isBrowserFile = (value: WorkspaceUploadFile): value is File => (
+  typeof File !== 'undefined' && value instanceof File
+);
 
 const getJson = async <TResult>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<TResult> => {
   const response = await fetch(buildUrl(path, params), { headers: { Accept: 'application/json' } });
@@ -151,6 +158,22 @@ export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
   },
 
   upload(path: string, files: WorkspaceUploadFile[]): Promise<WorkspaceUploadResult> {
+    if (files.every(isBrowserFile)) {
+      const formData = new FormData();
+      formData.set('path', normalizeWorkspacePath(path));
+      for (const file of files) {
+        formData.append('files', file, file.name);
+      }
+      return jsonRequest(
+        buildUrl('/upload'),
+        {
+          method: 'POST',
+          body: formData,
+        },
+        'Failed to upload workspace files',
+      );
+    }
+
     return jsonRequest(
       buildUrl('/upload'),
       {
@@ -170,6 +193,26 @@ export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  },
+
+  previewArchive(path: string): Promise<WorkspaceArchivePreview> {
+    return getJson('/archive/preview', { path: normalizeWorkspacePath(path) });
+  },
+
+  extractArchive(request: WorkspaceArchiveExtractRequest): Promise<WorkspaceArchiveExtractResult> {
+    return jsonRequest(
+      buildUrl('/archive/extract'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...request,
+          path: normalizeWorkspacePath(request.path),
+          destination: normalizeWorkspacePath(request.destination),
+        }),
+      },
+      'Failed to extract workspace archive',
+    );
   },
 
   openProject(path: string): Promise<WorkspaceProjectOpenResult> {
@@ -270,4 +313,3 @@ export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
     return getJson('/git/remotes', { path: normalizeWorkspacePath(path) });
   },
 });
-

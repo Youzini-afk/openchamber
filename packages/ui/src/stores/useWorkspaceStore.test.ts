@@ -77,6 +77,32 @@ const workspaceApi: WorkspaceAPI = {
     return { success: true, entries: [] };
   },
   async download() {},
+  async previewArchive(path) {
+    calls.push({ name: "previewArchive", path });
+    return {
+      archive: makeEntry(path.split("/").pop() || path, path, "file"),
+      format: "zip",
+      entries: [{ path: "README.md", type: "file", size: 12 }],
+      totalFiles: 1,
+      totalDirectories: 0,
+      totalBytes: 12,
+      truncated: false,
+    };
+  },
+  async extractArchive(request) {
+    calls.push({ name: "extractArchive", path: request.path, payload: request });
+    return {
+      success: true,
+      destination: request.destination,
+      destinationEntry: makeEntry(request.destination.split("/").pop() || request.destination, request.destination),
+      filesCreated: 1,
+      directoriesCreated: 0,
+      bytesWritten: 12,
+      conflictsRenamed: 0,
+      conflictsSkipped: 0,
+      deletedArchive: request.deleteArchive === true,
+    };
+  },
   async openProject(path) {
     calls.push({ name: "openProject", path });
     return {
@@ -228,6 +254,27 @@ describe("useWorkspaceStore", () => {
       && JSON.stringify(call.payload) === JSON.stringify({ permanent: true })
     ))).toBe(true);
     expect(calls.some((call) => call.name === "list" && call.path === ".trash")).toBe(true);
+  });
+
+  test("extracts archives and refreshes affected directories", async () => {
+    const { useWorkspaceStore } = await import("./useWorkspaceStore");
+    useWorkspaceStore.getState().resetForTests();
+
+    const preview = await useWorkspaceStore.getState().previewArchive("demo/archive.zip");
+    expect(preview?.totalFiles).toBe(1);
+
+    const result = await useWorkspaceStore.getState().extractArchive({
+      path: "demo/archive.zip",
+      destination: "demo/archive",
+      mode: "new-folder",
+      conflict: "rename",
+    });
+
+    expect(result?.destination).toBe("demo/archive");
+    expect(calls.some((call) => call.name === "previewArchive" && call.path === "demo/archive.zip")).toBe(true);
+    expect(calls.some((call) => call.name === "extractArchive" && call.path === "demo/archive.zip")).toBe(true);
+    expect(calls.some((call) => call.name === "list" && call.path === "demo")).toBe(true);
+    expect(calls.some((call) => call.name === "list" && call.path === "demo/archive")).toBe(true);
   });
 
   test("does not expose a clone action from the workspace store", async () => {

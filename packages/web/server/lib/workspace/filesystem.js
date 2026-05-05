@@ -100,6 +100,10 @@ export const getWorkspaceRootInfo = async (config, dependencies = {}) => {
     limits: {
       maxReadBytes: config.maxReadBytes,
       maxUploadBytes: config.maxUploadBytes,
+      maxArchiveBytes: config.maxArchiveBytes,
+      maxExtractBytes: config.maxExtractBytes,
+      maxExtractFiles: config.maxExtractFiles,
+      archivePreviewLimit: config.archivePreviewLimit,
     },
     features: {
       lockdown: config.lockdown,
@@ -374,7 +378,15 @@ export const deleteWorkspaceEntry = async (relativePathValue, config, dependenci
   };
 };
 
-export const uploadWorkspaceFiles = async (targetPathValue, files, config, dependencies = {}) => {
+const normalizeUploadName = (nameValue) => {
+  const name = normalizeWorkspaceRelativePath(nameValue || '');
+  if (!name || name.includes('/')) {
+    throw new WorkspacePathError('Uploaded file names must be simple relative file names');
+  }
+  return name;
+};
+
+const uploadWorkspaceBuffers = async (targetPathValue, files, config, dependencies = {}) => {
   const {
     fsPromises = fs.promises,
     pathModule = path,
@@ -394,12 +406,8 @@ export const uploadWorkspaceFiles = async (targetPathValue, files, config, depen
   let totalBytes = 0;
   const uploaded = [];
   for (const file of files) {
-    const name = normalizeWorkspaceRelativePath(file?.name || '');
-    if (!name || name.includes('/')) {
-      throw new WorkspacePathError('Uploaded file names must be simple relative file names');
-    }
-    const contentBase64 = typeof file?.contentBase64 === 'string' ? file.contentBase64 : '';
-    const buffer = Buffer.from(contentBase64, 'base64');
+    const name = normalizeUploadName(file?.name);
+    const buffer = Buffer.isBuffer(file?.buffer) ? file.buffer : Buffer.from(file?.buffer || []);
     totalBytes += buffer.length;
     if (totalBytes > config.maxUploadBytes) {
       throw new WorkspacePayloadTooLargeError('Upload is too large');
@@ -419,4 +427,29 @@ export const uploadWorkspaceFiles = async (targetPathValue, files, config, depen
   }
 
   return { success: true, entries: uploaded };
+};
+
+export const uploadWorkspaceFiles = async (targetPathValue, files, config, dependencies = {}) => {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new WorkspacePathError('No files provided');
+  }
+  const buffers = files.map((file) => {
+    const contentBase64 = typeof file?.contentBase64 === 'string' ? file.contentBase64 : '';
+    return {
+      name: file?.name,
+      buffer: Buffer.from(contentBase64, 'base64'),
+    };
+  });
+  return uploadWorkspaceBuffers(targetPathValue, buffers, config, dependencies);
+};
+
+export const uploadWorkspaceMultipartFiles = async (targetPathValue, files, config, dependencies = {}) => {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new WorkspacePathError('No files provided');
+  }
+  const buffers = files.map((file) => ({
+    name: file?.originalname || file?.name,
+    buffer: file?.buffer,
+  }));
+  return uploadWorkspaceBuffers(targetPathValue, buffers, config, dependencies);
 };

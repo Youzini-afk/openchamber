@@ -497,10 +497,14 @@ export interface WorkspaceRootInfo {
   relativeRoot: string;
   exists: boolean;
   mtimeMs: number;
-  limits: {
-    maxReadBytes: number;
-    maxUploadBytes: number;
-  };
+    limits: {
+      maxReadBytes: number;
+      maxUploadBytes: number;
+      maxArchiveBytes?: number;
+      maxExtractBytes?: number;
+      maxExtractFiles?: number;
+      archivePreviewLimit?: number;
+    };
   features: {
     lockdown: boolean;
     trash: boolean;
@@ -533,10 +537,10 @@ export interface WorkspaceDeleteResult {
   trashPath?: string;
 }
 
-export interface WorkspaceUploadFile {
+export type WorkspaceUploadFile = File | {
   name: string;
   contentBase64: string;
-}
+};
 
 export interface WorkspaceUploadResult {
   success: boolean;
@@ -553,6 +557,42 @@ export type WorkspaceGitStatus = GitStatus & {
   isGitRepository?: boolean;
 };
 
+export interface WorkspaceArchivePreviewEntry {
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+}
+
+export interface WorkspaceArchivePreview {
+  archive: WorkspaceEntry;
+  format: 'zip' | 'tar' | 'tgz';
+  entries: WorkspaceArchivePreviewEntry[];
+  totalFiles: number;
+  totalDirectories: number;
+  totalBytes: number;
+  truncated: boolean;
+}
+
+export interface WorkspaceArchiveExtractRequest {
+  path: string;
+  destination: string;
+  mode: 'new-folder' | 'merge';
+  conflict: 'rename' | 'skip' | 'error';
+  deleteArchive?: boolean;
+}
+
+export interface WorkspaceArchiveExtractResult {
+  success: true;
+  destination: string;
+  destinationEntry: WorkspaceEntry;
+  filesCreated: number;
+  directoriesCreated: number;
+  bytesWritten: number;
+  conflictsRenamed: number;
+  conflictsSkipped: number;
+  deletedArchive: boolean;
+}
+
 export interface WorkspaceAPI {
   getRoot(): Promise<WorkspaceRootInfo>;
   list(path?: string): Promise<WorkspaceListResult>;
@@ -566,6 +606,8 @@ export interface WorkspaceAPI {
   writeFile(path: string, content: string, expectedMtimeMs?: number | null): Promise<WorkspaceMutationResult>;
   upload(path: string, files: WorkspaceUploadFile[]): Promise<WorkspaceUploadResult>;
   download(path: string): Promise<void>;
+  previewArchive(path: string): Promise<WorkspaceArchivePreview>;
+  extractArchive(request: WorkspaceArchiveExtractRequest): Promise<WorkspaceArchiveExtractResult>;
   openProject(path: string): Promise<WorkspaceProjectOpenResult>;
   gitStatus(path: string, options?: { mode?: 'light' }): Promise<WorkspaceGitStatus>;
   gitFetch(path: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
