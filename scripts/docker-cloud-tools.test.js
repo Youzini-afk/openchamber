@@ -31,4 +31,25 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerfile).toContain('gh --version');
     expect(dockerfile).toContain('rg --version');
   });
+
+  it('uses official Rust and Go toolchains instead of stale apt packages', () => {
+    expect(aptInstallPackages.has('rustc')).toBe(false);
+    expect(aptInstallPackages.has('cargo')).toBe(false);
+    expect(aptInstallPackages.has('golang-go')).toBe(false);
+    expect(dockerfile).toContain('https://sh.rustup.rs');
+    expect(dockerfile).toContain('ARG GO_VERSION=1.26.2');
+    expect(dockerfile).toContain('https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz');
+    expect(dockerfile).toContain('rustc --version');
+    expect(dockerfile).toContain('cargo --version');
+    expect(dockerfile).toContain('go version');
+  });
+
+  it('uses official Node.js LTS instead of the apt nodejs package', () => {
+    expect(aptInstallPackages.has('nodejs')).toBe(false);
+    expect(aptInstallPackages.has('npm')).toBe(false);
+    expect(dockerfile).toContain('ARG NODE_VERSION=24.15.0');
+    expect(dockerfile).toContain('https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz');
+    expect(dockerfile).toContain('node --version');
+    expect(dockerfile).toContain('npm --version');
+  });
 });
