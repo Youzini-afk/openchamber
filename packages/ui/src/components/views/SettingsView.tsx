@@ -5,8 +5,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
-import { useOpenAgentConfigStore } from '@/stores/useOpenAgentConfigStore';
 import { useMagicContextConfigStore } from '@/stores/useMagicContextConfigStore';
+import { useAgentOrchestrationStore } from '@/stores/useAgentOrchestrationStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import {
@@ -38,7 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
+import { AgentOrchestrationPage } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
 import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
@@ -355,7 +355,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     if (settingsSlug === 'openagent') {
-      void useOpenAgentConfigStore.getState().loadConfig();
+      void useAgentOrchestrationStore.getState().loadConfig({ force: true });
       return;
     }
     if (settingsSlug === 'magic-context') {
@@ -508,7 +508,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'agents':
         return <AgentsPage />;
       case 'openagent':
-        return <OpenAgentPage />;
+        return <AgentOrchestrationPage />;
       case 'magic-context':
         return <MagicContextPage />;
       case 'behavior':

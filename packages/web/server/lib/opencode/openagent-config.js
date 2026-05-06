@@ -213,7 +213,14 @@ function isOpenAgentPluginEntry(value) {
   if (typeof value !== 'string') {
     return false;
   }
-  return value.includes(PLUGIN_NAME) || value.includes(LEGACY_PLUGIN_NAME);
+  const normalized = value.replace(/\\/g, '/');
+  const basename = normalized.split('/').pop() ?? normalized;
+  return (
+    basename === PLUGIN_NAME ||
+    basename.startsWith(`${PLUGIN_NAME}@`) ||
+    basename === LEGACY_PLUGIN_NAME ||
+    basename.startsWith(`${LEGACY_PLUGIN_NAME}@`)
+  );
 }
 
 function normalizePluginEntry(value) {

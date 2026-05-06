@@ -12,6 +12,7 @@ import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { registerOpenAgentRoutes } from './openagent-routes.js';
+import { registerAgentOrchestrationRoutes } from './agent-orchestration-routes.js';
 import { registerMagicContextRoutes } from './magic-context-routes.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
@@ -72,6 +73,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       readOpenAgentConfig,
       saveOpenAgentConfig,
       setOpenAgentPluginEnabled,
+      readAgentOrchestrationConfig,
+      setAgentOrchestrationMode,
+      runPackageAction,
+      readSlimConfig,
+      saveSlimConfig,
       readMagicContextConfig,
       saveMagicContextConfig,
     } = await import('./index.js');
@@ -106,6 +112,17 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       readOpenAgentConfig,
       saveOpenAgentConfig,
       setOpenAgentPluginEnabled,
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory,
+    });
+
+    registerAgentOrchestrationRoutes(app, {
+      clientReloadDelayMs,
+      readAgentOrchestrationConfig,
+      setAgentOrchestrationMode,
+      runPackageAction,
+      readSlimConfig,
+      saveSlimConfig,
       refreshOpenCodeAfterConfigChange,
       resolveOptionalProjectDirectory,
     });

@@ -57,6 +57,19 @@ export {
 } from './openagent-config.js';
 
 export {
+  readAgentOrchestrationConfig,
+  setAgentOrchestrationMode,
+  runPackageAction,
+} from './agent-orchestration-config.js';
+
+export {
+  readSlimConfig,
+  saveSlimConfig,
+  sanitizeSlimConfig,
+  ensureSlimStarterConfig,
+} from './slim-config.js';
+
+export {
   readMagicContextConfig,
   saveMagicContextConfig,
   sanitizeMagicContextConfig,

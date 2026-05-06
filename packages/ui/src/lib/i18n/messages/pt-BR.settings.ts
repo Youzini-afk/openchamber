@@ -31,7 +31,7 @@ export const settingsDict = {
   "settings.page.providers.title": "Provedores",
   "settings.page.usage.title": "Uso",
   "settings.page.agents.title": "Agentes",
-  "settings.page.openagent.title": "Oh My OpenAgent",
+  "settings.page.openagent.title": "Agent Orchestration",
   "settings.page.magicContext.title": "Magic Context",
   "settings.page.commands.title": "Comandos",
   "settings.page.mcp.title": "MCP",

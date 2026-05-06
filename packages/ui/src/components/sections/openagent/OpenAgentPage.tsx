@@ -906,7 +906,20 @@ function JsonPreviewDialog({
   );
 }
 
-export const OpenAgentPage: React.FC = () => {
+function OpenAgentContentWrapper({
+  embedded,
+  children,
+}: {
+  embedded?: boolean;
+  children: React.ReactNode;
+}) {
+  if (embedded) {
+    return <div className="space-y-4">{children}</div>;
+  }
+  return <SettingsPageLayout className="max-w-6xl space-y-4">{children}</SettingsPageLayout>;
+}
+
+export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useI18n();
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const config = useOpenAgentConfigStore((state) => state.config);
@@ -1010,10 +1023,10 @@ export const OpenAgentPage: React.FC = () => {
   };
 
   return (
-    <SettingsPageLayout className="max-w-6xl space-y-4">
+    <OpenAgentContentWrapper embedded={embedded}>
       <div className="space-y-1">
         <h2 className="typography-ui-header font-semibold text-foreground">
-          {t('settings.page.openagent.title')}
+          {embedded ? 'Oh My OpenAgent / OMO' : t('settings.page.openagent.title')}
         </h2>
         <p className="typography-ui text-muted-foreground">
           配置 oh-my-openagent 的 agents / categories 模型路由；当前版本写入服务进程用户的全局配置。
@@ -1055,16 +1068,18 @@ export const OpenAgentPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="mr-1 flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
-              <RiPlugLine className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="typography-micro text-foreground">插件总开关</span>
-              <Switch
-                checked={pluginEnabled}
-                onCheckedChange={(checked) => void handlePluginToggle(Boolean(checked))}
-                disabled={isLoading || isSaving || isPluginSaving}
-                aria-label="启用或关闭 Oh My OpenAgent 插件"
-              />
-            </div>
+            {!embedded ? (
+              <div className="mr-1 flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
+                <RiPlugLine className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="typography-micro text-foreground">插件总开关</span>
+                <Switch
+                  checked={pluginEnabled}
+                  onCheckedChange={(checked) => void handlePluginToggle(Boolean(checked))}
+                  disabled={isLoading || isSaving || isPluginSaving}
+                  aria-label="启用或关闭 Oh My OpenAgent 插件"
+                />
+              </div>
+            ) : null}
             <Button type="button" size="xs" variant="outline" onClick={handleReload} disabled={isLoading || isSaving}>
               <RiRefreshLine className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
               重新加载
@@ -1144,6 +1159,6 @@ export const OpenAgentPage: React.FC = () => {
         draft={draft}
         expectedMtimeMs={config?.target.mtimeMs ?? null}
       />
-    </SettingsPageLayout>
+    </OpenAgentContentWrapper>
   );
 };

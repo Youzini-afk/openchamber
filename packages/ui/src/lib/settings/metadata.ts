@@ -108,10 +108,21 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   },
   {
     slug: 'openagent',
-    title: 'Oh My OpenAgent',
+    title: 'Agent Orchestration',
     group: 'opencode',
     kind: 'single',
-    keywords: ['oh my openagent', 'openagent', 'oh-my-openagent', 'agent routing', 'categories', 'model routes'],
+    keywords: [
+      'agent orchestration',
+      'oh my openagent',
+      'openagent',
+      'oh-my-openagent',
+      'oh-my-opencode-slim',
+      'slim',
+      'omo',
+      'agent routing',
+      'categories',
+      'model routes',
+    ],
   },
   {
     slug: 'magic-context',
