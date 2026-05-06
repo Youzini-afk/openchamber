@@ -1,6 +1,5 @@
 import {
   readAgentOrchestrationConfig as defaultReadAgentOrchestrationConfig,
-  runPackageAction as defaultRunPackageAction,
   setAgentOrchestrationMode as defaultSetAgentOrchestrationMode,
 } from './agent-orchestration-config.js';
 import {
@@ -32,7 +31,6 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
     clientReloadDelayMs = 800,
     readAgentOrchestrationConfig = defaultReadAgentOrchestrationConfig,
     setAgentOrchestrationMode = defaultSetAgentOrchestrationMode,
-    runPackageAction = defaultRunPackageAction,
     readSlimConfig = defaultReadSlimConfig,
     saveSlimConfig = defaultSaveSlimConfig,
     refreshOpenCodeAfterConfigChange,
@@ -78,35 +76,6 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
         console.error('Failed to update agent orchestration mode:', error);
       }
       return res.status(status).json({ error: error.message || 'Failed to update agent orchestration mode' });
-    }
-  });
-
-  app.post('/api/agent-orchestration/package-action', async (req, res) => {
-    try {
-      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
-      if (error) return res.status(400).json({ error });
-      const body = req.body ?? {};
-      const result = runPackageAction({
-        directory,
-        plugin: body.plugin,
-        action: body.action,
-        deleteConfig: body.deleteConfig === true,
-        clearCache: body.clearCache === true,
-      });
-
-      if (typeof refreshOpenCodeAfterConfigChange === 'function') {
-        await refreshOpenCodeAfterConfigChange(`agent orchestration package ${body.action || 'action'}`);
-      }
-
-      return res.json({
-        ...result,
-        requiresReload: true,
-        message: 'Agent orchestration package action completed. Refreshing interface...',
-        reloadDelayMs: clientReloadDelayMs,
-      });
-    } catch (error) {
-      console.error('Failed to run agent orchestration package action:', error);
-      return res.status(400).json({ error: error.message || 'Failed to run agent orchestration package action' });
     }
   });
 

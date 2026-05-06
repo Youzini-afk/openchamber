@@ -2,9 +2,7 @@ import React from 'react';
 import {
   RiArrowDownSLine,
   RiCodeLine,
-  RiDownloadCloud2Line,
   RiRefreshLine,
-  RiRestartLine,
   RiSaveLine,
   RiSparklingLine,
 } from '@remixicon/react';
@@ -656,45 +654,6 @@ function SlimPanel() {
   );
 }
 
-function PackageActions({ plugin }: { plugin: 'slim' | 'omo' }) {
-  const config = useAgentOrchestrationStore((state) => state.config);
-  const isRunning = useAgentOrchestrationStore((state) => state.isPackageActionRunning);
-  const runPackageAction = useAgentOrchestrationStore((state) => state.runPackageAction);
-  const status = plugin === 'slim' ? config?.packages.slim : config?.packages.omo;
-  const label = plugin === 'slim' ? 'Slim' : 'OMO';
-
-  const run = async (action: 'install' | 'update' | 'uninstall') => {
-    const result = await runPackageAction(plugin, action, {
-      clearCache: action === 'update',
-      deleteConfig: false,
-    });
-    if (!result.ok) {
-      toast.error(result.message || `${label} ${action} 失败`);
-      return;
-    }
-    toast.success(`${label} ${action} 已完成`);
-  };
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Badge className={status?.installed ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
-        {status?.installed ? `${status.version ?? 'installed'}` : '等待 OpenCode 安装'}
-      </Badge>
-      <Button type="button" size="xs" variant="outline" onClick={() => void run('install')} disabled={isRunning}>
-        <RiDownloadCloud2Line className="h-3.5 w-3.5" />
-        安装/启用
-      </Button>
-      <Button type="button" size="xs" variant="outline" onClick={() => void run('update')} disabled={isRunning}>
-        <RiRestartLine className="h-3.5 w-3.5" />
-        更新
-      </Button>
-      <Button type="button" size="xs" variant="outline" onClick={() => void run('uninstall')} disabled={isRunning}>
-        卸载
-      </Button>
-    </div>
-  );
-}
-
 export const AgentOrchestrationPage: React.FC = () => {
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const config = useAgentOrchestrationStore((state) => state.config);
@@ -737,13 +696,16 @@ export const AgentOrchestrationPage: React.FC = () => {
           <ModeButton mode="slim" current={effectiveMode} title="Oh My OpenCode Slim" description="少量 specialist，适合日常任务。" disabled={isSavingMode} onSelect={handleModeSelect} />
           <ModeButton mode="omo" current={effectiveMode} title="Oh My OpenAgent / OMO" description="完整多 agent 编排，适合复杂任务。" disabled={isSavingMode} onSelect={handleModeSelect} />
         </div>
-        <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={effectiveMode === 'conflict' ? 'bg-[var(--status-error)]/10 text-[var(--status-error)]' : 'bg-primary/10 text-primary'}>
                 当前：{effectiveMode}
               </Badge>
               {isLoading ? <Badge className="bg-muted text-muted-foreground">加载中</Badge> : null}
+            </div>
+            <div className="typography-micro text-muted-foreground">
+              此页只管理编排模式和插件配置文件；插件包安装与更新请在运行环境中处理。
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
               OpenCode 配置：{config?.mode.configPaths.join(' | ') || '未读取'}
@@ -755,10 +717,6 @@ export const AgentOrchestrationPage: React.FC = () => {
               <div key={conflict} className="typography-micro text-[var(--status-error)]">{conflict}</div>
             ))}
             {error ? <div className="typography-micro text-[var(--status-error)]">{error}</div> : null}
-          </div>
-          <div className="grid gap-2">
-            <PackageActions plugin="slim" />
-            <PackageActions plugin="omo" />
           </div>
         </div>
       </div>

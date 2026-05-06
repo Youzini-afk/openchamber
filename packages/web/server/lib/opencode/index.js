@@ -59,7 +59,6 @@ export {
 export {
   readAgentOrchestrationConfig,
   setAgentOrchestrationMode,
-  runPackageAction,
 } from './agent-orchestration-config.js';
 
 export {

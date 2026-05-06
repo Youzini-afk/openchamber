@@ -13,10 +13,6 @@ const createConfigPayload = (overrides = {}) => ({
     tuiConfigPath: '/tmp/tui.jsonc',
     mtimeMsByPath: { '/tmp/opencode.jsonc': 123, '/tmp/tui.jsonc': 456 },
   },
-  packages: {
-    slim: { packageName: 'oh-my-opencode-slim', entry: 'oh-my-opencode-slim', installed: false, version: null, cachePath: '/tmp/slim' },
-    omo: { packageName: 'oh-my-opencode', entry: 'oh-my-openagent', installed: false, version: null, cachePath: '/tmp/omo' },
-  },
   omo: {},
   slim: {},
   ...overrides,
@@ -42,7 +38,6 @@ describe('agent orchestration routes', () => {
     registerAgentOrchestrationRoutes(app, {
       readAgentOrchestrationConfig,
       setAgentOrchestrationMode: vi.fn(),
-      runPackageAction: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig: vi.fn(),
       resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: '/repo/project', error: null })),
@@ -66,7 +61,6 @@ describe('agent orchestration routes', () => {
       clientReloadDelayMs: 25,
       readAgentOrchestrationConfig: vi.fn(),
       setAgentOrchestrationMode,
-      runPackageAction: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig: vi.fn(),
       refreshOpenCodeAfterConfigChange,
@@ -106,7 +100,6 @@ describe('agent orchestration routes', () => {
       setAgentOrchestrationMode: vi.fn(() => {
         throw error;
       }),
-      runPackageAction: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig: vi.fn(),
       refreshOpenCodeAfterConfigChange: vi.fn(),
@@ -132,7 +125,6 @@ describe('agent orchestration routes', () => {
       clientReloadDelayMs: 25,
       readAgentOrchestrationConfig: vi.fn(),
       setAgentOrchestrationMode: vi.fn(),
-      runPackageAction: vi.fn(),
       readSlimConfig,
       saveSlimConfig,
       refreshOpenCodeAfterConfigChange,
@@ -161,7 +153,6 @@ describe('agent orchestration routes', () => {
     registerAgentOrchestrationRoutes(app, {
       readAgentOrchestrationConfig: vi.fn(),
       setAgentOrchestrationMode: vi.fn(),
-      runPackageAction: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig,
       refreshOpenCodeAfterConfigChange: vi.fn(),
@@ -177,36 +168,4 @@ describe('agent orchestration routes', () => {
     expect(saveSlimConfig).not.toHaveBeenCalled();
   });
 
-  it('runs package actions and refreshes OpenCode', async () => {
-    const app = express();
-    app.use(express.json());
-    const runPackageAction = vi.fn(() => ({ success: true, action: 'update', plugin: 'slim', config: createConfigPayload() }));
-    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
-
-    registerAgentOrchestrationRoutes(app, {
-      clientReloadDelayMs: 25,
-      readAgentOrchestrationConfig: vi.fn(),
-      setAgentOrchestrationMode: vi.fn(),
-      runPackageAction,
-      readSlimConfig: vi.fn(),
-      saveSlimConfig: vi.fn(),
-      refreshOpenCodeAfterConfigChange,
-      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: '/repo/project', error: null })),
-    });
-
-    const response = await request(app)
-      .post('/api/agent-orchestration/package-action?directory=%2Frepo%2Fproject')
-      .send({ plugin: 'slim', action: 'update', clearCache: true })
-      .expect(200);
-
-    expect(runPackageAction).toHaveBeenCalledWith({
-      directory: '/repo/project',
-      plugin: 'slim',
-      action: 'update',
-      deleteConfig: false,
-      clearCache: true,
-    });
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration package update');
-    expect(response.body.requiresReload).toBe(true);
-  });
 });

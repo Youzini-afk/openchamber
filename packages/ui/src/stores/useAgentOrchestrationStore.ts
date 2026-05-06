@@ -7,14 +7,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import type { OpenAgentConfigResponse } from '@/stores/useOpenAgentConfigStore';
 import type { SlimConfigResponse, SlimMode } from '@/components/sections/agent-orchestration/slimConfig';
 
-export interface PackageStatus {
-  packageName: string;
-  entry: string;
-  installed: boolean;
-  version: string | null;
-  cachePath: string;
-}
-
 export interface AgentOrchestrationConfigResponse {
   mode: {
     effective: SlimMode;
@@ -24,10 +16,6 @@ export interface AgentOrchestrationConfigResponse {
     configPaths: string[];
     tuiConfigPath: string | null;
     mtimeMsByPath: Record<string, number | null>;
-  };
-  packages: {
-    slim: PackageStatus;
-    omo: PackageStatus;
   };
   omo: OpenAgentConfigResponse;
   slim: SlimConfigResponse;
@@ -44,15 +32,9 @@ interface AgentOrchestrationStore {
   config: AgentOrchestrationConfigResponse | null;
   isLoading: boolean;
   isSavingMode: boolean;
-  isPackageActionRunning: boolean;
   error: string | null;
   loadConfig: (options?: { force?: boolean }) => Promise<boolean>;
   setMode: (mode: Exclude<SlimMode, 'conflict'>) => Promise<MutationResult>;
-  runPackageAction: (
-    plugin: 'slim' | 'omo',
-    action: 'install' | 'update' | 'uninstall',
-    options?: { deleteConfig?: boolean; clearCache?: boolean },
-  ) => Promise<MutationResult>;
 }
 
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -90,7 +72,6 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
       config: null,
       isLoading: false,
       isSavingMode: false,
-      isPackageActionRunning: false,
       error: null,
 
       loadConfig: async (options) => {
@@ -190,62 +171,6 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
         }
       },
 
-      runPackageAction: async (plugin, action, options) => {
-        const configDirectory = getConfigDirectory();
-        startConfigUpdate('Running agent orchestration package action...');
-        set({ isPackageActionRunning: true, error: null });
-        let requiresReload = false;
-        try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-          const response = await fetch(`/api/agent-orchestration/package-action${query}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
-            },
-            body: JSON.stringify({
-              plugin,
-              action,
-              deleteConfig: options?.deleteConfig === true,
-              clearCache: options?.clearCache === true,
-            }),
-          });
-          const payload = await response.json().catch(() => null) as {
-            config?: AgentOrchestrationConfigResponse;
-            requiresReload?: boolean;
-            reloadDelayMs?: number;
-            reloadFailed?: boolean;
-            message?: string;
-            error?: string;
-          } | null;
-          if (!response.ok) {
-            const message = payload?.error || 'Failed to run package action';
-            set({ error: message, isPackageActionRunning: false });
-            return { ok: false, message };
-          }
-          if (payload?.config) set({ config: payload.config, error: null });
-          invalidateCache(configDirectory);
-          if (payload?.requiresReload) {
-            requiresReload = true;
-            await refreshAfterOpenCodeRestart({
-              message: payload.message,
-              delayMs: payload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
-              scopes: ['all'],
-              mode: 'projects',
-            });
-          }
-          await get().loadConfig({ force: true });
-          set({ isPackageActionRunning: false });
-          return { ok: true, reloadFailed: payload?.reloadFailed === true, message: payload?.message };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to run package action';
-          console.error('[AgentOrchestrationStore] Failed to run package action:', error);
-          set({ error: message, isPackageActionRunning: false });
-          return { ok: false, message };
-        } finally {
-          if (!requiresReload) finishConfigUpdate();
-        }
-      },
     }),
     { name: 'agent-orchestration-store' },
   ),

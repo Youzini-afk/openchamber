@@ -6,7 +6,6 @@ import path from 'path';
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const originalOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
-const originalOpenCodeCacheDir = process.env.OPENCODE_CACHE_DIR;
 
 let tempHome;
 
@@ -26,7 +25,6 @@ describe('agent orchestration config helpers', () => {
     process.env.HOME = tempHome;
     process.env.USERPROFILE = tempHome;
     process.env.OPENCODE_CONFIG_DIR = path.join(tempHome, '.config', 'opencode');
-    process.env.OPENCODE_CACHE_DIR = path.join(tempHome, '.cache', 'opencode');
   });
 
   afterEach(() => {
@@ -34,8 +32,6 @@ describe('agent orchestration config helpers', () => {
     process.env.USERPROFILE = originalUserProfile;
     if (originalOpenCodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
     else process.env.OPENCODE_CONFIG_DIR = originalOpenCodeConfigDir;
-    if (originalOpenCodeCacheDir === undefined) delete process.env.OPENCODE_CACHE_DIR;
-    else process.env.OPENCODE_CACHE_DIR = originalOpenCodeCacheDir;
     fs.rmSync(tempHome, { recursive: true, force: true });
     tempHome = undefined;
   });

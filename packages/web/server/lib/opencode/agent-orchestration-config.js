@@ -11,7 +11,6 @@ import {
   readOpenAgentConfig,
 } from './openagent-config.js';
 import {
-  ensureSlimStarterConfig,
   readSlimConfig,
 } from './slim-config.js';
 
@@ -22,8 +21,7 @@ const MODE_CONFLICT = 'conflict';
 
 const SLIM_PLUGIN_ENTRY = 'oh-my-opencode-slim';
 const OMO_PLUGIN_ENTRY = 'oh-my-openagent';
-const OMO_CACHE_PACKAGE = 'oh-my-opencode';
-const SLIM_CACHE_PACKAGE = 'oh-my-opencode-slim';
+const OMO_LEGACY_PLUGIN_ENTRY = 'oh-my-opencode';
 
 const JSONC_FORMATTING_OPTIONS = {
   insertSpaces: true,
@@ -43,18 +41,6 @@ function getOpenCodeConfigDir() {
   const envConfigDir = normalizeString(process.env.OPENCODE_CONFIG_DIR);
   if (envConfigDir) return path.resolve(envConfigDir);
   return path.join(os.homedir(), '.config', 'opencode');
-}
-
-function getOpenCodeCacheDir() {
-  const envCacheDir = normalizeString(process.env.OPENCODE_CACHE_DIR);
-  if (envCacheDir) return path.resolve(envCacheDir);
-  if (process.platform === 'win32') {
-    const localAppData = normalizeString(process.env.LOCALAPPDATA);
-    if (localAppData) return path.join(localAppData, 'opencode');
-  }
-  const xdgCacheHome = normalizeString(process.env.XDG_CACHE_HOME);
-  if (xdgCacheHome) return path.join(xdgCacheHome, 'opencode');
-  return path.join(os.homedir(), '.cache', 'opencode');
 }
 
 function getUserOpenCodeConfigCandidates() {
@@ -162,8 +148,8 @@ function isOmoSpec(spec) {
   return (
     basename === OMO_PLUGIN_ENTRY ||
     basename.startsWith(`${OMO_PLUGIN_ENTRY}@`) ||
-    basename === OMO_CACHE_PACKAGE ||
-    basename.startsWith(`${OMO_CACHE_PACKAGE}@`)
+    basename === OMO_LEGACY_PLUGIN_ENTRY ||
+    basename.startsWith(`${OMO_LEGACY_PLUGIN_ENTRY}@`)
   );
 }
 
@@ -382,138 +368,10 @@ function setAgentOrchestrationMode(input = {}) {
   return readAgentOrchestrationConfig({ directory });
 }
 
-function getPackageCachePath(packageName) {
-  return path.join(getOpenCodeCacheDir(), 'node_modules', packageName);
-}
-
-function readPackageJsonVersion(packagePath) {
-  try {
-    const packageJsonPath = path.join(packagePath, 'package.json');
-    const parsed = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-    return typeof parsed.version === 'string' ? parsed.version : null;
-  } catch {
-    return null;
-  }
-}
-
-function getPackageStatus(plugin) {
-  const packageName = plugin === MODE_OMO ? OMO_CACHE_PACKAGE : SLIM_CACHE_PACKAGE;
-  const cachePath = getPackageCachePath(packageName);
-  const installed = fs.existsSync(cachePath);
-  return {
-    packageName,
-    entry: plugin === MODE_OMO ? OMO_PLUGIN_ENTRY : SLIM_PLUGIN_ENTRY,
-    installed,
-    version: installed ? readPackageJsonVersion(cachePath) : null,
-    cachePath,
-  };
-}
-
-function resolvePackageActionPlugin(value) {
-  const normalized = normalizeString(value);
-  if (normalized === 'omo') return MODE_OMO;
-  if (normalized === 'slim') return MODE_SLIM;
-  const error = new Error('Invalid plugin package target.');
-  error.code = 'INVALID_PLUGIN';
-  throw error;
-}
-
-function ensureInside(parent, child) {
-  const parentResolved = path.resolve(parent);
-  const childResolved = path.resolve(child);
-  const relative = path.relative(parentResolved, childResolved);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    return childResolved;
-  }
-  const error = new Error('Refusing to modify a path outside the OpenCode cache.');
-  error.code = 'PATH_ESCAPE';
-  throw error;
-}
-
-function clearPackageCache(plugin) {
-  const packageName = plugin === MODE_OMO ? OMO_CACHE_PACKAGE : SLIM_CACHE_PACKAGE;
-  const cacheRoot = path.join(getOpenCodeCacheDir(), 'node_modules');
-  const packagePath = ensureInside(cacheRoot, path.join(cacheRoot, packageName));
-  fs.rmSync(packagePath, { recursive: true, force: true });
-  return packagePath;
-}
-
-function getConfigFilePathForPlugin(plugin) {
-  const configDir = getOpenCodeConfigDir();
-  if (plugin === MODE_SLIM) {
-    const jsonc = path.join(configDir, 'oh-my-opencode-slim.jsonc');
-    const json = path.join(configDir, 'oh-my-opencode-slim.json');
-    return fs.existsSync(jsonc) ? jsonc : json;
-  }
-  const canonicalJsonc = path.join(configDir, 'oh-my-openagent.jsonc');
-  const canonicalJson = path.join(configDir, 'oh-my-openagent.json');
-  const legacyJsonc = path.join(configDir, 'oh-my-opencode.jsonc');
-  const legacyJson = path.join(configDir, 'oh-my-opencode.json');
-  return [canonicalJsonc, canonicalJson, legacyJsonc, legacyJson].find((candidate) => fs.existsSync(candidate)) ?? canonicalJsonc;
-}
-
-function ensureOmoStarterConfig() {
-  const targetPath = getConfigFilePathForPlugin(MODE_OMO);
-  if (fs.existsSync(targetPath)) return;
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, '{\n}\n', 'utf8');
-}
-
-function deleteUserConfigForPlugin(plugin) {
-  const targetPath = getConfigFilePathForPlugin(plugin);
-  if (fs.existsSync(targetPath)) {
-    fs.rmSync(targetPath, { force: true });
-  }
-  return targetPath;
-}
-
-function runPackageAction(input = {}) {
-  const directory = normalizeString(input.directory);
-  const plugin = resolvePackageActionPlugin(input.plugin);
-  const action = normalizeString(input.action);
-  if (!['install', 'update', 'uninstall'].includes(action)) {
-    const error = new Error('Invalid package action.');
-    error.code = 'INVALID_ACTION';
-    throw error;
-  }
-
-  let clearedCachePath = null;
-  let deletedConfigPath = null;
-
-  if (action === 'install') {
-    if (plugin === MODE_SLIM) ensureSlimStarterConfig();
-    if (plugin === MODE_OMO) ensureOmoStarterConfig();
-    setAgentOrchestrationMode({ directory, mode: plugin });
-  } else if (action === 'update') {
-    clearedCachePath = clearPackageCache(plugin);
-  } else if (action === 'uninstall') {
-    setAgentOrchestrationMode({ directory, mode: MODE_NATIVE });
-    if (input.deleteConfig === true) {
-      deletedConfigPath = deleteUserConfigForPlugin(plugin);
-    }
-    if (input.clearCache === true) {
-      clearedCachePath = clearPackageCache(plugin);
-    }
-  }
-
-  return {
-    success: true,
-    action,
-    plugin,
-    clearedCachePath,
-    deletedConfigPath,
-    config: readAgentOrchestrationConfig({ directory }),
-  };
-}
-
 function readAgentOrchestrationConfig(options = {}) {
   const directory = normalizeString(options.directory);
   return {
     mode: getModeInfo(directory),
-    packages: {
-      slim: getPackageStatus(MODE_SLIM),
-      omo: getPackageStatus(MODE_OMO),
-    },
     omo: readOpenAgentConfig({ directory }),
     slim: readSlimConfig({ directory }),
   };
@@ -526,5 +384,4 @@ export {
   MODE_CONFLICT,
   readAgentOrchestrationConfig,
   setAgentOrchestrationMode,
-  runPackageAction,
 };
