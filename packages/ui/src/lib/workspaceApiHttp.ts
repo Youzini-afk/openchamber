@@ -7,6 +7,8 @@ import type {
   WorkspaceArchivePreview,
   WorkspaceDeleteResult,
   WorkspaceEntry,
+  WorkspaceGitCloneOptions,
+  WorkspaceGitCloneResult,
   WorkspaceGitStatus,
   WorkspaceListResult,
   WorkspaceMutationResult,
@@ -243,6 +245,23 @@ export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
         body: JSON.stringify({ ...options, path: normalizeWorkspacePath(path) }),
       },
       'Failed to fetch workspace repo',
+    );
+  },
+
+  gitClone(path: string, options: WorkspaceGitCloneOptions): Promise<WorkspaceGitCloneResult> {
+    return jsonRequest(
+      buildUrl('/git/clone'),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: normalizeWorkspacePath(path),
+          url: options.url,
+          branch: options.branch,
+          directoryName: options.directoryName,
+        }),
+      },
+      'Failed to clone workspace repo',
     );
   },
 

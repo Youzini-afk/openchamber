@@ -3,6 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import request from 'supertest';
 import AdmZip from 'adm-zip';
 import { create as tarCreate } from 'tar';
@@ -305,5 +306,59 @@ describe('workspace routes', () => {
     expect(fs.readFileSync(path.join(workspaceRoot, 'demo', 'target', 'README.md'), 'utf8')).toBe('existing');
     const leftovers = fs.readdirSync(workspaceRoot).filter((name) => name.startsWith('.extracting-'));
     expect(leftovers).toEqual([]);
+  });
+
+  it('clones a repository into the selected workspace directory', async () => {
+    try {
+      execFileSync('git', ['--version'], { stdio: 'ignore' });
+    } catch {
+      return;
+    }
+
+    const app = await createApp();
+    const remotePath = path.join(tempDir, 'remote.git');
+    execFileSync('git', ['init', '--bare', remotePath], { stdio: 'ignore' });
+    fs.mkdirSync(path.join(workspaceRoot, 'projects'), { recursive: true });
+
+    await request(app)
+      .post('/api/workspace/git/clone')
+      .send({
+        path: 'projects',
+        url: remotePath,
+        directoryName: 'copy',
+      })
+      .expect(200);
+
+    expect(fs.existsSync(path.join(workspaceRoot, 'projects', 'copy', '.git'))).toBe(true);
+
+    const list = await request(app)
+      .get('/api/workspace/list')
+      .query({ path: 'projects' })
+      .expect(200);
+
+    expect(list.body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'copy',
+        relativePath: 'projects/copy',
+        type: 'directory',
+      }),
+    ]));
+  });
+
+  it('rejects clone destination folders that escape the current directory', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, 'projects'), { recursive: true });
+
+    const response = await request(app)
+      .post('/api/workspace/git/clone')
+      .send({
+        path: 'projects',
+        url: 'https://example.com/repo.git',
+        directoryName: '../outside',
+      })
+      .expect(400);
+
+    expect(response.body.error).toMatch(/simple folder name/i);
+    expect(fs.existsSync(path.join(workspaceRoot, 'outside'))).toBe(false);
   });
 });

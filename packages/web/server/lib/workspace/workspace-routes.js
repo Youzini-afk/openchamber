@@ -25,6 +25,7 @@ import {
 import {
   getWorkspaceGitStatus,
   workspaceGitCheckout,
+  workspaceGitClone,
   workspaceGitCommit,
   workspaceGitFetch,
   workspaceGitLog,
@@ -333,6 +334,14 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
   app.post('/api/workspace/git/fetch', async (req, res) => {
     try {
       res.json(await workspaceGitFetch(getRequestPath(req), req.body, context.config, context));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  app.post('/api/workspace/git/clone', async (req, res) => {
+    try {
+      res.json(await workspaceGitClone(getRequestPath(req), req.body, context.config, context));
     } catch (error) {
       sendError(res, error);
     }

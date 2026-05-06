@@ -14,6 +14,8 @@ import type {
   WorkspaceArchiveExtractResult,
   WorkspaceArchivePreview,
   WorkspaceEntry,
+  WorkspaceGitCloneOptions,
+  WorkspaceGitCloneResult,
   WorkspaceGitStatus,
   WorkspaceListResult,
   WorkspaceRootInfo,
@@ -77,6 +79,7 @@ type WorkspaceStore = {
   openProject: (path: string) => Promise<ProjectEntry | null>;
   refreshGitStatus: (path: string) => Promise<WorkspaceGitStatus | null>;
   gitFetch: (path: string, options?: { remote?: string; branch?: string }) => Promise<boolean>;
+  gitClone: (path: string, options: WorkspaceGitCloneOptions) => Promise<WorkspaceGitCloneResult | null>;
   gitPull: (path: string, options?: { remote?: string; branch?: string }) => Promise<GitPullResult | null>;
   gitPush: (path: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }) => Promise<GitPushResult | null>;
   gitCheckout: (path: string, branch: string) => Promise<boolean>;
@@ -434,6 +437,20 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         return true;
       });
       return result === true;
+    },
+
+    gitClone: async (path: string, options) => {
+      const target = normalizeWorkspacePath(path);
+      return withAction(`git-clone:${target}`, async () => {
+        const result = await getWorkspaceAPI().gitClone(target, {
+          url: options.url,
+          branch: options.branch,
+          directoryName: options.directoryName,
+        });
+        await get().loadDirectory(target);
+        await get().refreshGitStatus(target);
+        return result;
+      });
     },
 
     gitPull: async (path: string, options) => {

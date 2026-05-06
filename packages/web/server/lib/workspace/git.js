@@ -25,6 +25,46 @@ const resolveWorkspaceGitDirectory = async (relativePathValue, config, dependenc
 
 const getGitLibraries = async () => import('../git/index.js');
 
+const createBadRequest = (message) => {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+};
+
+const hasControlCharacters = (value) => /[\0\r\n]/.test(value);
+
+const assertSafeGitArgument = (value, label) => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+  if (hasControlCharacters(text)) {
+    throw createBadRequest(`${label} contains invalid characters`);
+  }
+  if (text.startsWith('-')) {
+    throw createBadRequest(`${label} cannot start with '-'`);
+  }
+  return text;
+};
+
+const assertSafeCloneDirectoryName = (value) => {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+  if (
+    text === '.'
+    || text === '..'
+    || text.includes('/')
+    || text.includes('\\')
+    || hasControlCharacters(text)
+    || text.startsWith('-')
+  ) {
+    throw createBadRequest('destination folder must be a simple folder name');
+  }
+  return text;
+};
+
 export const getWorkspaceGitStatus = async (relativePathValue, config, dependencies = {}) => {
   const directory = await resolveWorkspaceGitDirectory(relativePathValue, config, dependencies);
   const git = await getGitLibraries();
@@ -50,6 +90,25 @@ export const workspaceGitFetch = async (relativePathValue, payload, config, depe
   const directory = await resolveWorkspaceGitDirectory(relativePathValue, config, dependencies);
   const git = await getGitLibraries();
   return git.fetch(directory, payload || {});
+};
+
+export const workspaceGitClone = async (relativePathValue, payload, config, dependencies = {}) => {
+  const directory = await resolveWorkspaceGitDirectory(relativePathValue, config, dependencies);
+  const git = await getGitLibraries();
+  const url = assertSafeGitArgument(payload?.url, 'repository url');
+  if (!url) {
+    throw createBadRequest('repository url is required');
+  }
+  if (/^ext::/i.test(url)) {
+    throw createBadRequest('ext:: git remotes are not supported from the workspace UI');
+  }
+  const branch = assertSafeGitArgument(payload?.branch, 'branch');
+  const directoryName = assertSafeCloneDirectoryName(payload?.directoryName);
+  return git.cloneRepository(directory, {
+    url,
+    branch,
+    directoryName,
+  });
 };
 
 export const workspaceGitPull = async (relativePathValue, payload, config, dependencies = {}) => {
@@ -96,4 +155,3 @@ export const workspaceGitRemotes = async (relativePathValue, config, dependencie
   const git = await getGitLibraries();
   return git.getRemotes(directory);
 };
-

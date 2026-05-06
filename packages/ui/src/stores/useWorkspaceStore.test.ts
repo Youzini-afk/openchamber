@@ -119,6 +119,10 @@ const workspaceApi: WorkspaceAPI = {
     calls.push({ name: "gitFetch", path });
     return { success: true };
   },
+  async gitClone(path, options) {
+    calls.push({ name: "gitClone", path, payload: options });
+    return { success: true, directoryName: options.directoryName ?? null };
+  },
   async gitPull(path) {
     calls.push({ name: "gitPull", path });
     return { success: true, summary: { changes: 0, insertions: 0, deletions: 0 }, files: [], insertions: 0, deletions: 0 };
@@ -277,11 +281,26 @@ describe("useWorkspaceStore", () => {
     expect(calls.some((call) => call.name === "list" && call.path === "demo/archive")).toBe(true);
   });
 
-  test("does not expose a clone action from the workspace store", async () => {
+  test("clones into the selected directory and refreshes that directory", async () => {
     const { useWorkspaceStore } = await import("./useWorkspaceStore");
     useWorkspaceStore.getState().resetForTests();
 
-    const actionNames = Object.keys(useWorkspaceStore.getState()).filter((key) => /clone/i.test(key));
-    expect(actionNames).toEqual([]);
+    const result = await useWorkspaceStore.getState().gitClone("demo", {
+      url: "https://example.com/repo.git",
+      branch: "main",
+      directoryName: "repo",
+    });
+
+    expect(result?.success).toBe(true);
+    expect(calls.some((call) => (
+      call.name === "gitClone"
+      && call.path === "demo"
+      && JSON.stringify(call.payload) === JSON.stringify({
+        url: "https://example.com/repo.git",
+        branch: "main",
+        directoryName: "repo",
+      })
+    ))).toBe(true);
+    expect(calls.some((call) => call.name === "list" && call.path === "demo")).toBe(true);
   });
 });

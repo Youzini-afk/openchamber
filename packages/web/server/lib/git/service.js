@@ -2001,6 +2001,36 @@ export async function fetch(directory, options = {}) {
   }
 }
 
+export async function cloneRepository(directory, options = {}) {
+  const url = String(options.url || '').trim();
+  if (!url) {
+    throw new Error('repository url is required');
+  }
+
+  const branch = String(options.branch || '').trim();
+  const directoryName = String(options.directoryName || '').trim();
+  const args = ['clone'];
+  if (branch) {
+    args.push('--branch', branch);
+  }
+  args.push(url);
+  if (directoryName) {
+    args.push(directoryName);
+  }
+
+  const result = await runGitCommand(directory, args);
+  if (!result.success) {
+    throw new Error(result.message || result.stderr || result.stdout || 'Failed to clone repository');
+  }
+
+  return {
+    success: true,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    directoryName: directoryName || null,
+  };
+}
+
 export async function commit(directory, message, options = {}) {
   const git = await createGit(directory);
 

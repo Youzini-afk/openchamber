@@ -563,6 +563,19 @@ export type WorkspaceGitStatus = GitStatus & {
   isGitRepository?: boolean;
 };
 
+export interface WorkspaceGitCloneOptions {
+  url: string;
+  branch?: string;
+  directoryName?: string;
+}
+
+export interface WorkspaceGitCloneResult {
+  success: boolean;
+  stdout?: string;
+  stderr?: string;
+  directoryName?: string | null;
+}
+
 export interface WorkspaceArchivePreviewEntry {
   path: string;
   type: 'file' | 'directory';
@@ -617,6 +630,7 @@ export interface WorkspaceAPI {
   openProject(path: string): Promise<WorkspaceProjectOpenResult>;
   gitStatus(path: string, options?: { mode?: 'light' }): Promise<WorkspaceGitStatus>;
   gitFetch(path: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
+  gitClone(path: string, options: WorkspaceGitCloneOptions): Promise<WorkspaceGitCloneResult>;
   gitPull(path: string, options?: { remote?: string; branch?: string }): Promise<GitPullResult>;
   gitPush(path: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
   gitCheckout(path: string, branch: string): Promise<{ success: boolean; branch: string }>;
