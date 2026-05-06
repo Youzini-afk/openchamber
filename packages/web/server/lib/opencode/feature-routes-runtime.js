@@ -71,6 +71,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fetchProviderModels,
       readOpenAgentConfig,
       saveOpenAgentConfig,
+      setOpenAgentPluginEnabled,
       readMagicContextConfig,
       saveMagicContextConfig,
     } = await import('./index.js');
@@ -104,6 +105,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       clientReloadDelayMs,
       readOpenAgentConfig,
       saveOpenAgentConfig,
+      setOpenAgentPluginEnabled,
       refreshOpenCodeAfterConfigChange,
       resolveOptionalProjectDirectory,
     });

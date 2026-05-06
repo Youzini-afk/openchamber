@@ -6,12 +6,14 @@ import {
   RiCodeLine,
   RiDeleteBinLine,
   RiEditLine,
+  RiPlugLine,
   RiRefreshLine,
   RiRestartLine,
   RiSaveLine,
 } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -912,9 +914,11 @@ export const OpenAgentPage: React.FC = () => {
   const initialDraft = useOpenAgentConfigStore((state) => state.initialDraft);
   const isLoading = useOpenAgentConfigStore((state) => state.isLoading);
   const isSaving = useOpenAgentConfigStore((state) => state.isSaving);
+  const isPluginSaving = useOpenAgentConfigStore((state) => state.isPluginSaving);
   const error = useOpenAgentConfigStore((state) => state.error);
   const loadConfig = useOpenAgentConfigStore((state) => state.loadConfig);
   const saveChanges = useOpenAgentConfigStore((state) => state.saveChanges);
+  const setPluginEnabled = useOpenAgentConfigStore((state) => state.setPluginEnabled);
   const discardChanges = useOpenAgentConfigStore((state) => state.discardChanges);
   const updateDraftItem = useOpenAgentConfigStore((state) => state.updateDraftItem);
 
@@ -951,6 +955,7 @@ export const OpenAgentPage: React.FC = () => {
   const customCategories = categoryItems.filter((item) => item.group === 'custom');
 
   const projectOverrideCount = (config?.project.overriddenAgents.length ?? 0) + (config?.project.overriddenCategories.length ?? 0);
+  const pluginEnabled = config?.plugin.enabled ?? config?.plugin.detected ?? false;
 
   const handleReload = async () => {
     if (hasChanges && typeof window !== 'undefined' && !window.confirm('重新加载会丢弃未保存的更改，继续吗？')) {
@@ -975,6 +980,23 @@ export const OpenAgentPage: React.FC = () => {
       return;
     }
     toast.success('Oh My OpenAgent 配置已保存');
+  };
+
+  const handlePluginToggle = async (enabled: boolean) => {
+    if (hasChanges && typeof window !== 'undefined' && !window.confirm('切换插件会重新加载 OpenCode，并丢弃未保存的模型路由更改，继续吗？')) {
+      return;
+    }
+
+    const result = await setPluginEnabled(enabled);
+    if (!result.ok) {
+      if (result.conflict) {
+        toast.error('OpenCode 插件配置已被外部修改，请重新加载后再切换');
+      } else {
+        toast.error(result.message || 'Oh My OpenAgent 插件切换失败');
+      }
+      return;
+    }
+    toast.success(enabled ? 'Oh My OpenAgent 插件已启用' : 'Oh My OpenAgent 插件已关闭');
   };
 
   const handleAddCustom = (kind: OpenAgentKind, id: string) => {
@@ -1003,8 +1025,9 @@ export const OpenAgentPage: React.FC = () => {
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={config?.plugin.detected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
-                {config?.plugin.detected ? '插件已检测' : '未检测到插件'}
+                {pluginEnabled ? '插件已启用' : '插件已关闭'}
               </Badge>
+              {isPluginSaving ? <Badge className="bg-primary/10 text-primary">正在切换插件</Badge> : null}
               {config?.target.isLegacy ? (
                 <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">legacy 配置</Badge>
               ) : null}
@@ -1020,6 +1043,9 @@ export const OpenAgentPage: React.FC = () => {
             <div className="break-all font-mono typography-micro text-muted-foreground">
               {config?.target.path ?? '正在读取配置路径...'}
             </div>
+            <div className="break-all font-mono typography-micro text-muted-foreground">
+              OpenCode 插件注册：{config?.plugin.configPath ?? config?.plugin.writeTargetPath ?? '正在读取 OpenCode 配置...'}
+            </div>
             {config?.project.exists ? (
               <div className="break-all typography-micro text-[var(--status-warning)]">
                 当前项目存在覆盖：{config.project.path}
@@ -1029,6 +1055,16 @@ export const OpenAgentPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
+            <div className="mr-1 flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
+              <RiPlugLine className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="typography-micro text-foreground">插件总开关</span>
+              <Switch
+                checked={pluginEnabled}
+                onCheckedChange={(checked) => void handlePluginToggle(Boolean(checked))}
+                disabled={isLoading || isSaving || isPluginSaving}
+                aria-label="启用或关闭 Oh My OpenAgent 插件"
+              />
+            </div>
             <Button type="button" size="xs" variant="outline" onClick={handleReload} disabled={isLoading || isSaving}>
               <RiRefreshLine className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
               重新加载
@@ -1040,7 +1076,7 @@ export const OpenAgentPage: React.FC = () => {
             <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>
               放弃更改
             </Button>
-            <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving}>
+            <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving || isPluginSaving}>
               {isSaving ? <RiRefreshLine className="h-3.5 w-3.5 animate-spin" /> : <RiSaveLine className="h-3.5 w-3.5" />}
               {isSaving ? '保存中' : '保存更改'}
             </Button>

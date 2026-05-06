@@ -119,4 +119,60 @@ describe('oh-my-openagent config routes', () => {
 
     expect(response.body.error).toContain('modified outside OpenChamber');
   });
+
+  it('toggles plugin registration, refreshes OpenCode, and returns the reloaded config', async () => {
+    const app = express();
+    app.use(express.json());
+    const setOpenAgentPluginEnabled = vi.fn();
+    const readOpenAgentConfig = vi.fn(() => createConfigPayload({
+      plugin: {
+        detected: false,
+        enabled: false,
+        entry: null,
+        configPath: null,
+        configKey: 'plugin',
+        scope: 'user',
+        writeTargetPath: '/tmp/opencode.json',
+        mtimeMs: 456,
+      },
+    }));
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+
+    registerOpenAgentRoutes(app, {
+      clientReloadDelayMs: 25,
+      readOpenAgentConfig,
+      saveOpenAgentConfig: vi.fn(),
+      setOpenAgentPluginEnabled,
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: '/repo/project', error: null })),
+    });
+
+    const response = await request(app)
+      .patch('/api/openagent/plugin?directory=%2Frepo%2Fproject')
+      .send({
+        expectedMtimeMs: 123,
+        enabled: false,
+        entry: 'oh-my-openagent@3.11.0',
+      })
+      .expect(200);
+
+    expect(setOpenAgentPluginEnabled).toHaveBeenCalledWith({
+      directory: '/repo/project',
+      expectedMtimeMs: 123,
+      enabled: false,
+      entry: 'oh-my-openagent@3.11.0',
+    });
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('oh-my-openagent plugin disabled');
+    expect(response.body).toMatchObject({
+      success: true,
+      requiresReload: true,
+      reloadDelayMs: 25,
+      config: {
+        plugin: {
+          enabled: false,
+          writeTargetPath: '/tmp/opencode.json',
+        },
+      },
+    });
+  });
 });

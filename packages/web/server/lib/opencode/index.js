@@ -51,6 +51,7 @@ export {
 export {
   readOpenAgentConfig,
   saveOpenAgentConfig,
+  setOpenAgentPluginEnabled,
   sanitizeOverride as sanitizeOpenAgentOverride,
   sanitizeOverrideRecord as sanitizeOpenAgentOverrideRecord,
 } from './openagent-config.js';

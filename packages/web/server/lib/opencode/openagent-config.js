@@ -10,6 +10,7 @@ import {
 
 const PLUGIN_NAME = 'oh-my-openagent';
 const LEGACY_PLUGIN_NAME = 'oh-my-opencode';
+const DEFAULT_PLUGIN_ENTRY = PLUGIN_NAME;
 const CONFIG_BASENAME = 'oh-my-openagent';
 const LEGACY_CONFIG_BASENAME = 'oh-my-opencode';
 
@@ -179,49 +180,91 @@ function getFileMtimeMs(filePath) {
 
 function getOpenCodeConfigCandidates(directory) {
   const configDir = getOpenCodeConfigDir();
-  const candidates = [
-    path.join(configDir, 'config.json'),
-    path.join(configDir, 'opencode.jsonc'),
-    path.join(configDir, 'opencode.json'),
+  const userCandidates = [
+    { path: path.join(configDir, 'config.json'), scope: 'user' },
+    { path: path.join(configDir, 'opencode.jsonc'), scope: 'user' },
+    { path: path.join(configDir, 'opencode.json'), scope: 'user' },
   ];
+  const candidates = [...userCandidates];
 
   if (directory) {
     candidates.push(
-      path.join(directory, '.opencode', 'opencode.jsonc'),
-      path.join(directory, '.opencode', 'opencode.json'),
-      path.join(directory, 'opencode.jsonc'),
-      path.join(directory, 'opencode.json'),
+      { path: path.join(directory, '.opencode', 'opencode.jsonc'), scope: 'project' },
+      { path: path.join(directory, '.opencode', 'opencode.json'), scope: 'project' },
+      { path: path.join(directory, 'opencode.jsonc'), scope: 'project' },
+      { path: path.join(directory, 'opencode.json'), scope: 'project' },
     );
   }
 
   return candidates;
 }
 
+function getPrimaryUserOpenCodeConfigPath() {
+  const configDir = getOpenCodeConfigDir();
+  const candidates = [
+    path.join(configDir, 'config.json'),
+    path.join(configDir, 'opencode.jsonc'),
+    path.join(configDir, 'opencode.json'),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+}
+
+function isOpenAgentPluginEntry(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return value.includes(PLUGIN_NAME) || value.includes(LEGACY_PLUGIN_NAME);
+}
+
+function normalizePluginEntry(value) {
+  const entry = normalizeString(value);
+  return entry && isOpenAgentPluginEntry(entry) ? entry : DEFAULT_PLUGIN_ENTRY;
+}
+
+function getPluginEntries(config, key) {
+  if (!Array.isArray(config?.[key])) {
+    return [];
+  }
+  return config[key]
+    .map((entry) => normalizeString(entry))
+    .filter(Boolean);
+}
+
+function getPreferredPluginArrayKey(config) {
+  if (Array.isArray(config?.plugin)) {
+    return 'plugin';
+  }
+  if (Array.isArray(config?.plugins)) {
+    return 'plugins';
+  }
+  return 'plugin';
+}
+
 function findPluginEntry(directory) {
-  for (const configPath of getOpenCodeConfigCandidates(directory)) {
+  const writeTargetPath = getPrimaryUserOpenCodeConfigPath();
+
+  for (const candidate of getOpenCodeConfigCandidates(directory)) {
+    const configPath = candidate.path;
     if (!fs.existsSync(configPath)) {
       continue;
     }
 
     try {
       const config = readJsoncFile(configPath);
-      const pluginEntries = [
-        ...(Array.isArray(config.plugin) ? config.plugin : []),
-        ...(Array.isArray(config.plugins) ? config.plugins : []),
-      ];
-      const entry = pluginEntries.find((value) => {
-        if (typeof value !== 'string') {
-          return false;
+      for (const key of ['plugin', 'plugins']) {
+        const entry = getPluginEntries(config, key).find(isOpenAgentPluginEntry);
+        if (entry) {
+          return {
+            detected: true,
+            enabled: true,
+            entry,
+            configPath,
+            configKey: key,
+            scope: candidate.scope,
+            writeTargetPath,
+            mtimeMs: getFileMtimeMs(configPath),
+          };
         }
-        return value.includes(PLUGIN_NAME) || value.includes(LEGACY_PLUGIN_NAME);
-      });
-
-      if (entry) {
-        return {
-          detected: true,
-          entry,
-          configPath,
-        };
       }
     } catch {
       // Ignore malformed OpenCode config here; the dedicated config UI can surface that.
@@ -230,9 +273,131 @@ function findPluginEntry(directory) {
 
   return {
     detected: false,
+    enabled: false,
     entry: null,
     configPath: null,
+    configKey: 'plugin',
+    scope: 'user',
+    writeTargetPath,
+    mtimeMs: getFileMtimeMs(writeTargetPath),
   };
+}
+
+function updateJsoncRawProperty(content, key, value) {
+  const edits = modifyJsonc(content, [key], value, {
+    formattingOptions: JSONC_FORMATTING_OPTIONS,
+  });
+  return applyEdits(content, edits);
+}
+
+function writeJsoncContent(filePath, content) {
+  parseJsoncObject(content, filePath);
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.copyFileSync(filePath, `${filePath}.openchamber.backup`);
+    } catch {
+      // Backup failure should not prevent the requested config write.
+    }
+  }
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content.endsWith('\n') ? content : `${content}\n`, 'utf8');
+}
+
+function updateOpenCodePluginEntries(filePath, updater) {
+  let content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '{\n}\n';
+  if (!content.trim()) {
+    content = '{\n}\n';
+  }
+
+  const config = parseJsoncObject(content, filePath);
+  const keys = Array.from(new Set([
+    getPreferredPluginArrayKey(config),
+    'plugin',
+    'plugins',
+  ]));
+  let nextContent = content;
+  let changed = false;
+
+  for (const key of keys) {
+    const existingEntries = getPluginEntries(config, key);
+    if (existingEntries.length === 0 && key !== getPreferredPluginArrayKey(config)) {
+      continue;
+    }
+
+    const nextEntries = updater(existingEntries, key);
+    if (nextEntries === null) {
+      continue;
+    }
+
+    const normalizedNext = Array.from(new Set(
+      nextEntries.map((entry) => normalizeString(entry)).filter(Boolean),
+    ));
+
+    const equal = existingEntries.length === normalizedNext.length
+      && existingEntries.every((entry, index) => entry === normalizedNext[index]);
+    if (equal && Array.isArray(config?.[key])) {
+      continue;
+    }
+
+    nextContent = updateJsoncRawProperty(
+      nextContent,
+      key,
+      normalizedNext.length > 0 ? normalizedNext : undefined,
+    );
+    changed = true;
+  }
+
+  if (changed) {
+    writeJsoncContent(filePath, nextContent);
+  }
+
+  return changed;
+}
+
+function setOpenAgentPluginEnabled(input = {}) {
+  const directory = normalizeString(input.directory);
+  const enabled = input.enabled === true;
+  const pluginInfo = findPluginEntry(directory);
+
+  const mtimePath = pluginInfo.configPath ?? pluginInfo.writeTargetPath;
+  if (hasMtimeMismatch(mtimePath, input.expectedMtimeMs)) {
+    throw createConfigModifiedError();
+  }
+
+  if (enabled) {
+    if (pluginInfo.enabled) {
+      return readOpenAgentConfig({ directory });
+    }
+
+    const targetPath = pluginInfo.writeTargetPath ?? getPrimaryUserOpenCodeConfigPath();
+    const entry = normalizePluginEntry(input.entry);
+    updateOpenCodePluginEntries(targetPath, (entries, key) => {
+      if (key !== getPreferredPluginArrayKey(readJsoncFile(targetPath))) {
+        return entries.length > 0 ? entries : null;
+      }
+      const withoutOpenAgent = entries.filter((item) => !isOpenAgentPluginEntry(item));
+      return [...withoutOpenAgent, entry];
+    });
+
+    return readOpenAgentConfig({ directory });
+  }
+
+  if (!pluginInfo.enabled) {
+    return readOpenAgentConfig({ directory });
+  }
+
+  for (const candidate of getOpenCodeConfigCandidates(directory)) {
+    if (!fs.existsSync(candidate.path)) {
+      continue;
+    }
+    updateOpenCodePluginEntries(candidate.path, (entries) => {
+      const nextEntries = entries.filter((entry) => !isOpenAgentPluginEntry(entry));
+      return nextEntries.length === entries.length ? null : nextEntries;
+    });
+  }
+
+  return readOpenAgentConfig({ directory });
 }
 
 function getSection(config, key) {
@@ -611,6 +776,7 @@ function saveOpenAgentConfig(input = {}) {
 export {
   readOpenAgentConfig,
   saveOpenAgentConfig,
+  setOpenAgentPluginEnabled,
   sanitizeOverride,
   sanitizeOverrideRecord,
 };

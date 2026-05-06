@@ -28,8 +28,13 @@ export interface OpenAgentConfigItem {
 export interface OpenAgentConfigResponse {
   plugin: {
     detected: boolean;
+    enabled?: boolean;
     entry: string | null;
     configPath: string | null;
+    configKey?: 'plugin' | 'plugins';
+    scope?: 'user' | 'project';
+    writeTargetPath?: string | null;
+    mtimeMs?: number | null;
   };
   target: {
     scope: 'user';
@@ -67,8 +72,10 @@ interface OpenAgentConfigStore {
   draft: OpenAgentDraft;
   isLoading: boolean;
   isSaving: boolean;
+  isPluginSaving: boolean;
   error: string | null;
   loadConfig: (options?: { force?: boolean }) => Promise<boolean>;
+  setPluginEnabled: (enabled: boolean) => Promise<OpenAgentMutationResult>;
   updateDraftItem: (kind: OpenAgentKind, id: string, patch: Record<string, unknown>) => void;
   resetItem: (kind: OpenAgentKind, id: string) => void;
   discardChanges: () => void;
@@ -131,6 +138,7 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
       draft: emptyDraft(),
       isLoading: false,
       isSaving: false,
+      isPluginSaving: false,
       error: null,
 
       loadConfig: async (options) => {
@@ -183,6 +191,86 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
 
         loadInFlight.set(cacheKey, request);
         return request;
+      },
+
+      setPluginEnabled: async (enabled) => {
+        const state = get();
+        const configDirectory = getConfigDirectory();
+        startConfigUpdate(enabled ? 'Enabling Oh My OpenAgent plugin...' : 'Disabling Oh My OpenAgent plugin...');
+        set({ isPluginSaving: true, error: null });
+
+        let requiresReload = false;
+        try {
+          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
+          const response = await fetch(`/api/openagent/plugin${query}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+            },
+            body: JSON.stringify({
+              enabled,
+              expectedMtimeMs: state.config?.plugin.mtimeMs ?? null,
+              entry: state.config?.plugin.entry ?? undefined,
+            }),
+          });
+
+          const responsePayload = await response.json().catch(() => null) as {
+            config?: OpenAgentConfigResponse;
+            requiresReload?: boolean;
+            reloadDelayMs?: number;
+            reloadFailed?: boolean;
+            message?: string;
+            error?: string;
+          } | null;
+
+          if (!response.ok) {
+            const message = responsePayload?.error || 'Failed to update Oh My OpenAgent plugin';
+            const conflict = response.status === 409;
+            set({ error: message, isPluginSaving: false });
+            return { ok: false, conflict, message };
+          }
+
+          if (responsePayload?.config) {
+            const nextDraft = createOpenAgentDraftFromConfig(responsePayload.config);
+            set({
+              config: responsePayload.config,
+              initialDraft: cloneDraft(nextDraft),
+              draft: nextDraft,
+              error: null,
+            });
+          }
+
+          invalidateCache(configDirectory);
+
+          if (responsePayload?.requiresReload) {
+            requiresReload = true;
+            await refreshAfterOpenCodeRestart({
+              message: responsePayload.message,
+              delayMs: responsePayload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
+              scopes: ['all'],
+              mode: 'projects',
+            });
+          }
+
+          await get().loadConfig({ force: true });
+          set({ isPluginSaving: false });
+
+          return {
+            ok: true,
+            reloadFailed: responsePayload?.reloadFailed === true,
+            message: responsePayload?.message,
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to update Oh My OpenAgent plugin';
+          console.error('[OpenAgentConfigStore] Failed to update plugin:', error);
+          set({ error: message, isPluginSaving: false });
+          return { ok: false, message };
+        } finally {
+          if (!requiresReload) {
+            finishConfigUpdate();
+          }
+        }
       },
 
       updateDraftItem: (kind, id, patch) => {

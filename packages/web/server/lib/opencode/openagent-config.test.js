@@ -150,6 +150,71 @@ describe('oh-my-openagent config helpers', () => {
     });
   });
 
+  it('toggles the OpenCode plugin registration while preserving other plugins and comments', async () => {
+    const configDir = path.join(tempHome, '.config', 'opencode');
+    const opencodeConfigPath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodeConfigPath, [
+      '{',
+      '  // keep opencode comment',
+      '  "plugin": ["other-plugin", "oh-my-openagent@3.11.0"]',
+      '}',
+      '',
+    ].join('\n'));
+
+    const { readOpenAgentConfig, setOpenAgentPluginEnabled } = await loadOpenAgentModule();
+    const before = readOpenAgentConfig();
+
+    expect(before.plugin).toMatchObject({
+      detected: true,
+      enabled: true,
+      entry: 'oh-my-openagent@3.11.0',
+      configPath: opencodeConfigPath,
+      configKey: 'plugin',
+      scope: 'user',
+    });
+
+    const disabled = setOpenAgentPluginEnabled({
+      expectedMtimeMs: before.plugin.mtimeMs,
+      enabled: false,
+    });
+
+    let content = fs.readFileSync(opencodeConfigPath, 'utf8');
+    let parsed = readJsoncObject(opencodeConfigPath);
+    expect(content).toContain('// keep opencode comment');
+    expect(parsed.plugin).toEqual(['other-plugin']);
+    expect(disabled.plugin.enabled).toBe(false);
+
+    setOpenAgentPluginEnabled({
+      expectedMtimeMs: disabled.plugin.mtimeMs,
+      enabled: true,
+      entry: before.plugin.entry,
+    });
+
+    content = fs.readFileSync(opencodeConfigPath, 'utf8');
+    parsed = readJsoncObject(opencodeConfigPath);
+    expect(content).toContain('// keep opencode comment');
+    expect(parsed.plugin).toEqual(['other-plugin', 'oh-my-openagent@3.11.0']);
+  });
+
+  it('creates an OpenCode config with the canonical plugin entry when enabling from a disabled state', async () => {
+    const configDir = path.join(tempHome, '.config', 'opencode');
+    const opencodeConfigPath = path.join(configDir, 'config.json');
+
+    const { readOpenAgentConfig, setOpenAgentPluginEnabled } = await loadOpenAgentModule();
+    const before = readOpenAgentConfig();
+    expect(before.plugin.enabled).toBe(false);
+    expect(before.plugin.writeTargetPath).toBe(opencodeConfigPath);
+
+    const enabled = setOpenAgentPluginEnabled({
+      expectedMtimeMs: before.plugin.mtimeMs,
+      enabled: true,
+    });
+
+    expect(enabled.plugin.enabled).toBe(true);
+    expect(readJsoncObject(opencodeConfigPath).plugin).toEqual(['oh-my-openagent']);
+  });
+
   it('rejects saves when the config was modified after it was read', async () => {
     const configDir = path.join(tempHome, '.config', 'opencode');
     const configPath = path.join(configDir, 'oh-my-openagent.jsonc');
@@ -169,5 +234,23 @@ describe('oh-my-openagent config helpers', () => {
     expect(readJsoncObject(configPath).agents).toEqual({
       sisyphus: { model: 'external/change' },
     });
+  });
+
+  it('rejects plugin toggles when the OpenCode config changed after it was read', async () => {
+    const configDir = path.join(tempHome, '.config', 'opencode');
+    const opencodeConfigPath = path.join(configDir, 'config.json');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodeConfigPath, '{ "plugin": ["oh-my-openagent"] }\n');
+
+    const { readOpenAgentConfig, setOpenAgentPluginEnabled } = await loadOpenAgentModule();
+    const before = readOpenAgentConfig();
+    fs.writeFileSync(opencodeConfigPath, '{ "plugin": ["oh-my-openagent", "external-plugin"] }\n');
+
+    expect(() => setOpenAgentPluginEnabled({
+      expectedMtimeMs: before.plugin.mtimeMs,
+      enabled: false,
+    })).toThrow(/modified outside OpenChamber/);
+
+    expect(readJsoncObject(opencodeConfigPath).plugin).toEqual(['oh-my-openagent', 'external-plugin']);
   });
 });
