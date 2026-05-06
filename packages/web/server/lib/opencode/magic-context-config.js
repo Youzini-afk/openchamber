@@ -200,7 +200,6 @@ function getFileMtimeMs(filePath) {
 function getOpenCodeConfigCandidates(directory) {
   const configDir = getOpenCodeConfigDir();
   const candidates = [
-    path.join(configDir, 'config.json'),
     path.join(configDir, 'opencode.jsonc'),
     path.join(configDir, 'opencode.json'),
   ];

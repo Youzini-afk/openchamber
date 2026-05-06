@@ -104,6 +104,29 @@ describe('agent orchestration config helpers', () => {
     expect(readJsoncObject(tuiPath).plugin).toEqual(['other-tui-plugin']);
   });
 
+  it('ignores stale legacy config.json entries and moves orchestration plugins to opencode.jsonc', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const legacyPath = path.join(configDir, 'config.json');
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(legacyPath, '{ "plugin": ["oh-my-openagent", "legacy-helper"] }\n');
+
+    const { readAgentOrchestrationConfig, setAgentOrchestrationMode } = await loadModule();
+    const before = readAgentOrchestrationConfig();
+
+    expect(before.mode.effective).toBe('native');
+    expect(before.mode.conflicts.join('\n')).toContain('Legacy config.json');
+
+    const after = setAgentOrchestrationMode({
+      mode: 'omo',
+      expectedMtimeMsByPath: before.mode.mtimeMsByPath,
+    });
+
+    expect(after.mode.effective).toBe('omo');
+    expect(readJsoncObject(legacyPath).plugin).toEqual(['legacy-helper']);
+    expect(readJsoncObject(opencodePath).plugin).toEqual(['oh-my-openagent']);
+  });
+
   it('rejects mode switches when a written config changed after it was read', async () => {
     const configDir = process.env.OPENCODE_CONFIG_DIR;
     const opencodePath = path.join(configDir, 'opencode.jsonc');

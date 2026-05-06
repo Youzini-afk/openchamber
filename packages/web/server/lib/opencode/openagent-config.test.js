@@ -199,7 +199,7 @@ describe('oh-my-openagent config helpers', () => {
 
   it('creates an OpenCode config with the canonical plugin entry when enabling from a disabled state', async () => {
     const configDir = path.join(tempHome, '.config', 'opencode');
-    const opencodeConfigPath = path.join(configDir, 'config.json');
+    const opencodeConfigPath = path.join(configDir, 'opencode.jsonc');
 
     const { readOpenAgentConfig, setOpenAgentPluginEnabled } = await loadOpenAgentModule();
     const before = readOpenAgentConfig();
@@ -212,6 +212,29 @@ describe('oh-my-openagent config helpers', () => {
     });
 
     expect(enabled.plugin.enabled).toBe(true);
+    expect(readJsoncObject(opencodeConfigPath).plugin).toEqual(['oh-my-openagent']);
+  });
+
+  it('ignores and cleans stale legacy config.json plugin entries when enabling', async () => {
+    const configDir = path.join(tempHome, '.config', 'opencode');
+    const legacyPath = path.join(configDir, 'config.json');
+    const opencodeConfigPath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(legacyPath, '{ "plugin": ["oh-my-openagent", "legacy-helper"] }\n');
+
+    const { readOpenAgentConfig, setOpenAgentPluginEnabled } = await loadOpenAgentModule();
+    const before = readOpenAgentConfig();
+
+    expect(before.plugin.enabled).toBe(false);
+    expect(before.plugin.writeTargetPath).toBe(opencodeConfigPath);
+
+    const enabled = setOpenAgentPluginEnabled({
+      expectedMtimeMs: before.plugin.mtimeMs,
+      enabled: true,
+    });
+
+    expect(enabled.plugin.enabled).toBe(true);
+    expect(readJsoncObject(legacyPath).plugin).toEqual(['legacy-helper']);
     expect(readJsoncObject(opencodeConfigPath).plugin).toEqual(['oh-my-openagent']);
   });
 
@@ -238,7 +261,7 @@ describe('oh-my-openagent config helpers', () => {
 
   it('rejects plugin toggles when the OpenCode config changed after it was read', async () => {
     const configDir = path.join(tempHome, '.config', 'opencode');
-    const opencodeConfigPath = path.join(configDir, 'config.json');
+    const opencodeConfigPath = path.join(configDir, 'opencode.jsonc');
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(opencodeConfigPath, '{ "plugin": ["oh-my-openagent"] }\n');
 

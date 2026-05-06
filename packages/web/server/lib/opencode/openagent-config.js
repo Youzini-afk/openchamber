@@ -181,7 +181,6 @@ function getFileMtimeMs(filePath) {
 function getOpenCodeConfigCandidates(directory) {
   const configDir = getOpenCodeConfigDir();
   const userCandidates = [
-    { path: path.join(configDir, 'config.json'), scope: 'user' },
     { path: path.join(configDir, 'opencode.jsonc'), scope: 'user' },
     { path: path.join(configDir, 'opencode.json'), scope: 'user' },
   ];
@@ -199,14 +198,27 @@ function getOpenCodeConfigCandidates(directory) {
   return candidates;
 }
 
+function getLegacyOpenCodeConfigCandidates() {
+  const configDir = getOpenCodeConfigDir();
+  return [
+    { path: path.join(configDir, 'config.json'), scope: 'user' },
+  ];
+}
+
+function getAllOpenCodeConfigCandidates(directory) {
+  return [
+    ...getOpenCodeConfigCandidates(directory),
+    ...getLegacyOpenCodeConfigCandidates(),
+  ];
+}
+
 function getPrimaryUserOpenCodeConfigPath() {
   const configDir = getOpenCodeConfigDir();
   const candidates = [
-    path.join(configDir, 'config.json'),
     path.join(configDir, 'opencode.jsonc'),
     path.join(configDir, 'opencode.json'),
   ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? path.join(configDir, 'opencode.jsonc');
 }
 
 function isOpenAgentPluginEntry(value) {
@@ -379,6 +391,17 @@ function setOpenAgentPluginEnabled(input = {}) {
 
     const targetPath = pluginInfo.writeTargetPath ?? getPrimaryUserOpenCodeConfigPath();
     const entry = normalizePluginEntry(input.entry);
+
+    for (const candidate of getAllOpenCodeConfigCandidates(directory)) {
+      if (!fs.existsSync(candidate.path)) {
+        continue;
+      }
+      updateOpenCodePluginEntries(candidate.path, (entries) => {
+        const nextEntries = entries.filter((item) => !isOpenAgentPluginEntry(item));
+        return nextEntries.length === entries.length ? null : nextEntries;
+      });
+    }
+
     updateOpenCodePluginEntries(targetPath, (entries, key) => {
       if (key !== getPreferredPluginArrayKey(readJsoncFile(targetPath))) {
         return entries.length > 0 ? entries : null;
@@ -394,7 +417,7 @@ function setOpenAgentPluginEnabled(input = {}) {
     return readOpenAgentConfig({ directory });
   }
 
-  for (const candidate of getOpenCodeConfigCandidates(directory)) {
+  for (const candidate of getAllOpenCodeConfigCandidates(directory)) {
     if (!fs.existsSync(candidate.path)) {
       continue;
     }

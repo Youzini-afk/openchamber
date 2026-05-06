@@ -46,9 +46,15 @@ function getOpenCodeConfigDir() {
 function getUserOpenCodeConfigCandidates() {
   const configDir = getOpenCodeConfigDir();
   return [
-    path.join(configDir, 'config.json'),
     path.join(configDir, 'opencode.jsonc'),
     path.join(configDir, 'opencode.json'),
+  ];
+}
+
+function getLegacyUserOpenCodeConfigCandidates() {
+  const configDir = getOpenCodeConfigDir();
+  return [
+    path.join(configDir, 'config.json'),
   ];
 }
 
@@ -72,7 +78,7 @@ function getUserTuiConfigCandidates() {
 
 function getPrimaryUserOpenCodeConfigPath() {
   const candidates = getUserOpenCodeConfigCandidates();
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? path.join(getOpenCodeConfigDir(), 'opencode.jsonc');
 }
 
 function getPrimaryUserTuiConfigPath() {
@@ -201,9 +207,11 @@ function resolveMode(entries) {
 
 function getConfigScan(directory) {
   const userPaths = getUserOpenCodeConfigCandidates();
+  const legacyUserPaths = getLegacyUserOpenCodeConfigCandidates();
   const projectPaths = getProjectOpenCodeConfigCandidates(directory);
   const tuiPaths = getUserTuiConfigCandidates();
   const userEntries = userPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'user', 'opencode'));
+  const legacyUserEntries = legacyUserPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'user', 'opencode-legacy'));
   const projectEntries = projectPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'project', 'opencode'));
   const tuiEntries = tuiPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'user', 'tui'));
   const allEntries = [...userEntries, ...projectEntries, ...tuiEntries];
@@ -219,9 +227,11 @@ function getConfigScan(directory) {
   }
   return {
     userPaths,
+    legacyUserPaths,
     projectPaths,
     tuiPaths,
     userEntries,
+    legacyUserEntries,
     projectEntries,
     tuiEntries,
     allEntries,
@@ -243,6 +253,9 @@ function getModeInfo(directory) {
   }
   if (scan.tuiEntries.some((entry) => entry.mode === MODE_SLIM) && effective !== MODE_SLIM) {
     conflicts.push('TUI config still contains oh-my-opencode-slim while Slim mode is not active.');
+  }
+  if (scan.legacyUserEntries.length > 0) {
+    conflicts.push('Legacy config.json contains agent orchestration plugin entries that OpenCode may ignore. Save the mode again to move them to opencode.jsonc.');
   }
   return {
     effective,
@@ -339,6 +352,7 @@ function setAgentOrchestrationMode(input = {}) {
   const tuiTarget = getPrimaryUserTuiConfigPath();
   const existingPathsToClean = Array.from(new Set([
     ...getPathsWithKnownEntries(getUserOpenCodeConfigCandidates()),
+    ...getPathsWithKnownEntries(getLegacyUserOpenCodeConfigCandidates()),
     ...getPathsWithKnownEntries(getProjectOpenCodeConfigCandidates(directory)),
   ]));
   const existingTuiPathsToClean = Array.from(new Set(getPathsWithKnownEntries(getUserTuiConfigCandidates())));
