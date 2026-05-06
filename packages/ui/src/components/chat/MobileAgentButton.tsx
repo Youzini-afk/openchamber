@@ -24,7 +24,12 @@ export const MobileAgentButton: React.FC<MobileAgentButtonProps> = ({ onCycleAge
     );
 
     const agents = getVisibleAgents();
-    const uiAgentName = currentSessionId ? (sessionAgentName || currentAgentName) : currentAgentName;
+    const knownAgentNames = React.useMemo(() => new Set(agents.map((agent) => agent.name)), [agents]);
+    const validSessionAgentName = sessionAgentName && knownAgentNames.has(sessionAgentName) ? sessionAgentName : null;
+    const validCurrentAgentName = currentAgentName && knownAgentNames.has(currentAgentName) ? currentAgentName : null;
+    const uiAgentName = currentSessionId
+        ? (validSessionAgentName || validCurrentAgentName || (agents.length === 0 ? currentAgentName : undefined))
+        : currentAgentName;
     const agentLabel = getAgentDisplayName(agents, uiAgentName);
     const agentColor = getAgentColor(uiAgentName);
 

@@ -366,6 +366,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     // Use visible agents (excludes hidden internal agents)
     const agents = getVisibleAgents();
+    const agentNameSet = React.useMemo(() => new Set(agents.map((agent) => agent.name)), [agents]);
+    const getValidAgentName = React.useCallback(
+        (name: string | null | undefined) => (name && agentNameSet.has(name) ? name : null),
+        [agentNameSet],
+    );
     const primaryAgents = React.useMemo(() => agents.filter((agent) => agent.mode === 'primary'), [agents]);
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -375,6 +380,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const getSessionModelSelection = useSelectionStore((state) => state.getSessionModelSelection);
     const saveSessionModelSelection = useSelectionStore((state) => state.saveSessionModelSelection);
     const saveSessionAgentSelection = useSelectionStore((state) => state.saveSessionAgentSelection);
+    const clearSessionAgentSelection = useSelectionStore((state) => state.clearSessionAgentSelection);
     const saveAgentModelForSession = useSelectionStore((state) => state.saveAgentModelForSession);
     const getAgentModelForSession = useSelectionStore((state) => state.getAgentModelForSession);
     const saveAgentModelVariantForSession = useSelectionStore((state) => state.saveAgentModelVariantForSession);
@@ -392,16 +398,37 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             stickySessionAgentRef.current = null;
             return;
         }
-        if (sessionSavedAgentName) {
+        if (sessionSavedAgentName && getValidAgentName(sessionSavedAgentName)) {
             stickySessionAgentRef.current = sessionSavedAgentName;
         }
-    }, [currentSessionId, sessionSavedAgentName]);
+    }, [currentSessionId, getValidAgentName, sessionSavedAgentName]);
 
-    const stickySessionAgentName = currentSessionId ? stickySessionAgentRef.current : null;
+    React.useEffect(() => {
+        if (!currentSessionId || agents.length === 0) {
+            return;
+        }
+
+        if (sessionSavedAgentName && !getValidAgentName(sessionSavedAgentName)) {
+            clearSessionAgentSelection(currentSessionId);
+        }
+
+        if (stickySessionAgentRef.current && !getValidAgentName(stickySessionAgentRef.current)) {
+            stickySessionAgentRef.current = null;
+        }
+    }, [
+        agents.length,
+        clearSessionAgentSelection,
+        currentSessionId,
+        getValidAgentName,
+        sessionSavedAgentName,
+    ]);
+
+    const stickySessionAgentName = currentSessionId ? getValidAgentName(stickySessionAgentRef.current) : null;
+    const validSessionSavedAgentName = currentSessionId ? getValidAgentName(sessionSavedAgentName) : null;
 
     // Prefer per-session selection over global config to avoid flicker during server-driven mode switches.
     const uiAgentName = currentSessionId
-        ? (sessionSavedAgentName || stickySessionAgentName || currentAgentName)
+        ? (validSessionSavedAgentName || stickySessionAgentName || getValidAgentName(currentAgentName) || (agents.length === 0 ? currentAgentName : undefined))
         : currentAgentName;
 
     const toggleFavoriteModel = useUIStore((state) => state.toggleFavoriteModel);
@@ -890,13 +917,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const resolveLiveAgentName = React.useCallback(() => {
         const liveConfigAgentName = useConfigStore.getState().currentAgentName;
+        const liveAgents = useConfigStore.getState().getVisibleAgents();
+        const liveAgentNames = new Set(liveAgents.map((agent) => agent.name));
+        const getLiveValidAgentName = (name: string | null | undefined) => (
+            name && liveAgentNames.has(name) ? name : undefined
+        );
         if (currentSessionId) {
-            return useSelectionStore.getState().getSessionAgentSelection(currentSessionId)
-                || stickySessionAgentRef.current
-                || liveConfigAgentName
-                || currentAgentName;
+            return getLiveValidAgentName(useSelectionStore.getState().getSessionAgentSelection(currentSessionId))
+                || getLiveValidAgentName(stickySessionAgentRef.current)
+                || getLiveValidAgentName(liveConfigAgentName)
+                || getLiveValidAgentName(currentAgentName);
         }
-        return liveConfigAgentName || currentAgentName;
+        return getLiveValidAgentName(liveConfigAgentName) || getLiveValidAgentName(currentAgentName);
     }, [currentAgentName, currentSessionId]);
 
     const commitVariantSelectionForModel = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
@@ -1011,9 +1043,16 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         const applySavedSelections = (): 'resolved' | 'waiting' | 'continue' => {
             const savedSessionModel = getSessionModelSelection(currentSessionId);
-            const savedAgentName = currentSessionId
+            const rawSavedAgentName = currentSessionId
                 ? useSelectionStore.getState().getSessionAgentSelection(currentSessionId)
                 : null;
+            const savedAgentName = getValidAgentName(rawSavedAgentName);
+            if (rawSavedAgentName && !savedAgentName) {
+                useSelectionStore.getState().clearSessionAgentSelection(currentSessionId);
+                if (stickySessionAgentRef.current === rawSavedAgentName) {
+                    stickySessionAgentRef.current = null;
+                }
+            }
             if (savedAgentName) {
                 if (currentAgentName !== savedAgentName) {
                     setAgent(savedAgentName);
@@ -1073,16 +1112,16 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
 
             const existingSelection = currentSessionId
-                ? (useSelectionStore.getState().getSessionAgentSelection(currentSessionId) || stickySessionAgentRef.current)
+                ? (getValidAgentName(useSelectionStore.getState().getSessionAgentSelection(currentSessionId)) || getValidAgentName(stickySessionAgentRef.current))
                 : null;
 
             // If we already have a valid agent selected (often from server-injected mode switch),
             // don't override it with a fallback.
             const preferred =
                 (currentSessionId
-                    ? (useSelectionStore.getState().getSessionAgentSelection(currentSessionId) || stickySessionAgentRef.current)
+                    ? (getValidAgentName(useSelectionStore.getState().getSessionAgentSelection(currentSessionId)) || getValidAgentName(stickySessionAgentRef.current))
                     : null) ||
-                currentAgentName;
+                getValidAgentName(currentAgentName);
             if (preferred && agents.some((agent) => agent.name === preferred)) {
                 if (currentAgentName !== preferred) {
                     setAgent(preferred);
@@ -1134,6 +1173,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         currentAgentName,
         getSessionModelSelection,
         getAgentModelForSession,
+        getValidAgentName,
         setAgent,
         tryApplyModelSelection,
         saveSessionAgentSelection,

@@ -80,7 +80,9 @@ describe('agent orchestration routes', () => {
       mode: 'slim',
       expectedMtimeMsByPath: { '/tmp/opencode.jsonc': 123 },
     });
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration mode updated');
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration mode updated', {
+      agentName: 'orchestrator',
+    });
     expect(response.body).toMatchObject({
       success: true,
       requiresReload: true,

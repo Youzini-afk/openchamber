@@ -64,6 +64,7 @@ const AGENTS_LOAD_CACHE_TTL_MS = 5000;
 const DEFAULT_AGENTS_CACHE_KEY = '__default__';
 const agentsLastLoadedAt = new Map<string, number>();
 const agentsLoadInFlight = new Map<string, Promise<boolean>>();
+const agentsLoadTokens = new Map<string, symbol>();
 
 const getAgentsCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_AGENTS_CACHE_KEY;
@@ -174,7 +175,7 @@ interface AgentsStore {
 
   setSelectedAgent: (name: string | null) => void;
   setAgentDraft: (draft: AgentDraft | null) => void;
-  loadAgents: () => Promise<boolean>;
+  loadAgents: (options?: { force?: boolean }) => Promise<boolean>;
   createAgent: (config: AgentConfig) => Promise<boolean>;
   updateAgent: (name: string, config: Partial<AgentConfig>) => Promise<boolean>;
   deleteAgent: (name: string) => Promise<boolean>;
@@ -207,21 +208,26 @@ export const useAgentsStore = create<AgentsStore>()(
           set({ agentDraft: draft });
         },
 
-        loadAgents: async () => {
+        loadAgents: async (options) => {
           const configDirectory = getConfigDirectory();
           const cacheKey = getAgentsCacheKey(configDirectory);
           const now = Date.now();
           const loadedAt = agentsLastLoadedAt.get(cacheKey) ?? 0;
           const hasCachedAgents = get().agents.length > 0;
+          const force = options?.force === true;
 
-          if (hasCachedAgents && now - loadedAt < AGENTS_LOAD_CACHE_TTL_MS) {
+          if (!force && hasCachedAgents && now - loadedAt < AGENTS_LOAD_CACHE_TTL_MS) {
             return true;
           }
 
-          const inFlight = agentsLoadInFlight.get(cacheKey);
+          const inFlight = force ? undefined : agentsLoadInFlight.get(cacheKey);
           if (inFlight) {
             return inFlight;
           }
+
+          const requestToken = Symbol(cacheKey);
+          agentsLoadTokens.set(cacheKey, requestToken);
+          const isStaleRequest = () => agentsLoadTokens.get(cacheKey) !== requestToken;
 
           const request = (async () => {
             set({ isLoading: true });
@@ -234,6 +240,10 @@ export const useAgentsStore = create<AgentsStore>()(
 
                 // Ensure we list agents using the correct project context
                 const agents = await opencodeClient.withDirectory(configDirectory, () => opencodeClient.listAgents());
+
+                if (isStaleRequest()) {
+                  return true;
+                }
 
                 const agentsWithScope = await Promise.all(
                   agents.map(async (agent) => {
@@ -279,6 +289,10 @@ export const useAgentsStore = create<AgentsStore>()(
                   })
                 );
 
+                if (isStaleRequest()) {
+                  return true;
+                }
+
                 const nextSignature = buildAgentsSignature(agentsWithScope);
                 if (previousSignature !== nextSignature) {
                   set({ agents: agentsWithScope, isLoading: false });
@@ -292,6 +306,10 @@ export const useAgentsStore = create<AgentsStore>()(
               }
             }
 
+            if (isStaleRequest()) {
+              return false;
+            }
+
             set({ isLoading: false });
             return false;
           })();
@@ -300,7 +318,9 @@ export const useAgentsStore = create<AgentsStore>()(
           try {
             return await request;
           } finally {
-            agentsLoadInFlight.delete(cacheKey);
+            if (agentsLoadInFlight.get(cacheKey) === request) {
+              agentsLoadInFlight.delete(cacheKey);
+            }
           }
         },
 
@@ -628,16 +648,16 @@ async function performConfigRefresh(options: {
     const sdkRefreshTasks: Promise<void>[] = [];
     for (const directory of directoriesToRefresh) {
       if (refreshProviders) {
-        sdkRefreshTasks.push(configStore.loadProviders({ directory }).then(() => undefined));
+        sdkRefreshTasks.push(configStore.loadProviders({ directory, force: true }).then(() => undefined));
       }
       if (refreshSdkAgents) {
-        sdkRefreshTasks.push(configStore.loadAgents({ directory }).then(() => undefined));
+        sdkRefreshTasks.push(configStore.loadAgents({ directory, force: true }).then(() => undefined));
       }
     }
 
     const uiRefreshTasks: Promise<void>[] = [];
     if (refreshAgentConfigs) {
-      uiRefreshTasks.push(agentConfigStore.loadAgents().then(() => undefined));
+      uiRefreshTasks.push(agentConfigStore.loadAgents({ force: true }).then(() => undefined));
     }
     if (refreshCommands) {
       uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
@@ -722,7 +742,7 @@ if (!unsubscribeAgentsConfigChanges) {
 
     if (scopeMatches(event, "agents")) {
       const { loadAgents } = useAgentsStore.getState();
-      void loadAgents();
+      void loadAgents({ force: true });
     }
   });
 }

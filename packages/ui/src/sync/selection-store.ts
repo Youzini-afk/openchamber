@@ -14,6 +14,7 @@ export type SelectionState = {
   saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => void
   getSessionModelSelection: (sessionId: string) => { providerId: string; modelId: string } | null
   saveSessionAgentSelection: (sessionId: string, agentName: string) => void
+  clearSessionAgentSelection: (sessionId: string) => void
   getSessionAgentSelection: (sessionId: string) => string | null
   saveAgentModelForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => void
   getAgentModelForSession: (sessionId: string, agentName: string) => { providerId: string; modelId: string } | null
@@ -44,6 +45,14 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       if (s.sessionAgentSelections.get(sessionId) === agentName) return s
       const map = new Map(s.sessionAgentSelections)
       map.set(sessionId, agentName)
+      return { sessionAgentSelections: map }
+    }),
+
+  clearSessionAgentSelection: (sessionId) =>
+    set((s) => {
+      if (!s.sessionAgentSelections.has(sessionId)) return s
+      const map = new Map(s.sessionAgentSelections)
+      map.delete(sessionId)
       return { sessionAgentSelections: map }
     }),
 

@@ -543,8 +543,8 @@ interface ConfigStore {
 
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
-    loadProviders: (options?: { directory?: string | null }) => Promise<void>;
-    loadAgents: (options?: { directory?: string | null }) => Promise<boolean>;
+    loadProviders: (options?: { directory?: string | null; force?: boolean }) => Promise<void>;
+    loadAgents: (options?: { directory?: string | null; force?: boolean }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
     setModel: (modelId: string) => void;
@@ -584,6 +584,8 @@ declare global {
 // In-flight dedup: prevent concurrent duplicate loadProviders/loadAgents calls for the same directory
 const _inFlightProviders = new Map<string, Promise<void>>();
 const _inFlightAgents = new Map<string, Promise<boolean>>();
+const _providerLoadTokens = new Map<string, symbol>();
+const _agentLoadTokens = new Map<string, symbol>();
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -854,12 +856,18 @@ export const useConfigStore = create<ConfigStore>()(
 
                 loadProviders: async (options) => {
                     const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
+                    const force = options?.force === true;
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
-                    const existing = _inFlightProviders.get(directoryKey);
+                    const existing = force ? undefined : _inFlightProviders.get(directoryKey);
                     if (existing) return existing;
 
-                    const promise = (async () => {
+                    const requestToken = Symbol(directoryKey);
+                    _providerLoadTokens.set(directoryKey, requestToken);
+                    const isStaleRequest = () => _providerLoadTokens.get(directoryKey) !== requestToken;
+
+                    let promise: Promise<void>;
+                    promise = (async () => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousProviders = existingSnapshot?.providers ?? (get().activeDirectoryKey === directoryKey ? get().providers : []);
                     const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
@@ -886,6 +894,10 @@ export const useConfigStore = create<ConfigStore>()(
                                     models,
                                 };
                             });
+
+                            if (isStaleRequest()) {
+                                return;
+                            }
 
                             set((state) => {
                                 const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
@@ -953,6 +965,10 @@ export const useConfigStore = create<ConfigStore>()(
 
                     console.error("Failed to load providers:", lastError);
 
+                    if (isStaleRequest()) {
+                        return;
+                    }
+
                     set((state) => {
                         const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
                             providers: [],
@@ -1008,7 +1024,11 @@ export const useConfigStore = create<ConfigStore>()(
 
                         return nextState;
                     });
-                    })().finally(() => _inFlightProviders.delete(directoryKey));
+                    })().finally(() => {
+                        if (_inFlightProviders.get(directoryKey) === promise) {
+                            _inFlightProviders.delete(directoryKey);
+                        }
+                    });
 
                     _inFlightProviders.set(directoryKey, promise);
                     return promise;
@@ -1218,12 +1238,18 @@ export const useConfigStore = create<ConfigStore>()(
 
                 loadAgents: async (options) => {
                     const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
+                    const force = options?.force === true;
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
-                    const existing = _inFlightAgents.get(directoryKey);
+                    const existing = force ? undefined : _inFlightAgents.get(directoryKey);
                     if (existing) return existing;
 
-                    const promise = (async (): Promise<boolean> => {
+                    const requestToken = Symbol(directoryKey);
+                    _agentLoadTokens.set(directoryKey, requestToken);
+                    const isStaleRequest = () => _agentLoadTokens.get(directoryKey) !== requestToken;
+
+                    let promise: Promise<boolean>;
+                    promise = (async (): Promise<boolean> => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
                     let lastError: unknown = null;
@@ -1237,6 +1263,10 @@ export const useConfigStore = create<ConfigStore>()(
                             ]);
 
                             const safeAgents = Array.isArray(agents) ? agents : [];
+
+                            if (isStaleRequest()) {
+                                return true;
+                            }
 
                             const providers = get().activeDirectoryKey === directoryKey
                                 ? get().providers
@@ -1498,6 +1528,10 @@ export const useConfigStore = create<ConfigStore>()(
 
                     console.error("Failed to load agents:", lastError);
 
+                    if (isStaleRequest()) {
+                        return false;
+                    }
+
                     set((state) => {
                         const providers = state.activeDirectoryKey === directoryKey
                             ? state.providers
@@ -1535,7 +1569,11 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     return false;
-                    })().finally(() => _inFlightAgents.delete(directoryKey));
+                    })().finally(() => {
+                        if (_inFlightAgents.get(directoryKey) === promise) {
+                            _inFlightAgents.delete(directoryKey);
+                        }
+                    });
 
                     _inFlightAgents.set(directoryKey, promise);
                     return promise;
@@ -2088,12 +2126,12 @@ if (!unsubscribeConfigStoreChanges) {
 
         if (scopeMatches(event, "agents")) {
             const { loadAgents } = useConfigStore.getState();
-            tasks.push(loadAgents().then(() => {}));
+            tasks.push(loadAgents({ force: true }).then(() => {}));
         }
 
         if (scopeMatches(event, "providers")) {
             const { loadProviders } = useConfigStore.getState();
-            tasks.push(loadProviders());
+            tasks.push(loadProviders({ force: true }));
         }
 
         if (tasks.length > 0) {

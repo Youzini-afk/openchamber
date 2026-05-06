@@ -26,6 +26,13 @@ async function resolveDirectory(req, resolveOptionalProjectDirectory) {
   return { directory: requestedDirectory, error: null };
 }
 
+function getExpectedAgentNameForMode(mode) {
+  if (mode === 'slim') return 'orchestrator';
+  if (mode === 'omo') return 'sisyphus';
+  if (mode === 'native') return 'build';
+  return null;
+}
+
 export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
   const {
     clientReloadDelayMs = 800,
@@ -60,7 +67,9 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
       });
 
       if (typeof refreshOpenCodeAfterConfigChange === 'function') {
-        await refreshOpenCodeAfterConfigChange('agent orchestration mode updated');
+        await refreshOpenCodeAfterConfigChange('agent orchestration mode updated', {
+          agentName: getExpectedAgentNameForMode(body.mode),
+        });
       }
 
       return res.json({

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 const configMessages: string[] = []
 const dispatchedEvents: string[] = []
 const loadProviderDirectories: Array<string | undefined> = []
+const loadAgentOptions: Array<{ directory?: string; force?: boolean } | undefined> = []
 const savedWindow = globalThis.window
 
 mock.module("@/lib/opencode/client", () => ({
@@ -10,6 +11,8 @@ mock.module("@/lib/opencode/client", () => ({
     checkHealth: () => Promise.resolve(true),
     getBaseUrl: () => "/api",
     getDirectory: () => "/test/project",
+    listAgents: () => Promise.resolve([]),
+    withDirectory: (_directory: string | null | undefined, fn: () => Promise<unknown>) => fn(),
   },
 }))
 
@@ -39,7 +42,10 @@ mock.module("@/stores/useConfigStore", () => ({
         loadProviderDirectories.push(directory)
         return Promise.resolve(true)
       },
-      loadAgents: () => Promise.resolve(true),
+      loadAgents: (options?: { directory?: string; force?: boolean }) => {
+        loadAgentOptions.push(options)
+        return Promise.resolve(true)
+      },
     }),
   },
 }))
@@ -82,6 +88,7 @@ describe("refreshAfterOpenCodeRestart", () => {
     configMessages.length = 0
     dispatchedEvents.length = 0
     loadProviderDirectories.length = 0
+    loadAgentOptions.length = 0
   })
 
   test("signals the realtime pipeline to reconnect during config refresh", async () => {
@@ -106,5 +113,17 @@ describe("refreshAfterOpenCodeRestart", () => {
     } finally {
       globalThis.window = savedWindow
     }
+  })
+
+  test("forces SDK agent reloads so mode switches do not reuse stale agent lists", async () => {
+    const { refreshAfterOpenCodeRestart } = await import("./useAgentsStore")
+
+    await refreshAfterOpenCodeRestart({
+      scopes: ["agents"],
+      mode: "active",
+      delayMs: 0,
+    })
+
+    expect(loadAgentOptions).toEqual([{ directory: "/test/project", force: true }])
   })
 })
