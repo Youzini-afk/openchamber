@@ -552,10 +552,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
     openGitPanel: (path: string) => {
       const target = normalizeWorkspacePath(path);
-      set({ gitPanel: { open: true, path: target } });
-      void get().refreshGitStatus(target);
-      void get().loadGitLog(target, { maxCount: 8 });
-      void get().loadGitRemotes(target);
+      set({ gitPanel: { open: true, path: target }, error: null });
+      void get().refreshGitStatus(target).then((status) => {
+        if (status?.isGitRepository) {
+          void get().loadGitLog(target, { maxCount: 8 });
+          void get().loadGitRemotes(target);
+          return;
+        }
+
+        set((state) => ({
+          gitLogByPath: pruneCachedBranch(state.gitLogByPath, target),
+          gitRemotesByPath: pruneCachedBranch(state.gitRemotesByPath, target),
+        }));
+      });
     },
 
     closeGitPanel: () => {

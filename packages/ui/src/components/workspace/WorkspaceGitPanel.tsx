@@ -69,9 +69,15 @@ export const WorkspaceGitPanel: React.FC = () => {
     setCloneUrl('');
     setCloneBranch('');
     setCloneDirectory('');
-    void refreshGitStatus(gitPanel.path);
-    void loadGitLog(gitPanel.path, { maxCount: 8 });
-    void loadGitRemotes(gitPanel.path);
+    void (async () => {
+      const nextStatus = await refreshGitStatus(gitPanel.path);
+      if (nextStatus?.isGitRepository) {
+        await Promise.all([
+          loadGitLog(gitPanel.path, { maxCount: 8 }),
+          loadGitRemotes(gitPanel.path),
+        ]);
+      }
+    })();
   }, [gitPanel.open, gitPanel.path, loadGitLog, loadGitRemotes, refreshGitStatus]);
 
   React.useEffect(() => {
@@ -86,11 +92,13 @@ export const WorkspaceGitPanel: React.FC = () => {
 
   const refreshAll = React.useCallback(async () => {
     if (!gitPanel.open) return;
-    await Promise.all([
-      refreshGitStatus(gitPanel.path),
-      loadGitLog(gitPanel.path, { maxCount: 8 }),
-      loadGitRemotes(gitPanel.path),
-    ]);
+    const nextStatus = await refreshGitStatus(gitPanel.path);
+    if (nextStatus?.isGitRepository) {
+      await Promise.all([
+        loadGitLog(gitPanel.path, { maxCount: 8 }),
+        loadGitRemotes(gitPanel.path),
+      ]);
+    }
   }, [gitPanel.open, gitPanel.path, loadGitLog, loadGitRemotes, refreshGitStatus]);
 
   const handleFetch = React.useCallback(async () => {
