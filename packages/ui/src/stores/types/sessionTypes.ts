@@ -25,6 +25,7 @@ export interface AttachedFile {
     serverPath?: string;
     vscodePath?: string;
     vscodeSource?: 'file' | 'selection';
+    entryType?: 'file' | 'directory' | 'symlink';
 }
 
 export type EditPermissionMode = 'allow' | 'ask' | 'deny' | 'full';

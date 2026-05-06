@@ -1,5 +1,5 @@
 import React, { useRef, memo } from 'react';
-import { RiAttachment2, RiCloseLine, RiFileImageLine, RiFileLine, RiFilePdfLine, RiGithubLine, RiGitPullRequestLine, RiAddLine, RiPushpin2Line } from '@remixicon/react';
+import { RiAttachment2, RiCloseLine, RiFileImageLine, RiFileLine, RiFilePdfLine, RiFolderLine, RiGithubLine, RiGitPullRequestLine, RiAddLine, RiPushpin2Line } from '@remixicon/react';
 import { useInputStore } from '@/sync/input-store';
 import type { AttachedFile } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -248,8 +248,13 @@ const FileChip = memo(({ file, onRemove }: FileChipProps) => {
         }
       }}
       className="flex items-center gap-1.5 text-sm hover:opacity-80 transition-opacity text-left h-5"
+      title={file.serverPath}
     >
-      <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
+      {file.entryType === 'directory' ? (
+        <RiFolderLine className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      ) : (
+        <FileTypeIcon filePath={file.filename} extension={extension} className="h-4 w-4" />
+      )}
       <span className="text-foreground truncate max-w-[200px]">
         {displayName}
         {fileSize && <span className="text-muted-foreground ml-1">({fileSize})</span>}
@@ -342,7 +347,7 @@ export const AttachedFilesList = memo(() => {
   const attachedFiles = useInputStore((state) => state.attachedFiles);
   const removeAttachedFile = useInputStore((state) => state.removeAttachedFile);
 
-  const localFiles = attachedFiles.filter((file) => file.source !== 'server' && file.source !== 'vscode');
+  const localFiles = attachedFiles.filter((file) => file.source !== 'vscode');
 
   if (localFiles.length === 0) return null;
 

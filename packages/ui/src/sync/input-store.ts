@@ -73,6 +73,7 @@ export type InputState = {
   addAttachedFile: (file: File) => Promise<void>
   removeAttachedFile: (id: string) => void
   clearAttachedFiles: () => void
+  addServerPathAttachment: (path: string, name: string, options?: { entryType?: AttachedFile["entryType"] }) => void
   addVSCodeFileAttachment: (path: string, name: string, fileSize: number | null) => void
   addVSCodeSelectionAttachment: (path: string, file: File) => Promise<void>
   setActiveEditorFile: (file: VSCodeActiveEditorFile | null) => void
@@ -128,6 +129,30 @@ export const useInputStore = create<InputState>()((set, get) => ({
     set((s) => ({ attachedFiles: s.attachedFiles.filter((f) => f.id !== id) })),
 
   clearAttachedFiles: () => set({ attachedFiles: [] }),
+
+  addServerPathAttachment: (path, name, options = {}) => {
+    const normalizedPath = path.replace(/\\/g, "/").trim()
+    const trimmedName = name.trim() || normalizedPath.split("/").filter(Boolean).pop() || normalizedPath
+    if (!normalizedPath || !trimmedName) return
+
+    const isDuplicate = get().attachedFiles.some(
+      (f) => f.source === "server" && (f.serverPath || "").replace(/\\/g, "/") === normalizedPath
+    )
+    if (isDuplicate) return
+
+    const attached: AttachedFile = {
+      id: `server-path-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file: new File([], trimmedName, { type: "text/plain" }),
+      dataUrl: toFileUrl(normalizedPath),
+      mimeType: "text/plain",
+      filename: trimmedName,
+      size: 0,
+      source: "server",
+      serverPath: normalizedPath,
+      entryType: options.entryType,
+    }
+    set((s) => ({ attachedFiles: [...s.attachedFiles, attached] }))
+  },
 
   addVSCodeFileAttachment: (path: string, name: string, fileSize: number | null) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`

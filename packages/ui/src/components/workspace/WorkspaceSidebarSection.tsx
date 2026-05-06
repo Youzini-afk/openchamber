@@ -1,9 +1,11 @@
 import React from 'react';
 import {
+  RiAttachment2,
   RiChatNewLine,
   RiDeleteBinLine,
   RiEditLine,
   RiFileAddLine,
+  RiFileCopyLine,
   RiFileLine,
   RiFileZipLine,
   RiFolderAddLine,
@@ -39,6 +41,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isWorkspaceArchivePath } from '@/lib/workspaceArchive';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 
@@ -98,6 +101,9 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const refreshGitStatus = useWorkspaceStore((state) => state.refreshGitStatus);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
+  const addServerPathAttachment = useInputStore((state) => state.addServerPathAttachment);
   const didInitialLoadRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = React.useRef('');
@@ -255,6 +261,26 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       toast.error(t('workspace.sidebar.toast.copyFailed'));
     }
   }, [t]);
+
+  const handleAddToSession = React.useCallback((entry: WorkspaceEntry) => {
+    if (isTrashRelativePath(entry.relativePath)) return;
+    const path = entry.path || entry.relativePath;
+    addServerPathAttachment(path, entry.name, { entryType: entry.type });
+    setActiveMainTab('chat');
+    setSessionSwitcherOpen?.(false);
+    if (!currentSessionId && !newSessionDraftOpen) {
+      openNewSessionDraft();
+    }
+    toast.success(t('workspace.sidebar.toast.addedToSession', { name: entry.name }));
+  }, [
+    addServerPathAttachment,
+    currentSessionId,
+    newSessionDraftOpen,
+    openNewSessionDraft,
+    setActiveMainTab,
+    setSessionSwitcherOpen,
+    t,
+  ]);
 
   const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number): React.ReactNode => {
     const isDirectory = entry.type === 'directory';
@@ -425,7 +451,14 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                         <DropdownMenuSeparator />
                       </>
                     ) : null}
+                    {!isInsideTrash ? (
+                      <DropdownMenuItem onClick={() => handleAddToSession(entry)}>
+                        <RiAttachment2 className="mr-1.5 h-4 w-4" />
+                        {t('workspace.sidebar.menu.addToSession')}
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuItem onClick={() => void handleCopyPath(entry)}>
+                      <RiFileCopyLine className="mr-1.5 h-4 w-4" />
                       {t('workspace.sidebar.menu.copyPath')}
                     </DropdownMenuItem>
                     {!isInsideTrash ? (
@@ -438,6 +471,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       className="text-destructive focus:text-destructive"
                       onClick={() => void handleDelete(entry)}
                     >
+                      <RiDeleteBinLine className="mr-1.5 h-4 w-4" />
                       {isInsideTrash
                         ? t('workspace.sidebar.menu.permanentDelete')
                         : t('workspace.sidebar.menu.moveToTrash')}
@@ -471,6 +505,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleCreateFolder,
     handleDelete,
     handleCopyPath,
+    handleAddToSession,
     handleOpenChat,
     handleOpenFiles,
     handleUploadClick,
