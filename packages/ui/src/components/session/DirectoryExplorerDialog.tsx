@@ -36,6 +36,12 @@ import { useI18n } from '@/lib/i18n';
 interface DirectoryExplorerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode?: 'add-project' | 'select-directory';
+  initialPath?: string | null;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
+  onSelectDirectory?: (path: string) => void | Promise<void>;
 }
 
 type BrowseEntry = {
@@ -147,6 +153,12 @@ const resolveFreshFilesystemHome = async (): Promise<string | null> => {
 export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = ({
   open,
   onOpenChange,
+  mode = 'add-project',
+  initialPath,
+  title,
+  description,
+  confirmLabel,
+  onSelectDirectory,
 }) => {
   const { t } = useI18n();
   const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
@@ -178,7 +190,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
   React.useEffect(() => {
     if (!open) return;
-    setQuery('~/');
+    setQuery(initialPath ? ensureBrowseDirectoryPath(normalizeSeparators(initialPath)) : '~/');
     setEntries([]);
     setHighlightedIndex(0);
     setIsConfirming(false);
@@ -196,7 +208,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     return () => {
       cancelled = true;
     };
-  }, [homeDirectory, open]);
+  }, [homeDirectory, initialPath, open]);
 
   const browseDirectoryDisplayPath = React.useMemo(() => getBrowseDirectoryPath(query), [query]);
   const browseFilterQuery = React.useMemo(
@@ -265,11 +277,11 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         value: `browse:${entry.path}`,
         name: entry.name,
         path: entry.path,
-        disabled: Boolean(normalized && addedProjectPaths.has(normalized)),
+        disabled: mode === 'add-project' && Boolean(normalized && addedProjectPaths.has(normalized)),
       });
     }
     return nextRows;
-  }, [addedProjectPaths, filteredEntries, query]);
+  }, [addedProjectPaths, filteredEntries, mode, query]);
 
   React.useEffect(() => {
     setHighlightedIndex(0);
@@ -280,12 +292,14 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     return trimTrailingSeparators(displayPathToAbsolutePath(query, explorerRootDirectory));
   }, [explorerRootDirectory, query]);
   const normalizedTargetPath = normalizeDirectoryPath(targetPath);
-  const isAlreadyAdded = Boolean(normalizedTargetPath && addedProjectPaths.has(normalizedTargetPath));
+  const isAlreadyAdded = mode === 'add-project' && Boolean(normalizedTargetPath && addedProjectPaths.has(normalizedTargetPath));
   const exactEntry = React.useMemo(() => {
     if (!browseFilterQuery) return null;
     return filteredEntries.find((entry) => entry.name === browseFilterQuery) ?? null;
   }, [browseFilterQuery, filteredEntries]);
   const shouldCreateTarget = Boolean(
+    mode === 'add-project'
+    &&
     targetPath
     && !isAlreadyAdded
     && (
@@ -303,9 +317,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     : 'Ctrl';
   const submitActionLabel = isAlreadyAdded
     ? t('directoryExplorerDialog.actions.alreadyAdded')
-    : shouldCreateTarget
-      ? t('directoryExplorerDialog.actions.createAndAdd')
-      : t('directoryExplorerDialog.actions.addProject');
+    : confirmLabel
+      || (mode === 'select-directory'
+        ? t('directoryExplorerDialog.actions.selectFolder')
+        : shouldCreateTarget
+          ? t('directoryExplorerDialog.actions.createAndAdd')
+          : t('directoryExplorerDialog.actions.addProject'));
 
   React.useLayoutEffect(() => {
     const button = addButtonRef.current;
@@ -344,10 +361,16 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const finalizeSelection = React.useCallback(async (target: string) => {
     if (!target || isConfirming) return;
     const normalized = normalizeDirectoryPath(target);
-    if (normalized && addedProjectPaths.has(normalized)) return;
+    if (mode === 'add-project' && normalized && addedProjectPaths.has(normalized)) return;
 
     setIsConfirming(true);
     try {
+      if (mode === 'select-directory') {
+        await onSelectDirectory?.(target);
+        handleClose();
+        return;
+      }
+
       const shouldCreateSelection = shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath);
       if (shouldCreateSelection) {
         await opencodeClient.createDirectory(target, { allowOutsideWorkspace: true });
@@ -367,7 +390,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     } finally {
       setIsConfirming(false);
     }
-  }, [addProject, addedProjectPaths, handleClose, isConfirming, shouldCreateTarget, targetPath, t]);
+  }, [addProject, addedProjectPaths, handleClose, isConfirming, mode, onSelectDirectory, shouldCreateTarget, targetPath, t]);
 
   const browseToDisplayPath = React.useCallback((displayPath: string) => {
     setQuery(ensureBrowseDirectoryPath(displayPath));
@@ -575,7 +598,9 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       <span className="inline-flex items-center gap-1">
         <span>{submitModifierLabel}</span>
         <RiCornerDownLeftLine className="h-3.5 w-3.5" />
-        {t('directoryExplorerDialog.footer.add')}
+        {mode === 'select-directory'
+          ? t('directoryExplorerDialog.footer.confirm')
+          : t('directoryExplorerDialog.footer.add')}
       </span>
       <span className="inline-flex items-center gap-1">
         <span>Esc</span>
@@ -610,7 +635,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       <MobileOverlayPanel
         open={open}
         onClose={handleClose}
-        title={t('directoryExplorerDialog.title')}
+        title={title || t('directoryExplorerDialog.title')}
         className="h-[88dvh] max-h-[720px] max-w-full"
         contentMaxHeightClassName="flex-1"
         footer={<div className="flex flex-col gap-2">{renderFooter()}</div>}
@@ -632,8 +657,10 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         <DialogHeader className="px-5 pb-2 pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <DialogTitle>{t('directoryExplorerDialog.title')}</DialogTitle>
-              <DialogDescription className="mt-2">{t('directoryExplorerDialog.description')}</DialogDescription>
+              <DialogTitle>{title || t('directoryExplorerDialog.title')}</DialogTitle>
+              <DialogDescription className="mt-2">
+                {description || t('directoryExplorerDialog.description')}
+              </DialogDescription>
             </div>
             {showHiddenToggle}
           </div>

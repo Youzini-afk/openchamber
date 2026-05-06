@@ -19,7 +19,10 @@ import {
 } from '@/stores/useGitStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
+import { Button } from '@/components/ui/button';
+import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import {
+  RiFolder3Line,
   RiGitBranchLine,
   RiGitMergeLine,
   RiGitCommitLine,
@@ -79,6 +82,15 @@ type HistoryBranchDivider = {
   branchName: string;
   direction: 'up' | 'down';
 } | null;
+
+type GitViewProps = {
+  directoryOverride?: string | null;
+  showDirectorySelector?: boolean;
+  sessionDirectory?: string | null;
+  isFollowingSessionDirectory?: boolean;
+  onDirectoryChange?: (directory: string) => void;
+  onFollowSessionDirectory?: () => void;
+};
 
 const GIT_ACTION_TAB_STORAGE_KEY = 'oc.git.actionTab';
 
@@ -228,10 +240,24 @@ const gitViewSnapshots = new Map<string, GitViewSnapshot>();
 const normalizePath = (value?: string | null): string =>
   (value || '').replace(/\\/g, '/').replace(/\/+$/, '');
 
-export const GitView: React.FC = () => {
+const getDirectoryName = (directory?: string | null): string => {
+  const normalized = normalizePath(directory);
+  if (!normalized) return '';
+  return normalized.split('/').filter(Boolean).pop() || normalized;
+};
+
+export const GitView: React.FC<GitViewProps> = ({
+  directoryOverride,
+  showDirectorySelector = false,
+  sessionDirectory,
+  isFollowingSessionDirectory = false,
+  onDirectoryChange,
+  onFollowSessionDirectory,
+}) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const currentDirectory = useEffectiveDirectory();
+  const effectiveDirectory = useEffectiveDirectory();
+  const currentDirectory = directoryOverride ?? effectiveDirectory;
   const [worktreeBootstrapStatus, setWorktreeBootstrapStatus] = React.useState<'pending' | 'ready' | 'failed' | null>(null);
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -240,6 +266,12 @@ export const GitView: React.FC = () => {
   const worktreeMap = useSessionUIStore((s) => s.worktreeMetadata);
   const availableWorktrees = useSessionUIStore((s) => s.availableWorktrees);
   const normalizedCurrentDirectory = normalizePath(currentDirectory);
+  const normalizedEffectiveDirectory = normalizePath(effectiveDirectory);
+  const isViewingSessionDirectory = Boolean(
+    normalizedCurrentDirectory
+    && normalizedEffectiveDirectory
+    && normalizedCurrentDirectory === normalizedEffectiveDirectory
+  );
   const inferredWorktreeMetadata = React.useMemo(() => {
     if (!normalizedCurrentDirectory) {
       return undefined;
@@ -261,6 +293,10 @@ export const GitView: React.FC = () => {
     return undefined;
   }, [availableWorktrees, normalizedCurrentDirectory, worktreeMap]);
   const storeWorktreeMetadata = React.useMemo(() => {
+    if (!isViewingSessionDirectory) {
+      return inferredWorktreeMetadata;
+    }
+
     if (currentSessionId) {
       return worktreeMap.get(currentSessionId) ?? inferredWorktreeMetadata;
     }
@@ -270,7 +306,7 @@ export const GitView: React.FC = () => {
     }
 
     return undefined;
-  }, [currentSessionId, inferredWorktreeMetadata, newSessionDraft?.open, worktreeMap]);
+  }, [currentSessionId, inferredWorktreeMetadata, isViewingSessionDirectory, newSessionDraft?.open, worktreeMap]);
 
   const { profiles, globalIdentity, defaultGitIdentityId, loadProfiles, loadGlobalIdentity, loadDefaultGitIdentityId } =
     useGitIdentitiesStore(useShallow((s) => ({
@@ -287,7 +323,7 @@ export const GitView: React.FC = () => {
 
   // Authoritative session↔worktree attachment for repair action display
   const worktreeAttachment = useSessionWorktreeStore((s) =>
-    currentSessionId ? s.getAttachment(currentSessionId) : undefined
+    currentSessionId && isViewingSessionDirectory ? s.getAttachment(currentSessionId) : undefined
   );
   const repairActions = worktreeAttachment ? getSessionWorktreeRepairActions(worktreeAttachment) : [];
 
@@ -427,6 +463,7 @@ export const GitView: React.FC = () => {
   );
   const [visibleChangePaths, setVisibleChangePaths] = React.useState<string[]>([]);
   const [isGitmojiPickerOpen, setIsGitmojiPickerOpen] = React.useState(false);
+  const [isDirectoryDialogOpen, setIsDirectoryDialogOpen] = React.useState(false);
   const actionPanelScrollRef = React.useRef<HTMLElement | null>(null);
   const [syncAction, setSyncAction] = React.useState<SyncAction>(null);
   const [commitAction, setCommitAction] = React.useState<CommitAction>(null);
@@ -460,6 +497,15 @@ export const GitView: React.FC = () => {
   const [generatedHighlights, setGeneratedHighlights] = React.useState<string[]>(
     initialSnapshot?.generatedHighlights ?? []
   );
+
+  React.useEffect(() => {
+    const snapshot = currentDirectory ? gitViewSnapshots.get(currentDirectory) ?? null : null;
+    setCommitMessage(snapshot?.commitMessage ?? '');
+    setSelectedPaths(new Set(snapshot?.selectedPaths ?? []));
+    setGeneratedHighlights(snapshot?.generatedHighlights ?? []);
+    setHasUserAdjustedSelection(false);
+    setVisibleChangePaths([]);
+  }, [currentDirectory]);
 
   const scrollActionPanelToBottom = React.useCallback(() => {
     const scrollTarget = actionPanelScrollRef.current;
@@ -1993,8 +2039,76 @@ export const GitView: React.FC = () => {
     [currentDirectory, git, status, stashDialogOperation, stashDialogBranch, refreshStatusAndBranches, refreshLog, t]
   );
 
-  if (!currentDirectory) {
+  const directorySelector = showDirectorySelector ? (
+    <div className="shrink-0 border-b border-border/60 bg-sidebar px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <RiFolder3Line className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="typography-micro font-medium uppercase text-muted-foreground">
+            {t('gitView.directorySelector.label')}
+          </div>
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="truncate typography-ui-label text-foreground" title={currentDirectory || undefined}>
+              {currentDirectory ? getDirectoryName(currentDirectory) : t('gitView.directorySelector.noDirectory')}
+            </span>
+            {currentDirectory ? (
+              <span className="truncate typography-micro text-muted-foreground" title={currentDirectory}>
+                {currentDirectory}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        {!isFollowingSessionDirectory && sessionDirectory ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="shrink-0"
+            onClick={onFollowSessionDirectory}
+          >
+            {t('gitView.directorySelector.followSession')}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          className="shrink-0"
+          onClick={() => setIsDirectoryDialogOpen(true)}
+        >
+          {t('gitView.directorySelector.choose')}
+        </Button>
+      </div>
+      <DirectoryExplorerDialog
+        open={isDirectoryDialogOpen}
+        onOpenChange={setIsDirectoryDialogOpen}
+        mode="select-directory"
+        initialPath={currentDirectory ?? sessionDirectory ?? null}
+        title={t('gitView.directorySelector.dialogTitle')}
+        description={t('gitView.directorySelector.dialogDescription')}
+        confirmLabel={t('gitView.directorySelector.dialogConfirm')}
+        onSelectDirectory={(directory) => onDirectoryChange?.(directory)}
+      />
+    </div>
+  ) : null;
+
+  const renderGitContent = (content: React.ReactElement) => {
+    if (!showDirectorySelector) {
+      return content;
+    }
+
     return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
+        {directorySelector}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {content}
+        </div>
+      </div>
+    );
+  };
+
+  if (!currentDirectory) {
+    return renderGitContent(
       <div className="flex h-full items-center justify-center px-4 text-center">
         <p className="typography-ui-label text-muted-foreground">
           {t('gitView.empty.selectSessionOrDirectory')}
@@ -2004,7 +2118,7 @@ export const GitView: React.FC = () => {
   }
 
   if (isLoading && isGitRepo === null) {
-    return (
+    return renderGitContent(
       <div className="flex h-full items-center justify-center">
         <div className="flex items-center gap-2 text-muted-foreground">
           <RiLoader4Line className="size-4 animate-spin" />
@@ -2016,7 +2130,7 @@ export const GitView: React.FC = () => {
 
   if (isGitRepo === false) {
     if (shouldHideNotGitState) {
-      return (
+      return renderGitContent(
         <div className="flex h-full flex-col items-center justify-center px-4 text-center">
           <RiLoader4Line className="mb-3 size-6 animate-spin text-muted-foreground" />
           <p className="typography-ui-label font-semibold text-foreground">
@@ -2029,7 +2143,7 @@ export const GitView: React.FC = () => {
       );
     }
 
-    return (
+    return renderGitContent(
       <div className="flex h-full flex-col items-center justify-center px-4 text-center">
         <RiGitBranchLine className="mb-3 size-6 text-muted-foreground" />
         <p className="typography-ui-label font-semibold text-foreground">
@@ -2047,7 +2161,7 @@ export const GitView: React.FC = () => {
     );
   }
 
-  return (
+  return renderGitContent(
     <div className={cn('flex h-full flex-col overflow-hidden', 'bg-sidebar')}>
       <GitHeader
         status={status}

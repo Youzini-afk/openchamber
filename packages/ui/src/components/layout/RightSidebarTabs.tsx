@@ -16,6 +16,34 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
 
 type RightTab = 'git' | 'files' | 'context';
+const RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY = 'oc.rightSidebar.gitDirectory';
+
+const normalizeDirectoryPath = (value?: string | null): string => (
+  (value || '').replace(/\\/g, '/').replace(/\/+$/g, '')
+);
+
+const readStoredGitDirectory = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage.getItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY);
+    return stored?.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredGitDirectory = (directory: string | null) => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (directory?.trim()) {
+      window.localStorage.setItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY, directory.trim());
+    } else {
+      window.localStorage.removeItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures; the selector still works for the current page lifetime.
+  }
+};
 
 /**
  * Keeps git status fresh while the right sidebar is open.
@@ -99,14 +127,50 @@ const WorkspaceFilesPanel: React.FC = () => (
   </div>
 );
 
+const RightSidebarGitPanel: React.FC = () => {
+  const sessionDirectory = useEffectiveDirectory();
+  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
+  const [selectedDirectory, setSelectedDirectory] = React.useState<string | null>(() => readStoredGitDirectory());
+
+  const gitDirectory = selectedDirectory || sessionDirectory || null;
+  const isFollowingSession = Boolean(
+    !selectedDirectory
+    || (sessionDirectory && normalizeDirectoryPath(selectedDirectory) === normalizeDirectoryPath(sessionDirectory))
+  );
+
+  useRightSidebarGitSync(gitDirectory ?? undefined, isRightSidebarOpen);
+
+  const handleDirectoryChange = React.useCallback((directory: string) => {
+    const normalized = directory.trim();
+    const nextDirectory = normalized
+      && (!sessionDirectory || normalizeDirectoryPath(normalized) !== normalizeDirectoryPath(sessionDirectory))
+      ? normalized
+      : null;
+    setSelectedDirectory(nextDirectory);
+    writeStoredGitDirectory(nextDirectory);
+  }, [sessionDirectory]);
+
+  const handleFollowSession = React.useCallback(() => {
+    setSelectedDirectory(null);
+    writeStoredGitDirectory(null);
+  }, []);
+
+  return (
+    <GitView
+      directoryOverride={gitDirectory}
+      showDirectorySelector
+      sessionDirectory={sessionDirectory ?? null}
+      isFollowingSessionDirectory={isFollowingSession}
+      onDirectoryChange={handleDirectoryChange}
+      onFollowSessionDirectory={handleFollowSession}
+    />
+  );
+};
+
 export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
   const setRightSidebarTab = useUIStore((state) => state.setRightSidebarTab);
-  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
-  const directory = useEffectiveDirectory();
-
-  useRightSidebarGitSync(directory, isRightSidebarOpen);
 
   const tabItems = React.useMemo(() => [
     {
@@ -140,7 +204,7 @@ export const RightSidebarTabs: React.FC = () => {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {rightSidebarTab === 'git' && <GitView />}
+        {rightSidebarTab === 'git' && <RightSidebarGitPanel />}
         {rightSidebarTab === 'files' && <WorkspaceFilesPanel />}
         {rightSidebarTab === 'context' && <ContextSidebarPanel />}
       </div>
