@@ -129,8 +129,12 @@ const WorkspaceFilesPanel: React.FC = () => (
 );
 
 const RightSidebarGitPanel: React.FC = () => {
-  const sessionDirectory = useEffectiveDirectory();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSessionDirectory = useSessionUIStore((state) => (
+    state.currentSessionId ? state.getDirectoryForSession(state.currentSessionId) : null
+  ));
+  const effectiveDirectory = useEffectiveDirectory();
+  const sessionDirectory = currentSessionDirectory || effectiveDirectory;
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const [selectedDirectory, setSelectedDirectory] = React.useState<string | null>(() => readStoredGitDirectory());
   const normalizedSessionDirectory = React.useMemo(
@@ -159,6 +163,24 @@ const RightSidebarGitPanel: React.FC = () => {
       writeStoredGitDirectory(null);
     }
   }, [selectedDirectory, sessionFollowKey]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleSessionReselected = (event: Event) => {
+      const sessionId = (event as CustomEvent<string>).detail;
+      if (!sessionId || sessionId !== currentSessionId) {
+        return;
+      }
+      setSelectedDirectory(null);
+      writeStoredGitDirectory(null);
+    };
+
+    window.addEventListener('openchamber:session-reselected', handleSessionReselected);
+    return () => window.removeEventListener('openchamber:session-reselected', handleSessionReselected);
+  }, [currentSessionId]);
 
   const gitDirectory = selectedDirectory || sessionDirectory || null;
   const isFollowingSession = Boolean(
