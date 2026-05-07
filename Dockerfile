@@ -87,9 +87,15 @@ RUN set -eux; \
   && java -version \
   && node --version \
   && npm --version \
+  && if [ "${node_arch}" = "x64" ]; then \
+    npx --yes playwright install --with-deps chrome; \
+    google-chrome --version; \
+  else \
+    echo "Skipping Google Chrome Playwright install for ${node_arch}; Google Chrome for Linux is only available on amd64."; \
+  fi \
   && python3 --version \
   && rg --version \
-  && rm -rf /var/lib/apt/lists/* /tmp/githubcli-archive-keyring.gpg /tmp/go*.tar.gz /tmp/node-*.tar.xz
+  && rm -rf /root/.npm /var/lib/apt/lists/* /tmp/githubcli-archive-keyring.gpg /tmp/go*.tar.gz /tmp/node-*.tar.xz
 
 # Replace the base image's 'bun' user (UID 1000) with 'openchamber'
 # so mounted volumes with 1000:1000 ownership work correctly.

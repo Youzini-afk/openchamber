@@ -240,7 +240,7 @@ environment:
 
 Managed-local path note: `OPENCHAMBER_TUNNEL_CONFIG` must point to a path inside the container user home (`/home/openchamber/...`). If your Cloudflare config references a credentials JSON file, that file path must also be accessible inside the container (mount with `volumes`).
 
-**Built-in cloud tools:** The Docker image includes common agent/terminal tools such as `git`, `ssh`, `gh`, `rg`, `curl`, `jq`, `python3`, `zip`, and `unzip`. In Settings -> GitHub, use **Sync to Terminal** after connecting GitHub so terminal `git` and `gh` commands can reuse the container-local account.
+**Built-in cloud tools:** The Docker image includes common agent/terminal tools such as `git`, `ssh`, `gh`, `rg`, `curl`, `jq`, `python3`, `zip`, and `unzip`. On amd64 images it also preinstalls Google Chrome through Playwright's installer so Playwright MCP/browser QA can run without a manual `npx playwright install chrome`. In Settings -> GitHub, use **Sync to Terminal** after connecting GitHub so terminal `git` and `gh` commands can reuse the container-local account.
 
 ### Reverse proxy notes
 

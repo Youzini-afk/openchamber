@@ -32,6 +32,12 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerfile).toContain('rg --version');
   });
 
+  it('installs Google Chrome for Playwright MCP browser QA on amd64 images', () => {
+    expect(dockerfile).toContain('npx --yes playwright install --with-deps chrome');
+    expect(dockerfile).toContain('google-chrome --version');
+    expect(dockerfile).toContain('Google Chrome for Linux is only available on amd64');
+  });
+
   it('uses official Rust and Go toolchains instead of stale apt packages', () => {
     expect(aptInstallPackages.has('rustc')).toBe(false);
     expect(aptInstallPackages.has('cargo')).toBe(false);
