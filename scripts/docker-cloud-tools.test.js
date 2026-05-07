@@ -42,6 +42,8 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerfile).toContain('rustc --version');
     expect(dockerfile).toContain('cargo --version');
     expect(dockerfile).toContain('go version');
+    expect(dockerfile).toContain('go install golang.org/x/tools/gopls@latest');
+    expect(dockerfile).toContain('gopls version');
   });
 
   it('uses official Node.js LTS instead of the apt nodejs package', () => {
