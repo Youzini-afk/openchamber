@@ -12,6 +12,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { formatDirectoryName } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
 
@@ -129,13 +130,40 @@ const WorkspaceFilesPanel: React.FC = () => (
 
 const RightSidebarGitPanel: React.FC = () => {
   const sessionDirectory = useEffectiveDirectory();
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const [selectedDirectory, setSelectedDirectory] = React.useState<string | null>(() => readStoredGitDirectory());
+  const normalizedSessionDirectory = React.useMemo(
+    () => normalizeDirectoryPath(sessionDirectory),
+    [sessionDirectory]
+  );
+  const sessionFollowKey = React.useMemo(() => {
+    if (currentSessionId) {
+      return `session:${currentSessionId}`;
+    }
+    if (normalizedSessionDirectory) {
+      return `directory:${normalizedSessionDirectory}`;
+    }
+    return null;
+  }, [currentSessionId, normalizedSessionDirectory]);
+  const lastSessionFollowKeyRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (lastSessionFollowKeyRef.current === sessionFollowKey) {
+      return;
+    }
+
+    lastSessionFollowKeyRef.current = sessionFollowKey;
+    if (selectedDirectory) {
+      setSelectedDirectory(null);
+      writeStoredGitDirectory(null);
+    }
+  }, [selectedDirectory, sessionFollowKey]);
 
   const gitDirectory = selectedDirectory || sessionDirectory || null;
   const isFollowingSession = Boolean(
     !selectedDirectory
-    || (sessionDirectory && normalizeDirectoryPath(selectedDirectory) === normalizeDirectoryPath(sessionDirectory))
+    || (normalizedSessionDirectory && normalizeDirectoryPath(selectedDirectory) === normalizedSessionDirectory)
   );
 
   useRightSidebarGitSync(gitDirectory ?? undefined, isRightSidebarOpen);
