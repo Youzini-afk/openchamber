@@ -294,6 +294,73 @@ export const normalizeCustomProviderModelRows = (
   return models;
 };
 
+const hasModelRowContent = (row: CustomProviderModelRowInput): boolean => (
+  trimString(row.id).length > 0
+  || trimString(row.name).length > 0
+  || trimString(row.context).length > 0
+  || trimString(row.output).length > 0
+  || row.attachment === true
+  || row.tool_call === true
+  || row.toolCall === true
+  || row.reasoning === true
+  || normalizeReasoningEffort(row.reasoningEffort).length > 0
+  || Boolean(row.options && Object.keys(row.options).length > 0)
+  || Boolean(row.variants && Object.keys(row.variants).length > 0)
+);
+
+const mergeModelRow = (
+  existing: CustomProviderEditableFormState['models'][number],
+  imported: CustomProviderModelRowInput,
+): CustomProviderEditableFormState['models'][number] => {
+  const options = buildPreservedEditableModelOptions(imported.options) ?? existing.options;
+  const variants = normalizeModelVariants(imported.variants) ?? existing.variants;
+  return {
+    id: trimString(imported.id) || existing.id,
+    name: trimString(imported.name) || existing.name,
+    context: normalizePositiveIntegerInputValue(imported.context) || existing.context,
+    output: normalizePositiveIntegerInputValue(imported.output) || existing.output,
+    attachment: imported.attachment === true || containsImageModality(imported.modalities?.input),
+    tool_call: imported.tool_call === true || imported.toolCall === true,
+    reasoning: imported.reasoning === true,
+    reasoningEffort: normalizeReasoningEffort(imported.reasoningEffort || imported.options?.reasoningEffort || imported.options?.reasoning_effort) || existing.reasoningEffort,
+    ...(options ? { options } : {}),
+    ...(variants ? { variants } : {}),
+  };
+};
+
+export const mergeCustomProviderModelRows = (
+  existingRows: CustomProviderEditableFormState['models'],
+  importedRows: CustomProviderModelRowInput[],
+): CustomProviderEditableFormState['models'] => {
+  const rows = existingRows.filter(hasModelRowContent).map((row) => ({ ...row }));
+  const rowIndexById = new Map<string, number>();
+
+  rows.forEach((row, index) => {
+    const id = trimString(row.id);
+    if (id && !rowIndexById.has(id)) {
+      rowIndexById.set(id, index);
+    }
+  });
+
+  for (const imported of importedRows) {
+    const id = trimString(imported.id);
+    if (!id) {
+      continue;
+    }
+
+    const existingIndex = rowIndexById.get(id);
+    if (typeof existingIndex === 'number') {
+      rows[existingIndex] = mergeModelRow(rows[existingIndex], imported);
+      continue;
+    }
+
+    rowIndexById.set(id, rows.length);
+    rows.push(mergeModelRow(createEmptyEditableModelRow(), imported));
+  }
+
+  return rows.length > 0 ? rows : [createEmptyEditableModelRow()];
+};
+
 export const createCustomProviderFormStateFromConfig = (
   config: CustomProviderConfigInput
 ): CustomProviderEditableFormState => {

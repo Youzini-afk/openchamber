@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createCustomProviderFormStateFromConfig,
   hasEditableProviderConfigSource,
+  mergeCustomProviderModelRows,
   normalizeCustomProviderModelRows,
   resolveCustomProviderApiKey,
 } from './customProviderForm';
@@ -234,5 +235,38 @@ describe('custom provider form helpers', () => {
       project: { exists: false },
       custom: { exists: true },
     })).toBe(true);
+  });
+
+  test('adds fetched custom provider models without deleting existing models', () => {
+    expect(mergeCustomProviderModelRows([
+      { id: 'old-model', name: 'Old Model', context: '128000', output: '', attachment: false, tool_call: true, reasoning: false, reasoningEffort: '' },
+    ], [
+      { id: 'new-model', name: 'New Model', context: '200000', output: '8192', attachment: true },
+    ])).toEqual([
+      { id: 'old-model', name: 'Old Model', context: '128000', output: '', attachment: false, tool_call: true, reasoning: false, reasoningEffort: '' },
+      { id: 'new-model', name: 'New Model', context: '200000', output: '8192', attachment: true, tool_call: false, reasoning: false, reasoningEffort: '' },
+    ]);
+  });
+
+  test('updates selected fetched models by id and keeps unselected existing models', () => {
+    expect(mergeCustomProviderModelRows([
+      { id: 'keep-model', name: 'Keep', context: '', output: '', attachment: false, tool_call: false, reasoning: false, reasoningEffort: '' },
+      { id: 'same-model', name: 'Old Same', context: '1000', output: '', attachment: false, tool_call: false, reasoning: false, reasoningEffort: '', options: { local: true } },
+    ], [
+      { id: 'same-model', name: 'New Same', context: '2000', output: '', reasoning: true, reasoningEffort: 'high' },
+    ])).toEqual([
+      { id: 'keep-model', name: 'Keep', context: '', output: '', attachment: false, tool_call: false, reasoning: false, reasoningEffort: '' },
+      {
+        id: 'same-model',
+        name: 'New Same',
+        context: '2000',
+        output: '',
+        attachment: false,
+        tool_call: false,
+        reasoning: true,
+        reasoningEffort: 'high',
+        options: { local: true },
+      },
+    ]);
   });
 });

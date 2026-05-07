@@ -8,6 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -25,6 +33,7 @@ import { useI18n, type I18nKey } from '@/lib/i18n';
 import {
   createCustomProviderFormStateFromConfig,
   hasEditableProviderConfigSource,
+  mergeCustomProviderModelRows,
   normalizeCustomProviderModelRows,
   resolveCustomProviderApiKey,
 } from './customProviderForm';
@@ -120,6 +129,12 @@ interface CustomProviderFormState {
   models: CustomProviderModelRow[];
   apiKey: string;
   scope: 'user' | 'project' | 'custom';
+}
+
+interface CustomProviderModelImportDialogState {
+  baseURL: string;
+  models: CustomProviderModelRow[];
+  selectedIds: string[];
 }
 
 const createEmptyCustomProviderModelRow = (): CustomProviderModelRow => ({
@@ -306,6 +321,12 @@ const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
   });
 };
 
+const getCustomProviderModelRowId = (row: Pick<CustomProviderModelRow, 'id'>): string => row.id.trim();
+
+const getCustomProviderModelIdSet = (rows: Array<Pick<CustomProviderModelRow, 'id'>>): Set<string> => (
+  new Set(rows.map(getCustomProviderModelRowId).filter(Boolean))
+);
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const ProvidersPage: React.FC = () => {
@@ -339,6 +360,8 @@ export const ProvidersPage: React.FC = () => {
   const [customProviderForm, setCustomProviderForm] = React.useState<CustomProviderFormState>(() => createEmptyCustomProviderForm());
   const [customProviderBusy, setCustomProviderBusy] = React.useState(false);
   const [customProviderFetchingModels, setCustomProviderFetchingModels] = React.useState(false);
+  const [customProviderModelImportDialog, setCustomProviderModelImportDialog] =
+    React.useState<CustomProviderModelImportDialogState | null>(null);
   const [editingCustomProviderId, setEditingCustomProviderId] = React.useState<string | null>(null);
   const [customProviderEditLoading, setCustomProviderEditLoading] = React.useState(false);
   const customProviderApiKeyInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -847,6 +870,13 @@ export const ProvidersPage: React.FC = () => {
         throw new Error(t('settings.providers.page.toast.customProviderFetchNoModels'));
       }
 
+      const uniqueFetchedModels = Array.from(
+        new Map(fetchedModels.map((model) => [getCustomProviderModelRowId(model), model])).values()
+      );
+      const existingModelIds = getCustomProviderModelIdSet(customProviderForm.models);
+      const defaultSelectedIds = uniqueFetchedModels
+        .map(getCustomProviderModelRowId)
+        .filter((id) => id && !existingModelIds.has(id));
       const resolvedBaseURL = isRecord(payload) && typeof payload.baseURL === 'string'
         ? payload.baseURL
         : baseURL;
@@ -854,15 +884,79 @@ export const ProvidersPage: React.FC = () => {
       setCustomProviderForm((prev) => ({
         ...prev,
         baseURL: resolvedBaseURL,
-        models: fetchedModels,
       }));
-      toast.success(t('settings.providers.page.toast.customProviderModelsFetched', { count: fetchedModels.length }));
+      setCustomProviderModelImportDialog({
+        baseURL: resolvedBaseURL,
+        models: uniqueFetchedModels,
+        selectedIds: defaultSelectedIds,
+      });
+      toast.success(t('settings.providers.page.toast.customProviderModelsFetched', { count: uniqueFetchedModels.length }));
     } catch (error) {
       console.error('Failed to fetch custom provider models:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.customProviderFetchFailed'));
     } finally {
       setCustomProviderFetchingModels(false);
     }
+  };
+
+  const toggleCustomProviderImportModel = (modelId: string, checked: boolean) => {
+    setCustomProviderModelImportDialog((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const selected = new Set(prev.selectedIds);
+      if (checked) {
+        selected.add(modelId);
+      } else {
+        selected.delete(modelId);
+      }
+      return { ...prev, selectedIds: Array.from(selected) };
+    });
+  };
+
+  const selectAllCustomProviderImportModels = () => {
+    setCustomProviderModelImportDialog((prev) => (
+      prev ? { ...prev, selectedIds: prev.models.map(getCustomProviderModelRowId).filter(Boolean) } : prev
+    ));
+  };
+
+  const selectNewCustomProviderImportModels = () => {
+    const existingModelIds = getCustomProviderModelIdSet(customProviderForm.models);
+    setCustomProviderModelImportDialog((prev) => (
+      prev
+        ? {
+            ...prev,
+            selectedIds: prev.models
+              .map(getCustomProviderModelRowId)
+              .filter((id) => id && !existingModelIds.has(id)),
+          }
+        : prev
+    ));
+  };
+
+  const clearCustomProviderImportSelection = () => {
+    setCustomProviderModelImportDialog((prev) => (prev ? { ...prev, selectedIds: [] } : prev));
+  };
+
+  const applyCustomProviderImportedModels = () => {
+    const dialog = customProviderModelImportDialog;
+    if (!dialog) {
+      return;
+    }
+
+    const selectedIds = new Set(dialog.selectedIds);
+    const selectedModels = dialog.models.filter((model) => selectedIds.has(getCustomProviderModelRowId(model)));
+    if (selectedModels.length === 0) {
+      return;
+    }
+
+    setCustomProviderForm((prev) => ({
+      ...prev,
+      baseURL: dialog.baseURL,
+      models: mergeCustomProviderModelRows(prev.models, selectedModels),
+    }));
+    setCustomProviderModelImportDialog(null);
+    toast.success(t('settings.providers.page.toast.customProviderModelsImported', { count: selectedModels.length }));
   };
 
   const handleCreateCustomProvider = async () => {
@@ -939,6 +1033,124 @@ export const ProvidersPage: React.FC = () => {
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
   const customProviderTypeOption = getCustomProviderApiTypeOption(customProviderForm.type);
   const isEditingCustomProvider = Boolean(editingCustomProviderId);
+  const customProviderModelImportExistingIds = React.useMemo(
+    () => getCustomProviderModelIdSet(customProviderForm.models),
+    [customProviderForm.models]
+  );
+  const customProviderImportSelectedIds = React.useMemo(
+    () => new Set(customProviderModelImportDialog?.selectedIds ?? []),
+    [customProviderModelImportDialog?.selectedIds]
+  );
+  const customProviderImportNewCount = customProviderModelImportDialog
+    ? customProviderModelImportDialog.models.filter((model) => !customProviderModelImportExistingIds.has(getCustomProviderModelRowId(model))).length
+    : 0;
+  const customProviderImportExistingCount = customProviderModelImportDialog
+    ? customProviderModelImportDialog.models.length - customProviderImportNewCount
+    : 0;
+  const customProviderImportSelectedCount = customProviderModelImportDialog?.selectedIds.length ?? 0;
+  const customProviderModelImportDialogElement = (
+    <Dialog
+      open={Boolean(customProviderModelImportDialog)}
+      onOpenChange={(open) => {
+        if (!open) {
+          setCustomProviderModelImportDialog(null);
+        }
+      }}
+    >
+      <DialogContent className="flex h-[min(720px,calc(100vh-2rem))] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b border-border/60 px-5 py-4">
+          <DialogTitle>{t('settings.providers.page.modelImport.title')}</DialogTitle>
+          <DialogDescription>
+            {t('settings.providers.page.modelImport.description')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {customProviderModelImportDialog ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
+              <div className="typography-meta text-muted-foreground">
+                {t('settings.providers.page.modelImport.summary', {
+                  total: customProviderModelImportDialog.models.length,
+                  newCount: customProviderImportNewCount,
+                  existingCount: customProviderImportExistingCount,
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="ghost" size="xs" onClick={selectNewCustomProviderImportModels}>
+                  {t('settings.providers.page.modelImport.actions.selectNew')}
+                </Button>
+                <Button type="button" variant="ghost" size="xs" onClick={selectAllCustomProviderImportModels}>
+                  {t('settings.providers.page.modelImport.actions.selectAll')}
+                </Button>
+                <Button type="button" variant="ghost" size="xs" onClick={clearCustomProviderImportSelection}>
+                  {t('settings.providers.page.modelImport.actions.clear')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <div className="space-y-1">
+                {customProviderModelImportDialog.models.map((model) => {
+                  const modelId = getCustomProviderModelRowId(model);
+                  const isSelected = customProviderImportSelectedIds.has(modelId);
+                  const alreadyExists = customProviderModelImportExistingIds.has(modelId);
+                  const contextLabel = model.context ? formatTokens(Number(model.context)) : null;
+                  const outputLabel = model.output ? formatTokens(Number(model.output)) : null;
+                  return (
+                    <label
+                      key={modelId}
+                      className={cn(
+                        'flex cursor-pointer items-start gap-3 rounded-lg border border-border/60 px-3 py-2 transition-colors hover:bg-interactive-hover/40',
+                        isSelected && 'border-primary/50 bg-primary/5'
+                      )}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={(checked) => toggleCustomProviderImportModel(modelId, checked)}
+                        ariaLabel={model.name || modelId}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="truncate typography-ui-label font-medium text-foreground">{model.name || modelId}</span>
+                          <span className="rounded-full border border-border/60 px-1.5 py-0.5 typography-micro text-muted-foreground">
+                            {alreadyExists
+                              ? t('settings.providers.page.modelImport.badge.existing')
+                              : t('settings.providers.page.modelImport.badge.new')}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate font-mono typography-micro text-muted-foreground">{modelId}</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 typography-micro text-muted-foreground">
+                          {contextLabel ? <span>{contextLabel} {t('settings.providers.page.models.tokenBadge.context')}</span> : null}
+                          {outputLabel ? <span>{outputLabel} {t('settings.providers.page.models.tokenBadge.output')}</span> : null}
+                          {model.attachment ? <span>{t('settings.providers.page.models.capability.imageInput')}</span> : null}
+                          {model.tool_call ? <span>{t('settings.providers.page.models.capability.toolCalling')}</span> : null}
+                          {model.reasoning ? <span>{t('settings.providers.page.models.capability.reasoning')}</span> : null}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <DialogFooter className="border-t border-border/60 px-5 py-4">
+              <Button type="button" variant="ghost" size="xs" onClick={() => setCustomProviderModelImportDialog(null)}>
+                {t('settings.providers.page.actions.cancel')}
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                onClick={applyCustomProviderImportedModels}
+                disabled={customProviderImportSelectedCount === 0}
+              >
+                {t('settings.providers.page.modelImport.actions.apply', { count: customProviderImportSelectedCount })}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
   const customProviderFormSection = (
     <div className="mb-8">
       <div className="mb-1 px-1">
@@ -1502,6 +1714,7 @@ export const ProvidersPage: React.FC = () => {
             </div>
           )}
         </div>
+        {customProviderModelImportDialogElement}
       </ScrollableOverlay>
     );
   }
@@ -1866,6 +2079,7 @@ export const ProvidersPage: React.FC = () => {
           </section>
         </div>
       </div>
+      {customProviderModelImportDialogElement}
     </ScrollableOverlay>
   );
 };
