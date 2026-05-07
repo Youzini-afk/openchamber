@@ -67,7 +67,13 @@ describe('magicContextConfig helpers', () => {
     });
   });
 
-  test('preserves fallback model strings and object settings through row editing', () => {
+  test('canonicalizes legacy schema url during save normalization', () => {
+    expect(normalizeMagicContextConfig({
+      $schema: 'https://raw.githubusercontent.com/cortexkit/opencode-magic-context/master/assets/magic-context.schema.json',
+    }).$schema).toBe('https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json');
+  });
+
+  test('converts legacy fallback objects to Magic Context string fallback models', () => {
     const rows = agentFallbackModelsToRows([
       'openai/gpt-5.4',
       {
@@ -79,12 +85,68 @@ describe('magicContextConfig helpers', () => {
 
     expect(agentFallbackRowsToConfig(rows)).toEqual([
       'openai/gpt-5.4',
-      {
-        model: 'anthropic/claude-opus-4-6',
-        variant: 'max',
-        maxTokens: 4096,
-      },
+      'anthropic/claude-opus-4-6',
     ]);
+  });
+
+  test('preserves nested unknown fields and thinking level while normalizing known fields', () => {
+    expect(normalizeMagicContextConfig({
+      system_prompt_injection: {
+        enabled: false,
+        skip_signatures: [' magic-context ', '', 'custom-signature'],
+        future: { keep: true },
+      },
+      historian: {
+        model: 'openai/gpt-5.5',
+        thinking_level: 'high',
+        fallback_models: [{ model: 'anthropic/claude-sonnet-4-6', variant: 'high' }],
+        future_agent_field: true,
+      },
+      dreamer: {
+        user_memories: {
+          enabled: true,
+          promotion_threshold: '5',
+          legacy_experimental_field: 'keep',
+        },
+      },
+      experimental: {
+        temporal_awareness: true,
+        future_experimental: { keep: true },
+        git_commit_indexing: {
+          enabled: true,
+          since_days: '30',
+          legacy: 'keep',
+        },
+      },
+    })).toEqual({
+      system_prompt_injection: {
+        future: { keep: true },
+        enabled: false,
+        skip_signatures: ['magic-context', 'custom-signature'],
+      },
+      historian: {
+        future_agent_field: true,
+        model: 'openai/gpt-5.5',
+        thinking_level: 'high',
+        fallback_models: ['anthropic/claude-sonnet-4-6'],
+      },
+      dreamer: {
+        user_memories: {
+          legacy_experimental_field: 'keep',
+          enabled: true,
+          promotion_threshold: 5,
+        },
+      },
+      experimental: {
+        future_experimental: { keep: true },
+        temporal_awareness: true,
+        git_commit_indexing: {
+          legacy: 'keep',
+          enabled: true,
+          since_days: 30,
+        },
+      },
+    });
   });
 
   test('creates drafts from user raw config only and leaves project overrides out of the save payload', () => {

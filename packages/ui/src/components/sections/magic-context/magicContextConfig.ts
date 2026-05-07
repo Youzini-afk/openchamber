@@ -1,19 +1,12 @@
 export type MagicContextScalarMap<T extends string | number> = T | string | Record<string, T | string>;
 
-export type MagicContextAgentFallbackObject = {
-  model: string;
-  variant?: string;
-  temperature?: number;
-  top_p?: number;
-  maxTokens?: number;
-};
-
-export type MagicContextAgentFallbackModels = string | Array<string | MagicContextAgentFallbackObject>;
+export type MagicContextAgentFallbackModels = string | string[];
 
 export type MagicContextAgentConfig = Record<string, unknown> & {
   model?: string;
   fallback_models?: MagicContextAgentFallbackModels;
   variant?: string;
+  thinking_level?: string;
   temperature?: number;
   top_p?: number;
   prompt?: string;
@@ -40,6 +33,7 @@ export type MagicContextConfig = Record<string, unknown> & {
   };
   embedding?: Record<string, unknown>;
   memory?: Record<string, unknown>;
+  system_prompt_injection?: Record<string, unknown>;
   sidekick?: MagicContextAgentConfig & {
     enabled?: boolean;
     timeout_ms?: number;
@@ -62,16 +56,65 @@ export interface MagicContextSavePayload {
 export interface MagicContextFallbackRow {
   id: string;
   model: string;
-  variant: string;
-  maxTokens: string;
-  temperature?: string;
-  top_p?: string;
-  originalType: 'string' | 'object';
 }
 
+const MAGIC_CONTEXT_SCHEMA_URL = 'https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json';
 const DREAMER_TASKS = new Set(['consolidate', 'verify', 'archive-stale', 'improve', 'maintain-docs']);
 const EMBEDDING_PROVIDERS = new Set(['local', 'openai-compatible', 'off']);
 const AGENT_MODES = new Set(['subagent', 'primary', 'all']);
+const AGENT_KNOWN_KEYS = new Set([
+  'model',
+  'variant',
+  'thinking_level',
+  'prompt',
+  'description',
+  'temperature',
+  'top_p',
+  'maxTokens',
+  'maxSteps',
+  'fallback_models',
+  'tools',
+  'permission',
+  'mode',
+  'color',
+  'disable',
+]);
+const HISTORIAN_KNOWN_KEYS = new Set([...AGENT_KNOWN_KEYS, 'two_pass']);
+const DREAMER_KNOWN_KEYS = new Set([
+  ...AGENT_KNOWN_KEYS,
+  'enabled',
+  'schedule',
+  'max_runtime_minutes',
+  'task_timeout_minutes',
+  'inject_docs',
+  'tasks',
+  'user_memories',
+  'pin_key_files',
+]);
+const SIDEKICK_KNOWN_KEYS = new Set([...AGENT_KNOWN_KEYS, 'enabled', 'timeout_ms', 'system_prompt']);
+const USER_MEMORIES_KNOWN_KEYS = new Set(['enabled', 'promotion_threshold']);
+const PIN_KEY_FILES_KNOWN_KEYS = new Set(['enabled', 'token_budget', 'min_reads']);
+const COMMIT_CLUSTER_KNOWN_KEYS = new Set(['enabled', 'min_clusters']);
+const COMPRESSOR_KNOWN_KEYS = new Set([
+  'enabled',
+  'min_compartment_ratio',
+  'max_merge_depth',
+  'cooldown_ms',
+  'max_compartments_per_pass',
+  'grace_compartments',
+]);
+const SYSTEM_PROMPT_INJECTION_KNOWN_KEYS = new Set(['enabled', 'skip_signatures']);
+const EMBEDDING_KNOWN_KEYS = new Set(['provider', 'model', 'endpoint', 'api_key']);
+const MEMORY_KNOWN_KEYS = new Set(['enabled', 'auto_promote', 'injection_budget_tokens', 'retrieval_count_promotion_threshold']);
+const EXPERIMENTAL_KNOWN_KEYS = new Set([
+  'temporal_awareness',
+  'git_commit_indexing',
+  'auto_search',
+  'caveman_text_compression',
+]);
+const GIT_COMMIT_INDEXING_KNOWN_KEYS = new Set(['enabled', 'since_days', 'max_commits']);
+const AUTO_SEARCH_KNOWN_KEYS = new Set(['enabled', 'score_threshold', 'min_prompt_chars']);
+const CAVEMAN_TEXT_COMPRESSION_KNOWN_KEYS = new Set(['enabled', 'min_chars']);
 const TOP_LEVEL_MAGIC_CONTEXT_KEYS = [
   '$schema',
   'enabled',
@@ -90,6 +133,7 @@ const TOP_LEVEL_MAGIC_CONTEXT_KEYS = [
   'historian_timeout_ms',
   'commit_cluster_trigger',
   'compaction_markers',
+  'system_prompt_injection',
   'compressor',
   'historian',
   'dreamer',
@@ -110,6 +154,33 @@ const normalizeString = (value: unknown): string => (
 );
 
 const hasOwn = (input: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(input, key);
+
+const mergePreservingUnknown = <T extends Record<string, unknown>>(
+  input: unknown,
+  sanitized: Record<string, unknown> | undefined,
+  knownKeys: Set<string>,
+): T | undefined => {
+  if (!isPlainObject(input)) {
+    return sanitized && Object.keys(sanitized).length > 0 ? sanitized as T : undefined;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!knownKeys.has(key)) {
+      result[key] = cloneJson(value);
+    }
+  }
+
+  if (sanitized) {
+    for (const [key, value] of Object.entries(sanitized)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result as T : undefined;
+};
 
 const normalizeFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number') {
@@ -190,22 +261,6 @@ const normalizeTokenThresholdMap = (value: unknown): Record<string, number> | un
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
 
-const normalizeFallbackObject = (value: unknown): MagicContextAgentFallbackObject | null => {
-  if (!isPlainObject(value)) return null;
-  const model = normalizeString(value.model);
-  if (!model) return null;
-  const normalized: MagicContextAgentFallbackObject = { model };
-  const variant = normalizeString(value.variant);
-  if (variant) normalized.variant = variant;
-  const maxTokens = normalizePositiveInteger(value.maxTokens);
-  if (maxTokens !== undefined) normalized.maxTokens = maxTokens;
-  const temperature = normalizeNumberInRange(value.temperature, 0, 2);
-  if (temperature !== undefined) normalized.temperature = temperature;
-  const topP = normalizeNumberInRange(value.top_p, 0, 1);
-  if (topP !== undefined) normalized.top_p = topP;
-  return normalized;
-};
-
 const normalizeFallbackModels = (value: unknown): MagicContextAgentFallbackModels | undefined => {
   if (typeof value === 'string') {
     const model = normalizeString(value);
@@ -213,8 +268,11 @@ const normalizeFallbackModels = (value: unknown): MagicContextAgentFallbackModel
   }
   if (!Array.isArray(value)) return undefined;
   const entries = value
-    .map((entry) => (typeof entry === 'string' ? normalizeString(entry) || null : normalizeFallbackObject(entry)))
-    .filter(Boolean) as Array<string | MagicContextAgentFallbackObject>;
+    .map((entry) => {
+      if (typeof entry === 'string') return normalizeString(entry) || null;
+      return isPlainObject(entry) ? normalizeString(entry.model) || null : null;
+    })
+    .filter(Boolean) as string[];
   return entries.length > 0 ? entries : undefined;
 };
 
@@ -250,6 +308,7 @@ function normalizeAgentConfig(input: unknown, extra?: (result: MagicContextAgent
 
   assignString(result, input, 'model');
   assignString(result, input, 'variant');
+  assignString(result, input, 'thinking_level');
   assignString(result, input, 'prompt');
   assignString(result, input, 'description');
   assignNumber(result, input, 'temperature', 0, 2);
@@ -277,7 +336,7 @@ function normalizeAgentConfig(input: unknown, extra?: (result: MagicContextAgent
 }
 
 function normalizeDreamerConfig(value: unknown): MagicContextConfig['dreamer'] | undefined {
-  return normalizeAgentConfig(value, (result, input) => {
+  const normalized = normalizeAgentConfig(value, (result, input) => {
     if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
     assignString(result, input, 'schedule');
     const maxRuntime = normalizeIntegerMin(input.max_runtime_minutes, 10);
@@ -294,7 +353,8 @@ function normalizeDreamerConfig(value: unknown): MagicContextConfig['dreamer'] |
       if (typeof input.user_memories.enabled === 'boolean') userMemories.enabled = input.user_memories.enabled;
       const threshold = normalizeIntegerInRange(input.user_memories.promotion_threshold, 2, 20);
       if (threshold !== undefined) userMemories.promotion_threshold = threshold;
-      if (Object.keys(userMemories).length > 0) result.user_memories = userMemories;
+      const merged = mergePreservingUnknown<Record<string, unknown>>(input.user_memories, userMemories, USER_MEMORIES_KNOWN_KEYS);
+      if (merged) result.user_memories = merged;
     }
     if (isPlainObject(input.pin_key_files)) {
       const pinKeyFiles: Record<string, unknown> = {};
@@ -303,27 +363,34 @@ function normalizeDreamerConfig(value: unknown): MagicContextConfig['dreamer'] |
       if (budget !== undefined) pinKeyFiles.token_budget = budget;
       const minReads = normalizeIntegerInRange(input.pin_key_files.min_reads, 2, 20);
       if (minReads !== undefined) pinKeyFiles.min_reads = minReads;
-      if (Object.keys(pinKeyFiles).length > 0) result.pin_key_files = pinKeyFiles;
+      const merged = mergePreservingUnknown<Record<string, unknown>>(input.pin_key_files, pinKeyFiles, PIN_KEY_FILES_KNOWN_KEYS);
+      if (merged) result.pin_key_files = merged;
     }
-  }) as MagicContextConfig['dreamer'] | undefined;
+  });
+  return mergePreservingUnknown<MagicContextConfig['dreamer'] & Record<string, unknown>>(value, normalized, DREAMER_KNOWN_KEYS) as MagicContextConfig['dreamer'] | undefined;
 }
 
 function normalizeSidekickConfig(value: unknown): MagicContextConfig['sidekick'] | undefined {
-  return normalizeAgentConfig(value, (result, input) => {
+  const normalized = normalizeAgentConfig(value, (result, input) => {
     if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
     const timeout = normalizeIntegerMin(input.timeout_ms, 1);
     if (timeout !== undefined) result.timeout_ms = timeout;
     assignString(result, input, 'system_prompt');
-  }) as MagicContextConfig['sidekick'] | undefined;
+  });
+  return mergePreservingUnknown<MagicContextConfig['sidekick'] & Record<string, unknown>>(value, normalized, SIDEKICK_KNOWN_KEYS) as MagicContextConfig['sidekick'] | undefined;
 }
 
 const normalizeObjectWithFields = (
   value: unknown,
   builder: (result: Record<string, unknown>, input: Record<string, unknown>) => void,
+  knownKeys?: Set<string>,
 ): Record<string, unknown> | undefined => {
   if (!isPlainObject(value)) return undefined;
   const result: Record<string, unknown> = {};
   builder(result, value);
+  if (knownKeys) {
+    return mergePreservingUnknown(value, result, knownKeys);
+  }
   return Object.keys(result).length > 0 ? result : undefined;
 };
 
@@ -332,7 +399,7 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
   const result: MagicContextConfig = {};
 
   const schema = normalizeString(input.$schema);
-  if (schema) result.$schema = schema;
+  if (schema) result.$schema = MAGIC_CONTEXT_SCHEMA_URL;
   if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
   if (typeof input.auto_update === 'boolean') result.auto_update = input.auto_update;
   if (typeof input.ctx_reduce_enabled === 'boolean') result.ctx_reduce_enabled = input.ctx_reduce_enabled;
@@ -365,8 +432,17 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
     if (typeof source.enabled === 'boolean') target.enabled = source.enabled;
     const minClusters = normalizeIntegerMin(source.min_clusters, 1);
     if (minClusters !== undefined) target.min_clusters = minClusters;
-  });
+  }, COMMIT_CLUSTER_KNOWN_KEYS);
   if (commitClusterTrigger) result.commit_cluster_trigger = commitClusterTrigger;
+
+  const systemPromptInjection = normalizeObjectWithFields(input.system_prompt_injection, (target, source) => {
+    if (typeof source.enabled === 'boolean') target.enabled = source.enabled;
+    if (Array.isArray(source.skip_signatures)) {
+      const signatures = source.skip_signatures.map(normalizeString).filter(Boolean);
+      if (signatures.length > 0) target.skip_signatures = Array.from(new Set(signatures));
+    }
+  }, SYSTEM_PROMPT_INJECTION_KNOWN_KEYS);
+  if (systemPromptInjection) result.system_prompt_injection = systemPromptInjection;
 
   const compressor = normalizeObjectWithFields(input.compressor, (target, source) => {
     if (typeof source.enabled === 'boolean') target.enabled = source.enabled;
@@ -380,13 +456,14 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
     if (maxPerPass !== undefined) target.max_compartments_per_pass = maxPerPass;
     const grace = normalizeIntegerInRange(source.grace_compartments, 0, 100);
     if (grace !== undefined) target.grace_compartments = grace;
-  });
+  }, COMPRESSOR_KNOWN_KEYS);
   if (compressor) result.compressor = compressor;
 
   const historian = normalizeAgentConfig(input.historian, (target, source) => {
     if (typeof source.two_pass === 'boolean') target.two_pass = source.two_pass;
   });
-  if (historian) result.historian = historian;
+  const mergedHistorian = mergePreservingUnknown<MagicContextConfig['historian'] & Record<string, unknown>>(input.historian, historian, HISTORIAN_KNOWN_KEYS);
+  if (mergedHistorian) result.historian = mergedHistorian as MagicContextConfig['historian'];
   const dreamer = normalizeDreamerConfig(input.dreamer);
   if (dreamer) result.dreamer = dreamer;
   const sidekick = normalizeSidekickConfig(input.sidekick);
@@ -401,7 +478,7 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
     if (endpoint) target.endpoint = endpoint;
     const apiKey = normalizeString(source.api_key);
     if (apiKey) target.api_key = apiKey;
-  });
+  }, EMBEDDING_KNOWN_KEYS);
   if (embedding) result.embedding = embedding;
 
   const memory = normalizeObjectWithFields(input.memory, (target, source) => {
@@ -411,7 +488,7 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
     if (budget !== undefined) target.injection_budget_tokens = budget;
     const threshold = normalizeIntegerMin(source.retrieval_count_promotion_threshold, 1);
     if (threshold !== undefined) target.retrieval_count_promotion_threshold = threshold;
-  });
+  }, MEMORY_KNOWN_KEYS);
   if (memory) result.memory = memory;
 
   const experimental = normalizeObjectWithFields(input.experimental, (target, source) => {
@@ -423,7 +500,8 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
       if (sinceDays !== undefined) nested.since_days = sinceDays;
       const maxCommits = normalizeIntegerInRange(source.git_commit_indexing.max_commits, 100, 20000);
       if (maxCommits !== undefined) nested.max_commits = maxCommits;
-      if (Object.keys(nested).length > 0) target.git_commit_indexing = nested;
+      const merged = mergePreservingUnknown<Record<string, unknown>>(source.git_commit_indexing, nested, GIT_COMMIT_INDEXING_KNOWN_KEYS);
+      if (merged) target.git_commit_indexing = merged;
     }
     if (isPlainObject(source.auto_search)) {
       const nested: Record<string, unknown> = {};
@@ -432,16 +510,18 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
       if (threshold !== undefined) nested.score_threshold = threshold;
       const minChars = normalizeIntegerInRange(source.auto_search.min_prompt_chars, 5, 500);
       if (minChars !== undefined) nested.min_prompt_chars = minChars;
-      if (Object.keys(nested).length > 0) target.auto_search = nested;
+      const merged = mergePreservingUnknown<Record<string, unknown>>(source.auto_search, nested, AUTO_SEARCH_KNOWN_KEYS);
+      if (merged) target.auto_search = merged;
     }
     if (isPlainObject(source.caveman_text_compression)) {
       const nested: Record<string, unknown> = {};
       if (typeof source.caveman_text_compression.enabled === 'boolean') nested.enabled = source.caveman_text_compression.enabled;
       const minChars = normalizeIntegerInRange(source.caveman_text_compression.min_chars, 100, 10000);
       if (minChars !== undefined) nested.min_chars = minChars;
-      if (Object.keys(nested).length > 0) target.caveman_text_compression = nested;
+      const merged = mergePreservingUnknown<Record<string, unknown>>(source.caveman_text_compression, nested, CAVEMAN_TEXT_COMPRESSION_KNOWN_KEYS);
+      if (merged) target.caveman_text_compression = merged;
     }
-  });
+  }, EXPERIMENTAL_KNOWN_KEYS);
   if (experimental) result.experimental = experimental;
 
   return result;
@@ -449,54 +529,25 @@ export function normalizeMagicContextConfig(input: unknown): MagicContextConfig 
 
 export function agentFallbackModelsToRows(value: unknown): MagicContextFallbackRow[] {
   const entries = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [];
-  return entries.map((entry, index) => {
-    if (typeof entry === 'string') {
+  return entries
+    .map((entry, index) => {
+      const model = typeof entry === 'string'
+        ? entry
+        : isPlainObject(entry)
+          ? normalizeString(entry.model)
+          : '';
       return {
         id: `fallback-${index}`,
-        model: entry,
-        variant: '',
-        maxTokens: '',
-        originalType: 'string' as const,
+        model,
       };
-    }
-
-    const objectEntry = isPlainObject(entry) ? entry : {};
-    return {
-      id: `fallback-${index}`,
-      model: normalizeString(objectEntry.model),
-      variant: normalizeString(objectEntry.variant),
-      maxTokens: objectEntry.maxTokens == null ? '' : String(objectEntry.maxTokens),
-      temperature: objectEntry.temperature == null ? undefined : String(objectEntry.temperature),
-      top_p: objectEntry.top_p == null ? undefined : String(objectEntry.top_p),
-      originalType: 'object' as const,
-    };
-  });
+    })
+    .filter((row) => normalizeString(row.model));
 }
 
 export function agentFallbackRowsToConfig(rows: MagicContextFallbackRow[]): MagicContextAgentFallbackModels | undefined {
   const entries = rows
-    .map((row) => {
-      const model = normalizeString(row.model);
-      if (!model) return null;
-      const variant = normalizeString(row.variant);
-      const maxTokens = normalizePositiveInteger(row.maxTokens);
-      const temperature = normalizeNumberInRange(row.temperature, 0, 2);
-      const topP = normalizeNumberInRange(row.top_p, 0, 1);
-      const hasObjectFields = row.originalType === 'object'
-        || variant
-        || maxTokens !== undefined
-        || temperature !== undefined
-        || topP !== undefined;
-      if (!hasObjectFields) return model;
-      return {
-        model,
-        ...(variant ? { variant } : {}),
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(topP !== undefined ? { top_p: topP } : {}),
-      };
-    })
-    .filter(Boolean) as Array<string | MagicContextAgentFallbackObject>;
+    .map((row) => normalizeString(row.model))
+    .filter(Boolean);
 
   return entries.length > 0 ? entries : undefined;
 }

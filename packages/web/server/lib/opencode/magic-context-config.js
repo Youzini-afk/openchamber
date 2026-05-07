@@ -11,7 +11,15 @@ import {
 const PLUGIN_NAME = 'opencode-magic-context';
 const NPM_PLUGIN_NAME = '@cortexkit/opencode-magic-context';
 const CONFIG_BASENAME = 'magic-context';
-const SCHEMA_URL = 'https://raw.githubusercontent.com/cortexkit/opencode-magic-context/master/assets/magic-context.schema.json';
+const SCHEMA_URL = 'https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json';
+const TUI_PLUGIN_NAME = NPM_PLUGIN_NAME;
+const OMO_PLUGIN_NAMES = new Set(['oh-my-openagent', 'oh-my-opencode']);
+const OMO_CONFIG_BASENAMES = ['oh-my-openagent', 'oh-my-opencode'];
+const CONFLICTING_OMO_HOOKS = [
+  'context-window-monitor',
+  'preemptive-compaction',
+  'anthropic-context-window-limit-recovery',
+];
 
 const JSONC_FORMATTING_OPTIONS = {
   insertSpaces: true,
@@ -37,6 +45,7 @@ const TOP_LEVEL_KEYS = [
   'historian_timeout_ms',
   'commit_cluster_trigger',
   'compaction_markers',
+  'system_prompt_injection',
   'compressor',
   'historian',
   'dreamer',
@@ -50,6 +59,59 @@ const DREAMER_TASKS = new Set(['consolidate', 'verify', 'archive-stale', 'improv
 const EMBEDDING_PROVIDERS = new Set(['local', 'openai-compatible', 'off']);
 const AGENT_MODES = new Set(['subagent', 'primary', 'all']);
 const PERMISSION_VALUES = new Set(['ask', 'allow', 'deny']);
+const AGENT_KNOWN_KEYS = new Set([
+  'model',
+  'variant',
+  'thinking_level',
+  'prompt',
+  'description',
+  'temperature',
+  'top_p',
+  'maxTokens',
+  'maxSteps',
+  'fallback_models',
+  'tools',
+  'permission',
+  'mode',
+  'color',
+  'disable',
+]);
+const HISTORIAN_KNOWN_KEYS = new Set([...AGENT_KNOWN_KEYS, 'two_pass']);
+const DREAMER_KNOWN_KEYS = new Set([
+  ...AGENT_KNOWN_KEYS,
+  'enabled',
+  'schedule',
+  'max_runtime_minutes',
+  'task_timeout_minutes',
+  'inject_docs',
+  'tasks',
+  'user_memories',
+  'pin_key_files',
+]);
+const SIDEKICK_KNOWN_KEYS = new Set([...AGENT_KNOWN_KEYS, 'enabled', 'timeout_ms', 'system_prompt']);
+const USER_MEMORIES_KNOWN_KEYS = new Set(['enabled', 'promotion_threshold']);
+const PIN_KEY_FILES_KNOWN_KEYS = new Set(['enabled', 'token_budget', 'min_reads']);
+const COMMIT_CLUSTER_KNOWN_KEYS = new Set(['enabled', 'min_clusters']);
+const COMPRESSOR_KNOWN_KEYS = new Set([
+  'enabled',
+  'min_compartment_ratio',
+  'max_merge_depth',
+  'cooldown_ms',
+  'max_compartments_per_pass',
+  'grace_compartments',
+]);
+const SYSTEM_PROMPT_INJECTION_KNOWN_KEYS = new Set(['enabled', 'skip_signatures']);
+const EMBEDDING_KNOWN_KEYS = new Set(['provider', 'model', 'endpoint', 'api_key']);
+const MEMORY_KNOWN_KEYS = new Set(['enabled', 'auto_promote', 'injection_budget_tokens', 'retrieval_count_promotion_threshold']);
+const EXPERIMENTAL_KNOWN_KEYS = new Set([
+  'temporal_awareness',
+  'git_commit_indexing',
+  'auto_search',
+  'caveman_text_compression',
+]);
+const GIT_COMMIT_INDEXING_KNOWN_KEYS = new Set(['enabled', 'since_days', 'max_commits']);
+const AUTO_SEARCH_KNOWN_KEYS = new Set(['enabled', 'score_threshold', 'min_prompt_chars']);
+const CAVEMAN_TEXT_COMPRESSION_KNOWN_KEYS = new Set(['enabled', 'min_chars']);
 
 function isPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
@@ -61,6 +123,68 @@ function normalizeString(value) {
 
 function hasOwn(input, key) {
   return Object.prototype.hasOwnProperty.call(input, key);
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? {}));
+}
+
+function mergePreservingUnknown(input, sanitized, knownKeys) {
+  if (!isPlainObject(input)) {
+    return sanitized && Object.keys(sanitized).length > 0 ? sanitized : undefined;
+  }
+
+  const result = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!knownKeys.has(key)) {
+      result[key] = cloneJson(value);
+    }
+  }
+
+  if (isPlainObject(sanitized)) {
+    for (const [key, value] of Object.entries(sanitized)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function getPluginEntryName(entry) {
+  if (typeof entry === 'string') return entry;
+  if (Array.isArray(entry) && typeof entry[0] === 'string') return entry[0];
+  return '';
+}
+
+function getPackageName(entry) {
+  const entryName = getPluginEntryName(entry);
+  if (!entryName) return '';
+  const trimmed = entryName.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('.') || trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    return path.basename(trimmed).replace(/\.(js|mjs|cjs|ts|tgz|tar\.gz)$/i, '');
+  }
+  if (trimmed.startsWith('@')) {
+    const parts = trimmed.split('/');
+    return parts.length >= 2 ? `${parts[0]}/${parts[1].split('@')[0]}` : trimmed;
+  }
+  return trimmed.split('/')[0].split('@')[0];
+}
+
+function matchesMagicContextPlugin(entry) {
+  const entryName = getPluginEntryName(entry).toLowerCase();
+  const packageName = getPackageName(entry);
+  return packageName === PLUGIN_NAME
+    || packageName === NPM_PLUGIN_NAME
+    || entryName.includes('opencode-magic-context')
+    || entryName.includes('magic-context/packages/plugin');
+}
+
+function matchesOmoPlugin(entry) {
+  const packageName = getPackageName(entry);
+  return OMO_PLUGIN_NAMES.has(packageName);
 }
 
 function normalizeFiniteNumber(value) {
@@ -216,6 +340,34 @@ function getOpenCodeConfigCandidates(directory) {
   return candidates;
 }
 
+function getUserTuiConfigCandidates() {
+  const configDir = getOpenCodeConfigDir();
+  return [
+    path.join(configDir, 'tui.jsonc'),
+    path.join(configDir, 'tui.json'),
+  ];
+}
+
+function getMagicContextRuntimeConfigDir() {
+  const xdgConfigHome = normalizeString(process.env.XDG_CONFIG_HOME);
+  return path.join(xdgConfigHome ? path.resolve(xdgConfigHome) : path.join(os.homedir(), '.config'), 'opencode');
+}
+
+function readPluginEntriesFromConfig(configPath) {
+  if (!fs.existsSync(configPath)) return [];
+  try {
+    const config = readJsoncFile(configPath);
+    return [
+      ...(Array.isArray(config.plugin) ? config.plugin : []),
+      ...(Array.isArray(config.plugins) ? config.plugins : []),
+    ]
+      .map(getPluginEntryName)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function findPluginEntry(directory) {
   for (const configPath of getOpenCodeConfigCandidates(directory)) {
     if (!fs.existsSync(configPath)) {
@@ -229,16 +381,14 @@ function findPluginEntry(directory) {
         ...(Array.isArray(config.plugins) ? config.plugins : []),
       ];
       const entry = pluginEntries.find((value) => {
-        if (typeof value !== 'string') {
-          return false;
-        }
-        return value.includes(PLUGIN_NAME) || value.includes(NPM_PLUGIN_NAME);
+        return matchesMagicContextPlugin(value);
       });
 
       if (entry) {
+        const entryName = getPluginEntryName(entry);
         return {
           detected: true,
-          entry,
+          entry: entryName,
           configPath,
         };
       }
@@ -251,6 +401,94 @@ function findPluginEntry(directory) {
     detected: false,
     entry: null,
     configPath: null,
+  };
+}
+
+function findTuiPluginEntry() {
+  for (const configPath of getUserTuiConfigCandidates()) {
+    for (const entry of readPluginEntriesFromConfig(configPath)) {
+      if (matchesMagicContextPlugin(entry) || entry.includes(TUI_PLUGIN_NAME)) {
+        return {
+          detected: true,
+          entry,
+          configPath,
+        };
+      }
+    }
+  }
+
+  return {
+    detected: false,
+    entry: null,
+    configPath: null,
+  };
+}
+
+function hasOmoPluginEntry(directory) {
+  return getOpenCodeConfigCandidates(directory).some((configPath) => (
+    readPluginEntriesFromConfig(configPath).some(matchesOmoPlugin)
+  ));
+}
+
+function getOmoConfigPaths(directory) {
+  const configDir = getOpenCodeConfigDir();
+  const dirs = [configDir];
+  if (directory) {
+    dirs.push(directory, path.join(directory, '.opencode'));
+  }
+  const paths = [];
+  for (const dir of dirs) {
+    for (const basename of OMO_CONFIG_BASENAMES) {
+      paths.push(path.join(dir, `${basename}.jsonc`), path.join(dir, `${basename}.json`));
+    }
+  }
+  return paths;
+}
+
+function readOmoDisabledHooks(directory) {
+  const disabledHooks = new Set();
+  for (const configPath of getOmoConfigPaths(directory)) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const config = readJsoncFile(configPath);
+      if (Array.isArray(config.disabled_hooks)) {
+        for (const hook of config.disabled_hooks) {
+          const normalized = normalizeString(hook);
+          if (normalized) disabledHooks.add(normalized);
+        }
+      }
+    } catch {
+      // Diagnostics are best-effort; malformed OMO configs are surfaced by their own settings page.
+    }
+  }
+  return disabledHooks;
+}
+
+function buildDiagnostics(directory, projectConfig = {}) {
+  const tui = findTuiPluginEntry();
+  const disabledHooks = readOmoDisabledHooks(directory);
+  const omoInstalled = hasOmoPluginEntry(directory);
+  const activeOmoHooks = omoInstalled
+    ? CONFLICTING_OMO_HOOKS.filter((hook) => !disabledHooks.has(hook))
+    : [];
+  const uiConfigDir = getOpenCodeConfigDir();
+  const runtimeConfigDir = getMagicContextRuntimeConfigDir();
+
+  return {
+    tui,
+    omo: {
+      detected: omoInstalled,
+      activeConflictingHooks: activeOmoHooks,
+      disabledConflictingHooks: CONFLICTING_OMO_HOOKS.filter((hook) => disabledHooks.has(hook)),
+    },
+    configPath: {
+      uiConfigDir,
+      runtimeConfigDir,
+      matchesRuntime: path.resolve(uiConfigDir) === path.resolve(runtimeConfigDir),
+    },
+    project: {
+      ignoredUserOnlyKeys: hasOwn(projectConfig, 'auto_update') ? ['auto_update'] : [],
+    },
   };
 }
 
@@ -345,25 +583,7 @@ function normalizeFallbackModels(value) {
       if (typeof entry === 'string') {
         return normalizeString(entry) || null;
       }
-      if (!isPlainObject(entry)) {
-        return null;
-      }
-
-      const model = normalizeString(entry.model);
-      if (!model) {
-        return null;
-      }
-
-      const normalized = { model };
-      const variant = normalizeString(entry.variant);
-      if (variant) normalized.variant = variant;
-      const temperature = normalizeNumberInRange(entry.temperature, 0, 2);
-      if (temperature !== undefined) normalized.temperature = temperature;
-      const topP = normalizeNumberInRange(entry.top_p, 0, 1);
-      if (topP !== undefined) normalized.top_p = topP;
-      const maxTokens = normalizePositiveInteger(entry.maxTokens);
-      if (maxTokens !== undefined) normalized.maxTokens = maxTokens;
-      return normalized;
+      return isPlainObject(entry) ? normalizeString(entry.model) || null : null;
     })
     .filter(Boolean);
 
@@ -439,6 +659,7 @@ function normalizeAgentConfig(input, extra = {}) {
   const result = {};
   assignStringField(result, input, 'model');
   assignStringField(result, input, 'variant');
+  assignStringField(result, input, 'thinking_level');
   assignStringField(result, input, 'prompt');
   assignStringField(result, input, 'description');
   assignNumberField(result, input, 'temperature', 0, 2);
@@ -469,13 +690,14 @@ function normalizeAgentConfig(input, extra = {}) {
 }
 
 function normalizeHistorianConfig(value) {
-  return normalizeAgentConfig(value, (result, input) => {
+  const normalized = normalizeAgentConfig(value, (result, input) => {
     if (typeof input.two_pass === 'boolean') result.two_pass = input.two_pass;
   });
+  return mergePreservingUnknown(value, normalized, HISTORIAN_KNOWN_KEYS);
 }
 
 function normalizeDreamerConfig(value) {
-  return normalizeAgentConfig(value, (result, input) => {
+  const normalized = normalizeAgentConfig(value, (result, input) => {
     if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
     assignStringField(result, input, 'schedule');
     const maxRuntime = normalizeIntegerMin(input.max_runtime_minutes, 10);
@@ -493,7 +715,8 @@ function normalizeDreamerConfig(value) {
       if (typeof input.user_memories.enabled === 'boolean') userMemories.enabled = input.user_memories.enabled;
       const threshold = normalizeIntegerInRange(input.user_memories.promotion_threshold, 2, 20);
       if (threshold !== undefined) userMemories.promotion_threshold = threshold;
-      if (Object.keys(userMemories).length > 0) result.user_memories = userMemories;
+      const merged = mergePreservingUnknown(input.user_memories, userMemories, USER_MEMORIES_KNOWN_KEYS);
+      if (merged) result.user_memories = merged;
     }
 
     if (isPlainObject(input.pin_key_files)) {
@@ -503,18 +726,21 @@ function normalizeDreamerConfig(value) {
       if (budget !== undefined) pinKeyFiles.token_budget = budget;
       const minReads = normalizeIntegerInRange(input.pin_key_files.min_reads, 2, 20);
       if (minReads !== undefined) pinKeyFiles.min_reads = minReads;
-      if (Object.keys(pinKeyFiles).length > 0) result.pin_key_files = pinKeyFiles;
+      const merged = mergePreservingUnknown(input.pin_key_files, pinKeyFiles, PIN_KEY_FILES_KNOWN_KEYS);
+      if (merged) result.pin_key_files = merged;
     }
   });
+  return mergePreservingUnknown(value, normalized, DREAMER_KNOWN_KEYS);
 }
 
 function normalizeSidekickConfig(value) {
-  return normalizeAgentConfig(value, (result, input) => {
+  const normalized = normalizeAgentConfig(value, (result, input) => {
     if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
     const timeout = normalizeIntegerMin(input.timeout_ms, 1);
     if (timeout !== undefined) result.timeout_ms = timeout;
     assignStringField(result, input, 'system_prompt');
   });
+  return mergePreservingUnknown(value, normalized, SIDEKICK_KNOWN_KEYS);
 }
 
 function normalizeCommitClusterTrigger(value) {
@@ -523,7 +749,7 @@ function normalizeCommitClusterTrigger(value) {
   if (typeof value.enabled === 'boolean') result.enabled = value.enabled;
   const minClusters = normalizeIntegerMin(value.min_clusters, 1);
   if (minClusters !== undefined) result.min_clusters = minClusters;
-  return Object.keys(result).length > 0 ? result : undefined;
+  return mergePreservingUnknown(value, result, COMMIT_CLUSTER_KNOWN_KEYS);
 }
 
 function normalizeCompressor(value) {
@@ -540,13 +766,30 @@ function normalizeCompressor(value) {
   if (maxPerPass !== undefined) result.max_compartments_per_pass = maxPerPass;
   const grace = normalizeIntegerInRange(value.grace_compartments, 0, 100);
   if (grace !== undefined) result.grace_compartments = grace;
-  return Object.keys(result).length > 0 ? result : undefined;
+  return mergePreservingUnknown(value, result, COMPRESSOR_KNOWN_KEYS);
+}
+
+function normalizeSystemPromptInjection(value) {
+  if (!isPlainObject(value)) return undefined;
+  const result = {};
+  if (typeof value.enabled === 'boolean') result.enabled = value.enabled;
+  if (Array.isArray(value.skip_signatures)) {
+    const signatures = value.skip_signatures
+      .map(normalizeString)
+      .filter(Boolean);
+    if (signatures.length > 0) {
+      result.skip_signatures = Array.from(new Set(signatures));
+    }
+  }
+  return mergePreservingUnknown(value, result, SYSTEM_PROMPT_INJECTION_KNOWN_KEYS);
 }
 
 function normalizeEmbedding(value) {
   if (!isPlainObject(value)) return undefined;
   const provider = normalizeString(value.provider);
-  if (!EMBEDDING_PROVIDERS.has(provider)) return undefined;
+  if (!EMBEDDING_PROVIDERS.has(provider)) {
+    return mergePreservingUnknown(value, {}, EMBEDDING_KNOWN_KEYS);
+  }
   const result = { provider };
   const model = normalizeString(value.model);
   const endpoint = normalizeString(value.endpoint);
@@ -562,7 +805,7 @@ function normalizeEmbedding(value) {
     throw error;
   }
 
-  return result;
+  return mergePreservingUnknown(value, result, EMBEDDING_KNOWN_KEYS);
 }
 
 function normalizeMemory(value) {
@@ -574,7 +817,7 @@ function normalizeMemory(value) {
   if (budget !== undefined) result.injection_budget_tokens = budget;
   const threshold = normalizeIntegerMin(value.retrieval_count_promotion_threshold, 1);
   if (threshold !== undefined) result.retrieval_count_promotion_threshold = threshold;
-  return Object.keys(result).length > 0 ? result : undefined;
+  return mergePreservingUnknown(value, result, MEMORY_KNOWN_KEYS);
 }
 
 function normalizeExperimental(value) {
@@ -589,7 +832,8 @@ function normalizeExperimental(value) {
     if (sinceDays !== undefined) gitCommitIndexing.since_days = sinceDays;
     const maxCommits = normalizeIntegerInRange(value.git_commit_indexing.max_commits, 100, 20000);
     if (maxCommits !== undefined) gitCommitIndexing.max_commits = maxCommits;
-    if (Object.keys(gitCommitIndexing).length > 0) result.git_commit_indexing = gitCommitIndexing;
+    const merged = mergePreservingUnknown(value.git_commit_indexing, gitCommitIndexing, GIT_COMMIT_INDEXING_KNOWN_KEYS);
+    if (merged) result.git_commit_indexing = merged;
   }
 
   if (isPlainObject(value.auto_search)) {
@@ -599,7 +843,8 @@ function normalizeExperimental(value) {
     if (threshold !== undefined) autoSearch.score_threshold = threshold;
     const minChars = normalizeIntegerInRange(value.auto_search.min_prompt_chars, 5, 500);
     if (minChars !== undefined) autoSearch.min_prompt_chars = minChars;
-    if (Object.keys(autoSearch).length > 0) result.auto_search = autoSearch;
+    const merged = mergePreservingUnknown(value.auto_search, autoSearch, AUTO_SEARCH_KNOWN_KEYS);
+    if (merged) result.auto_search = merged;
   }
 
   if (isPlainObject(value.caveman_text_compression)) {
@@ -607,10 +852,11 @@ function normalizeExperimental(value) {
     if (typeof value.caveman_text_compression.enabled === 'boolean') caveman.enabled = value.caveman_text_compression.enabled;
     const minChars = normalizeIntegerInRange(value.caveman_text_compression.min_chars, 100, 10000);
     if (minChars !== undefined) caveman.min_chars = minChars;
-    if (Object.keys(caveman).length > 0) result.caveman_text_compression = caveman;
+    const merged = mergePreservingUnknown(value.caveman_text_compression, caveman, CAVEMAN_TEXT_COMPRESSION_KNOWN_KEYS);
+    if (merged) result.caveman_text_compression = merged;
   }
 
-  return Object.keys(result).length > 0 ? result : undefined;
+  return mergePreservingUnknown(value, result, EXPERIMENTAL_KNOWN_KEYS);
 }
 
 function sanitizeMagicContextConfig(input) {
@@ -619,7 +865,7 @@ function sanitizeMagicContextConfig(input) {
 
   if (hasOwn(input, '$schema')) {
     const schema = normalizeString(input.$schema);
-    if (schema) result.$schema = schema;
+    if (schema) result.$schema = SCHEMA_URL;
   }
   if (typeof input.enabled === 'boolean') result.enabled = input.enabled;
   if (typeof input.auto_update === 'boolean') result.auto_update = input.auto_update;
@@ -651,6 +897,8 @@ function sanitizeMagicContextConfig(input) {
 
   const commitClusterTrigger = normalizeCommitClusterTrigger(input.commit_cluster_trigger);
   if (commitClusterTrigger) result.commit_cluster_trigger = commitClusterTrigger;
+  const systemPromptInjection = normalizeSystemPromptInjection(input.system_prompt_injection);
+  if (systemPromptInjection) result.system_prompt_injection = systemPromptInjection;
   const compressor = normalizeCompressor(input.compressor);
   if (compressor) result.compressor = compressor;
   const historian = normalizeHistorianConfig(input.historian);
@@ -703,6 +951,7 @@ function readMagicContextConfig(options = {}) {
       exists: Boolean(projectDetection?.exists),
       overriddenKeys: Object.keys(projectConfig).sort(),
     },
+    diagnostics: buildDiagnostics(directory, projectConfig),
     schemaUrl: SCHEMA_URL,
     raw: targetConfig,
     projectRaw: projectConfig,

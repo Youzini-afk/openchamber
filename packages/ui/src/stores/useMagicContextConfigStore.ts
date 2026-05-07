@@ -29,6 +29,26 @@ export interface MagicContextConfigResponse {
     exists: boolean;
     overriddenKeys: string[];
   };
+  diagnostics?: {
+    tui?: {
+      detected: boolean;
+      entry: string | null;
+      configPath: string | null;
+    };
+    omo?: {
+      detected: boolean;
+      activeConflictingHooks: string[];
+      disabledConflictingHooks: string[];
+    };
+    configPath?: {
+      uiConfigDir: string;
+      runtimeConfigDir: string;
+      matchesRuntime: boolean;
+    };
+    project?: {
+      ignoredUserOnlyKeys: string[];
+    };
+  };
   schemaUrl: string;
   raw: MagicContextConfig;
   projectRaw: MagicContextConfig;

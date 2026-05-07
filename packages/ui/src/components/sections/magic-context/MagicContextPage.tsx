@@ -28,12 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useMagicContextConfigStore } from '@/stores/useMagicContextConfigStore';
+import { useMagicContextConfigStore, type MagicContextConfigResponse } from '@/stores/useMagicContextConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -70,19 +71,19 @@ const AGENT_DEFINITIONS: Array<{
   {
     id: 'historian',
     label: 'Historian',
-    description: '后台历史整理与 compartment 发布。',
+    description: '为长会话建立可延续的历史记录：保留关键决策、约束、已完成工作和重要项目上下文，避免压缩后丢失。',
     defaultChain: 'github-copilot/claude-sonnet-4-6 -> anthropic/claude-sonnet-4-6 -> openai/gpt-5.4',
   },
   {
     id: 'dreamer',
     label: 'Dreamer',
-    description: '空闲维护任务、用户记忆提升、关键文件分析。',
+    description: '基于当前项目上下文提前规划：拆出下一步行动、提示潜在风险，并把模糊意图整理成可执行待办。',
     defaultChain: 'github-copilot/claude-sonnet-4-6 -> google/gemini-3-flash -> openai/gpt-5.4-mini',
   },
   {
     id: 'sidekick',
     label: 'Sidekick',
-    description: '/ctx-aug 与会话开始时的记忆检索辅助。',
+    description: '在当前会话中提供轻量辅助：检索相关上下文、补齐信息缺口，减少反复解释同一背景。',
     defaultChain: 'cerebras/qwen-3-235b-a22b-instruct-2507 -> opencode/gpt-5-nano -> google/gemini-3-flash',
   },
 ];
@@ -90,6 +91,13 @@ const AGENT_DEFINITIONS: Array<{
 const DREAMER_TASKS = ['consolidate', 'verify', 'archive-stale', 'improve', 'maintain-docs'];
 const AGENT_MODES = ['subagent', 'primary', 'all'];
 const EMBEDDING_PROVIDERS = ['local', 'openai-compatible', 'off'];
+const VARIANT_OPTIONS = [
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
+  { value: 'xhigh', label: '超高' },
+  { value: 'max', label: '最大' },
+];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -197,6 +205,75 @@ function Section({
   );
 }
 
+function DiagnosticItem({
+  label,
+  ok,
+  children,
+}: {
+  label: string;
+  ok: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-border/60 bg-background px-2.5 py-2">
+      <div className="flex items-center gap-1.5">
+        <Badge className={ok ? 'bg-primary/10 text-primary' : 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]'}>
+          {ok ? '正常' : '注意'}
+        </Badge>
+        <span className="typography-ui-label font-medium text-foreground">{label}</span>
+      </div>
+      <div className="mt-1 break-all typography-micro text-muted-foreground">{children}</div>
+    </div>
+  );
+}
+
+function DiagnosticsPanel({
+  config,
+  ignoredProjectKeys,
+}: {
+  config: MagicContextConfigResponse | null;
+  ignoredProjectKeys: string[];
+}) {
+  const diagnostics = config?.diagnostics;
+  const activeHooks = diagnostics?.omo?.activeConflictingHooks ?? [];
+  const disabledHooks = diagnostics?.omo?.disabledConflictingHooks ?? [];
+  const pluginOk = config?.plugin.detected === true;
+  const tuiOk = diagnostics?.tui?.detected === true;
+  const configPathOk = diagnostics?.configPath?.matchesRuntime !== false;
+  const omoOk = activeHooks.length === 0;
+
+  return (
+    <div className="grid gap-2 pt-1 md:grid-cols-2 xl:grid-cols-4">
+      <DiagnosticItem label="插件注册" ok={pluginOk}>
+        {pluginOk ? `${config?.plugin.entry ?? '已注册'} @ ${config?.plugin.configPath ?? '未知路径'}` : 'OpenCode 配置中没有检测到 @cortexkit/opencode-magic-context。'}
+      </DiagnosticItem>
+      <DiagnosticItem label="TUI sidebar" ok={tuiOk}>
+        {tuiOk ? `${diagnostics?.tui?.entry ?? '已注册'} @ ${diagnostics?.tui?.configPath ?? '未知路径'}` : '没有检测到 TUI sidebar 注册；只影响侧栏增强，不影响核心 hook。'}
+      </DiagnosticItem>
+      <DiagnosticItem label="OMO hooks" ok={omoOk}>
+        {activeHooks.length > 0
+          ? `仍启用可能冲突的 hooks：${activeHooks.join(', ')}`
+          : disabledHooks.length > 0
+            ? `冲突 hooks 已禁用：${disabledHooks.join(', ')}`
+            : '未检测到启用中的 OMO 冲突 hook。'}
+      </DiagnosticItem>
+      <DiagnosticItem label="配置路径" ok={configPathOk}>
+        {configPathOk
+          ? diagnostics?.configPath?.uiConfigDir ?? config?.target.path ?? '路径一致'
+          : `OpenChamber 写入 ${diagnostics?.configPath?.uiConfigDir}，插件运行时读取 ${diagnostics?.configPath?.runtimeConfigDir}`}
+      </DiagnosticItem>
+      {ignoredProjectKeys.length > 0 ? (
+        <div className="rounded-md border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 px-2.5 py-2 md:col-span-2 xl:col-span-4">
+          <div className="typography-ui-label font-medium text-[var(--status-warning)]">项目配置中存在会被插件忽略的字段</div>
+          <div className="mt-1 typography-micro text-[var(--status-warning)]">
+            {ignoredProjectKeys.join(', ')} 只在用户全局配置生效；项目里写了也不会改变插件行为。
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function RowShell({
   label,
   description,
@@ -252,6 +329,28 @@ function CompactModelEditor({
         className="h-7 min-w-[160px] flex-1 font-mono typography-meta"
       />
     </div>
+  );
+}
+
+function InlineModelEditor({
+  model,
+  onChange,
+  placeholder = '继承默认',
+}: {
+  model: string;
+  onChange: (model: string) => void;
+  placeholder?: string;
+}) {
+  const parsed = parseModelRef(model);
+
+  return (
+    <ModelSelector
+      providerId={parsed.providerId}
+      modelId={parsed.modelId}
+      onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
+      placeholder={placeholder}
+      className="h-9 w-full"
+    />
   );
 }
 
@@ -482,7 +581,60 @@ function MapEditor({
   );
 }
 
-function AgentRow({
+function VariantSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string | undefined) => void;
+}) {
+  return (
+    <Select
+      value={value || INHERIT_VALUE}
+      onValueChange={(nextValue) => onChange(nextValue === INHERIT_VALUE ? undefined : nextValue)}
+    >
+      <SelectTrigger className="h-9 w-full" size="lg">
+        <SelectValue>
+          {(currentValue) => {
+            if (currentValue === INHERIT_VALUE) return '继承';
+            return VARIANT_OPTIONS.find((option) => option.value === currentValue)?.label ?? currentValue;
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+        {VARIANT_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+        ))}
+        {value && !VARIANT_OPTIONS.some((option) => option.value === value) ? (
+          <SelectItem value={value}>{value}</SelectItem>
+        ) : null}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function AgentSettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-2 border-t border-border/60 px-4 py-3 first:border-t-0 md:grid-cols-[minmax(180px,0.9fr)_minmax(240px,1fr)] md:items-center">
+      <div className="min-w-0">
+        <div className="typography-ui-label font-semibold text-foreground">{label}</div>
+        <div className="typography-micro text-muted-foreground">{description}</div>
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function AgentCard({
   id,
   label,
   description,
@@ -505,63 +657,113 @@ function AgentRow({
   const normalized = normalizeMagicContextConfig(draft);
   const normalizedEntry = normalized[id] as MagicContextAgentConfig | undefined;
   const fallbackCount = countFallbackModels(entry.fallback_models);
-  const disabled = entry.disable === true;
+  const isCoreAgent = id === 'historian';
+  const enabled = isCoreAgent ? entry.disable !== true : entry.enabled === true && entry.disable !== true;
 
   const updateAgent = (patch: Record<string, unknown>) => {
+    const next = { ...entry };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined || value === '') {
+        delete next[key];
+      } else {
+        next[key] = value;
+      }
+    }
     updateDraft({
-      [id]: {
-        ...entry,
-        ...patch,
-      },
+      [id]: next,
+    });
+  };
+
+  const setEnabled = (checked: boolean) => {
+    if (isCoreAgent) return;
+    updateAgent({
+      enabled: checked ? true : false,
+      disable: checked ? undefined : entry.disable,
     });
   };
 
   return (
-    <div className="grid min-h-[62px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(190px,0.9fr)_minmax(220px,1fr)_minmax(280px,1.1fr)_82px_98px_82px] lg:items-center">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate typography-ui-label font-medium text-foreground">{label}</span>
-          {normalizedEntry ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-          {projectOverrides.has(id) ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
+      <div className="flex items-start justify-between gap-3 px-4 py-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="typography-ui-label font-semibold text-foreground">{label}</span>
+            {isCoreAgent ? <Badge className="bg-muted text-muted-foreground">核心</Badge> : null}
+            {!isCoreAgent && enabled ? <Badge className="bg-primary/10 text-primary">已启用</Badge> : null}
+            {!isCoreAgent && !enabled ? <Badge className="bg-muted text-muted-foreground">未启用</Badge> : null}
+            {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">fallback {fallbackCount}</Badge> : null}
+          </div>
+          <p className="max-w-3xl typography-ui text-foreground/90">{description}</p>
+          <p className="truncate font-mono typography-micro text-muted-foreground">默认链：{defaultChain}</p>
         </div>
-        <div className="typography-micro text-muted-foreground">{description}</div>
-      </div>
-
-      <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">默认链</div>
-        <div className="truncate font-mono typography-micro text-muted-foreground">{defaultChain}</div>
-      </div>
-
-      <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">模型</div>
-        <CompactModelEditor
-          model={asString(entry.model)}
-          onChange={(model) => updateAgent({ model })}
-        />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="typography-micro text-muted-foreground lg:hidden">fallback</span>
-        <span className="typography-ui-label text-foreground">{fallbackCount}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!isCoreAgent ? (
+            <Switch
+              checked={enabled}
+              onCheckedChange={(checked) => setEnabled(Boolean(checked))}
+              aria-label={`${label} 启用开关`}
+            />
+          ) : null}
+          <Button type="button" size="icon" variant="ghost" onClick={() => onEdit(id)} title={`编辑 ${label}`}>
+            <RiEditLine className="h-4 w-4" />
+          </Button>
+          <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(id)} disabled={!normalizedEntry} title="删除覆盖">
+            <RiRestartLine className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <div>
-        {disabled ? (
-          <Badge className="bg-[var(--status-error)]/10 text-[var(--status-error)]">已禁用</Badge>
-        ) : normalizedEntry ? (
-          <Badge className="bg-primary/10 text-primary">已配置</Badge>
-        ) : (
-          <Badge className="bg-muted text-muted-foreground">继承默认</Badge>
-        )}
+        <AgentSettingRow label="模型" description="从已配置的提供商中选择模型；手动模型可在高级编辑里输入。">
+          <InlineModelEditor
+            model={asString(entry.model)}
+            onChange={(model) => updateAgent({ model })}
+          />
+        </AgentSettingRow>
+
+        {id === 'historian' ? (
+          <>
+            <AgentSettingRow label="双阶段清理" description="Historian 完成后再运行一次编辑清理，移除低价值或重复记录。">
+              <div className="flex items-center justify-end">
+                <Switch
+                  checked={entry.two_pass === true}
+                  onCheckedChange={(checked) => updateAgent({ two_pass: checked ? true : undefined })}
+                  aria-label="Historian 双阶段清理"
+                />
+              </div>
+            </AgentSettingRow>
+            <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，使用提供商里配置的推理档位。">
+              <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
+            </AgentSettingRow>
+          </>
+        ) : null}
+
+        {id === 'dreamer' ? (
+          <>
+            <AgentSettingRow label="Dreamer 运行窗口" description="后台规划的计划运行时间窗口，例如 02:00-06:00。">
+              <Input
+                value={asString(entry.schedule)}
+                onChange={(event) => updateAgent({ schedule: event.target.value })}
+                placeholder="02:00-06:00"
+                className="h-9 font-mono"
+              />
+            </AgentSettingRow>
+            <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，留空则继承模型或提供商默认。">
+              <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
+            </AgentSettingRow>
+          </>
+        ) : null}
+
+        {id === 'sidekick' ? (
+          <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，留空则继承模型或提供商默认。">
+            <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
+          </AgentSettingRow>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-1.5 lg:justify-end">
-        <Button type="button" size="icon" variant="ghost" onClick={() => onEdit(id)} title={`编辑 ${label}`}>
-          <RiEditLine className="h-4 w-4" />
-        </Button>
-        <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(id)} disabled={!normalizedEntry} title="删除覆盖">
-          <RiRestartLine className="h-4 w-4" />
-        </Button>
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 px-4 py-2">
+        {normalizedEntry ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : <Badge className="bg-muted text-muted-foreground">继承默认</Badge>}
+        {projectOverrides.has(id) ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
       </div>
     </div>
   );
@@ -650,9 +852,6 @@ function FallbackEditor({
       {
         id: `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         model: '',
-        variant: '',
-        maxTokens: '',
-        originalType: 'string',
       },
     ]);
   };
@@ -662,7 +861,7 @@ function FallbackEditor({
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="typography-ui-label text-foreground">fallback_models</div>
-          <div className="typography-micro text-muted-foreground">按顺序尝试；清空列表会删除这个字段。</div>
+          <div className="typography-micro text-muted-foreground">Magic Context 只支持模型字符串；按顺序保存为 string[]。</div>
         </div>
         <Button type="button" size="xs" variant="outline" onClick={addRow}>
           <RiAddLine className="h-3.5 w-3.5" />
@@ -680,15 +879,12 @@ function FallbackEditor({
         const parsed = parseModelRef(row.model);
         return (
           <div key={row.id} className="rounded-md border border-border/70 p-2">
-            <div className="grid gap-2 xl:grid-cols-[minmax(240px,1fr)_110px_96px_96px_96px_80px] xl:items-center">
+            <div className="grid gap-2 xl:grid-cols-[minmax(240px,1fr)_80px] xl:items-center">
               <div className="min-w-0 space-y-1.5">
                 <ModelSelector
                   providerId={parsed.providerId}
                   modelId={parsed.modelId}
-                  onChange={(providerId, modelId) => updateRow(row.id, {
-                    model: joinModelRef(providerId, modelId),
-                    originalType: row.originalType,
-                  })}
+                  onChange={(providerId, modelId) => updateRow(row.id, { model: joinModelRef(providerId, modelId) })}
                   placeholder="选择 fallback"
                   className="h-7 max-w-full"
                 />
@@ -699,30 +895,6 @@ function FallbackEditor({
                   className="h-7 font-mono typography-meta"
                 />
               </div>
-              <Input
-                value={row.variant}
-                onChange={(event) => updateRow(row.id, { variant: event.target.value, originalType: 'object' })}
-                placeholder="variant"
-                className="h-7 typography-meta"
-              />
-              <Input
-                value={row.maxTokens}
-                onChange={(event) => updateRow(row.id, { maxTokens: event.target.value, originalType: 'object' })}
-                placeholder="maxTokens"
-                className="h-7 typography-meta"
-              />
-              <Input
-                value={row.temperature ?? ''}
-                onChange={(event) => updateRow(row.id, { temperature: event.target.value, originalType: 'object' })}
-                placeholder="temp"
-                className="h-7 typography-meta"
-              />
-              <Input
-                value={row.top_p ?? ''}
-                onChange={(event) => updateRow(row.id, { top_p: event.target.value, originalType: 'object' })}
-                placeholder="top_p"
-                className="h-7 typography-meta"
-              />
               <div className="flex items-center justify-end gap-1">
                 <Button type="button" size="icon" variant="ghost" onClick={() => moveRow(index, -1)} disabled={index === 0}>
                   <RiArrowUpSLine className="h-4 w-4" />
@@ -826,6 +998,10 @@ function AgentAdvancedDialog({
 
               <Field label="variant">
                 <Input value={asString(entry.variant)} onChange={(event) => updateAgent({ variant: event.target.value })} placeholder="custom variant" className="h-8" />
+              </Field>
+
+              <Field label="thinking_level" hint="Pi 专用；OpenCode 下通常用 variant，留空则不写。">
+                <Input value={asString(entry.thinking_level)} onChange={(event) => updateAgent({ thinking_level: event.target.value })} placeholder="off / low / medium / high" className="h-8" />
               </Field>
 
               <Field label="temperature">
@@ -998,6 +1174,72 @@ function AgentAdvancedDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const stringArrayToText = (value: unknown): string => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').join('\n') : ''
+);
+
+const textToStringArray = (value: string): string[] | undefined => {
+  const entries = value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return entries.length > 0 ? Array.from(new Set(entries)) : undefined;
+};
+
+function SystemPromptInjectionSection({
+  draft,
+  projectOverrides,
+}: {
+  draft: MagicContextConfig;
+  projectOverrides: Set<string>;
+}) {
+  const updateDraftPath = useMagicContextConfigStore((state) => state.updateDraftPath);
+  const resetKey = useMagicContextConfigStore((state) => state.resetKey);
+  const injection = asRecord(draft.system_prompt_injection);
+  const normalized = normalizeMagicContextConfig(draft);
+
+  return (
+    <Section title="System Prompt Injection" description="控制 Magic Context 是否向系统提示注入上下文签名，以及哪些签名应跳过。">
+      <div className="grid gap-3 border-t border-border/50 px-3 py-3 first:border-t-0 lg:grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.2fr)]">
+        <div className="rounded-md border border-border/70 p-3">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <div className="typography-ui-label font-medium text-foreground">system_prompt_injection</div>
+              <div className="typography-micro text-muted-foreground">关闭后不再注入 Magic Context 的 system prompt 扩展。</div>
+            </div>
+            <div className="flex items-center gap-1">
+              {normalized.system_prompt_injection ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
+              {projectOverrides.has('system_prompt_injection') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('system_prompt_injection')} title="删除覆盖">
+                <RiRestartLine className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <Field label="enabled">
+            <BooleanOverrideSelect
+              value={injection.enabled}
+              onChange={(value) => updateDraftPath(['system_prompt_injection', 'enabled'], value)}
+            />
+          </Field>
+        </div>
+
+        <div className="rounded-md border border-border/70 p-3">
+          <Field label="skip_signatures" hint="每行一个 system prompt 签名；空列表会删除这个字段。">
+            <Textarea
+              value={stringArrayToText(injection.skip_signatures)}
+              onChange={(event) => updateDraftPath(['system_prompt_injection', 'skip_signatures'], textToStringArray(event.target.value))}
+              rows={5}
+              outerClassName="min-h-[132px]"
+              className="font-mono typography-meta"
+              placeholder={'signature-a\nsignature-b'}
+            />
+          </Field>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -1260,8 +1502,15 @@ export const MagicContextPage: React.FC = () => {
   }, [activeProjectId, loadConfig]);
 
   const hasChanges = hasMagicContextDraftChanges(initialDraft, draft);
-  const projectOverrides = React.useMemo(() => new Set(config?.project.overriddenKeys ?? []), [config]);
-  const projectOverrideCount = config?.project.overriddenKeys.length ?? 0;
+  const ignoredProjectKeys = React.useMemo(
+    () => config?.diagnostics?.project?.ignoredUserOnlyKeys ?? [],
+    [config],
+  );
+  const projectOverrides = React.useMemo(() => {
+    const ignored = new Set(ignoredProjectKeys);
+    return new Set((config?.project.overriddenKeys ?? []).filter((key) => !ignored.has(key)));
+  }, [config, ignoredProjectKeys]);
+  const projectOverrideCount = projectOverrides.size;
 
   const handleReload = async () => {
     if (hasChanges && typeof window !== 'undefined' && !window.confirm('重新加载会丢弃未保存的更改，继续吗？')) {
@@ -1311,6 +1560,11 @@ export const MagicContextPage: React.FC = () => {
                   项目覆盖 {projectOverrideCount}
                 </Badge>
               ) : null}
+              {ignoredProjectKeys.length > 0 ? (
+                <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">
+                  项目忽略 {ignoredProjectKeys.join(', ')}
+                </Badge>
+              ) : null}
               {hasChanges ? <Badge className="bg-primary/10 text-primary">有未保存更改</Badge> : null}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
@@ -1322,6 +1576,7 @@ export const MagicContextPage: React.FC = () => {
               </div>
             ) : null}
             {error ? <div className="typography-micro text-[var(--status-error)]">{error}</div> : null}
+            <DiagnosticsPanel config={config} ignoredProjectKeys={ignoredProjectKeys} />
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1346,7 +1601,7 @@ export const MagicContextPage: React.FC = () => {
 
       <Section title="Core" description="主开关、ctx_reduce、缓存等待和自动清理阈值。">
         <BooleanRow field="enabled" label="enabled" description="Magic Context 主开关。" draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="auto_update" label="auto_update" description="用户级插件自更新开关。" draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="auto_update" label="auto_update" description="用户级插件自更新开关；项目级 auto_update 会被 Magic Context 忽略。" draft={draft} projectOverrides={projectOverrides} />
         <BooleanRow field="ctx_reduce_enabled" label="ctx_reduce_enabled" description="关闭后隐藏 ctx_reduce 工具，但保留启发式清理和记忆能力。" draft={draft} projectOverrides={projectOverrides} />
         <BooleanRow field="drop_tool_structure" label="drop_tool_structure" description="删除工具输出时是否完全移除工具结构。" draft={draft} projectOverrides={projectOverrides} />
         <BooleanRow field="compaction_markers" label="compaction_markers" description="historian 发布后向 OpenCode DB 写入 compaction 边界。" draft={draft} projectOverrides={projectOverrides} />
@@ -1366,25 +1621,20 @@ export const MagicContextPage: React.FC = () => {
       </Section>
 
       <Section title="Agents" description="配置 Magic Context 内部的 historian、dreamer、sidekick 模型路由。">
-        <div className="hidden grid-cols-[minmax(190px,0.9fr)_minmax(220px,1fr)_minmax(280px,1.1fr)_82px_98px_82px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground lg:grid">
-          <div>名称</div>
-          <div>默认 fallback 链</div>
-          <div>当前模型</div>
-          <div>fallback</div>
-          <div>状态</div>
-          <div className="text-right">操作</div>
+        <div className="grid gap-3 border-t border-border/50 p-3 first:border-t-0">
+          {AGENT_DEFINITIONS.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              {...agent}
+              draft={draft}
+              projectOverrides={projectOverrides}
+              onEdit={setEditingAgent}
+            />
+          ))}
         </div>
-        {AGENT_DEFINITIONS.map((agent) => (
-          <AgentRow
-            key={agent.id}
-            {...agent}
-            draft={draft}
-            projectOverrides={projectOverrides}
-            onEdit={setEditingAgent}
-          />
-        ))}
       </Section>
 
+      <SystemPromptInjectionSection draft={draft} projectOverrides={projectOverrides} />
       <EmbeddingMemorySection draft={draft} projectOverrides={projectOverrides} />
       <OperationsSection draft={draft} projectOverrides={projectOverrides} />
 
