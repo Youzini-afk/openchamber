@@ -258,12 +258,71 @@ type DesktopServicesMenuProps = {
   isUsageRefreshSpinning: boolean;
   hasRateLimits: boolean;
   rateLimitGroups: RateLimitGroup[];
+  tokenUsage: SessionContextUsage | null;
   expandedFamilies: Record<string, string[]>;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
   shortcutLabel: (actionId: string) => string;
   showDevShutdown: boolean;
   isDevShutdownInFlight: boolean;
   onDevShutdown: () => Promise<void>;
+};
+
+const formatTokenCount = (value: number | undefined): string => {
+  const safeValue = typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+  if (safeValue >= 1_000_000) {
+    return `${(safeValue / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (safeValue >= 10_000) {
+    return `${Math.round(safeValue / 1000)}K`;
+  }
+  if (safeValue >= 1000) {
+    return `${(safeValue / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return String(Math.round(safeValue));
+};
+
+const TokenUsageFallback: React.FC<{ usage: SessionContextUsage }> = ({ usage }) => {
+  const { t } = useI18n();
+  const cacheTokens = (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  const rows = [
+    { key: 'input', label: t('header.services.tokenUsage.input'), value: usage.inputTokens ?? 0 },
+    { key: 'cache', label: t('header.services.tokenUsage.cache'), value: cacheTokens },
+    { key: 'output', label: t('header.services.tokenUsage.output'), value: usage.outputTokens ?? 0 },
+    { key: 'reasoning', label: t('header.services.tokenUsage.reasoning'), value: usage.reasoningTokens ?? 0 },
+  ];
+
+  return (
+    <div className="px-4 py-4">
+      <div className="rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-secondary)]/35 px-3 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="typography-ui-label font-semibold text-foreground">{t('header.services.tokenUsage.title')}</div>
+            <div className="typography-micro text-muted-foreground">{t('header.services.tokenUsage.description')}</div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="typography-micro text-muted-foreground">{t('header.services.tokenUsage.total')}</div>
+            <div className="typography-ui-header tabular-nums text-foreground">{formatTokenCount(usage.totalTokens)}</div>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {rows.map((row) => (
+            <div key={row.key} className="rounded-md border border-[var(--interactive-border)]/70 px-2.5 py-2">
+              <div className="typography-micro text-muted-foreground">{row.label}</div>
+              <div className="typography-ui-label tabular-nums text-foreground">{formatTokenCount(row.value)}</div>
+            </div>
+          ))}
+        </div>
+        {cacheTokens > 0 ? (
+          <div className="mt-2 typography-micro text-muted-foreground">
+            {t('header.services.tokenUsage.cacheBreakdown', {
+              read: formatTokenCount(usage.cacheReadTokens ?? 0),
+              write: formatTokenCount(usage.cacheWriteTokens ?? 0),
+            })}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 };
 
 const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
@@ -287,6 +346,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   isUsageRefreshSpinning,
   hasRateLimits,
   rateLimitGroups,
+  tokenUsage,
   expandedFamilies,
   toggleFamilyExpanded,
   shortcutLabel,
@@ -295,6 +355,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   onDevShutdown,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
+  const hasTokenUsageFallback = !hasRateLimits && Boolean(tokenUsage && tokenUsage.totalTokens > 0);
   return (
     <DropdownMenu
       open={isDesktopServicesOpen}
@@ -385,11 +446,14 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
           <div className="overflow-x-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--interactive-border)] px-4 py-2.5">
               <div className="flex min-w-0 items-baseline gap-2">
-                <span className="typography-ui-header font-semibold text-foreground">{t('header.services.rateLimits')}</span>
+                <span className="typography-ui-header font-semibold text-foreground">
+                  {hasTokenUsageFallback ? t('header.services.tokenUsage.title') : t('header.services.rateLimits')}
+                </span>
                 <span className="truncate typography-micro text-muted-foreground">{formatTime(quotaLastUpdated)}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="h-7 w-[10.5rem]">
+                {hasRateLimits ? (
+                  <div className="h-7 w-[10.5rem]">
                   <SortableTabsStrip
                     items={quotaDisplayTabItems}
                     activeId={quotaDisplayMode}
@@ -399,7 +463,8 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                     activePillInsetClassName="gap-0.5 px-px py-0"
                     className="h-full"
                   />
-                </div>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   className={cn(
@@ -416,7 +481,9 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
               </div>
             </div>
 
-            {!hasRateLimits ? (
+            {hasTokenUsageFallback && tokenUsage ? (
+              <TokenUsageFallback usage={tokenUsage} />
+            ) : !hasRateLimits ? (
               <div className="px-4 py-5 text-center">
                 <span className="typography-ui-label text-muted-foreground">{t('header.services.noRateLimits')}</span>
               </div>
@@ -559,6 +626,11 @@ const isSameContextUsage = (
   if (!a || !b) return false;
 
   return a.totalTokens === b.totalTokens
+    && (a.inputTokens ?? 0) === (b.inputTokens ?? 0)
+    && (a.outputTokens ?? 0) === (b.outputTokens ?? 0)
+    && (a.reasoningTokens ?? 0) === (b.reasoningTokens ?? 0)
+    && (a.cacheReadTokens ?? 0) === (b.cacheReadTokens ?? 0)
+    && (a.cacheWriteTokens ?? 0) === (b.cacheWriteTokens ?? 0)
     && a.percentage === b.percentage
     && a.contextLimit === b.contextLimit
     && (a.outputLimit ?? 0) === (b.outputLimit ?? 0)
@@ -958,6 +1030,7 @@ export const Header: React.FC<HeaderProps> = ({
     return groups;
   }, [dropdownProviderIds, quotaResults, selectedModels, t]);
   const hasRateLimits = rateLimitGroups.length > 0;
+  const hasTokenUsageFallback = !hasRateLimits && Boolean(stableDesktopContextUsage && stableDesktopContextUsage.totalTokens > 0);
   React.useEffect(() => {
     void loadQuotaSettings();
   }, [loadQuotaSettings]);
@@ -1767,6 +1840,7 @@ export const Header: React.FC<HeaderProps> = ({
         isUsageRefreshSpinning={isUsageRefreshSpinning}
         hasRateLimits={hasRateLimits}
         rateLimitGroups={rateLimitGroups}
+        tokenUsage={stableDesktopContextUsage}
         expandedFamilies={expandedFamilies}
         toggleFamilyExpanded={toggleFamilyExpanded}
         shortcutLabel={shortcutLabel}
@@ -2105,13 +2179,16 @@ export const Header: React.FC<HeaderProps> = ({
                       <div className="border-b border-[var(--interactive-border)]">
                         <div className="flex items-center justify-between gap-3 px-4 py-3">
                           <div className="flex flex-col min-w-0 gap-0.5">
-                            <span className="typography-ui-header font-semibold text-foreground">{t('header.services.rateLimits')}</span>
+                            <span className="typography-ui-header font-semibold text-foreground">
+                              {hasTokenUsageFallback ? t('header.services.tokenUsage.title') : t('header.services.rateLimits')}
+                            </span>
                             <span className="truncate typography-micro text-muted-foreground">
                               {formatTime(quotaLastUpdated)}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <div className="flex items-center h-6">
+                            {hasRateLimits ? (
+                              <div className="flex items-center h-6">
                               <button
                                 type="button"
                                 onClick={() => handleDisplayModeChange('usage')}
@@ -2137,7 +2214,8 @@ export const Header: React.FC<HeaderProps> = ({
                               >
                                 {t('header.services.remaining')}
                               </button>
-                            </div>
+                              </div>
+                            ) : null}
                             <button
                               type="button"
                               className={cn(
@@ -2155,7 +2233,9 @@ export const Header: React.FC<HeaderProps> = ({
                         </div>
                       </div>
 
-                      {!hasRateLimits && (
+                      {hasTokenUsageFallback && stableDesktopContextUsage ? (
+                        <TokenUsageFallback usage={stableDesktopContextUsage} />
+                      ) : !hasRateLimits && (
                         <div className="px-4 py-6 text-center">
                           <span className="typography-ui-label text-muted-foreground">{t('header.services.noRateLimits')}</span>
                         </div>

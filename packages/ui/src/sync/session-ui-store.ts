@@ -567,7 +567,22 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const messages = getSyncMessages(sessionId)
     if (messages.length === 0) return null
 
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+    type AssistantTokens = {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: { read?: number; write?: number };
+    }
+    const toTokenCount = (value: unknown): number => (
+      typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+    )
+    const getTokenTotal = (tokens: AssistantTokens): number => (
+      toTokenCount(tokens.input)
+      + toTokenCount(tokens.output)
+      + toTokenCount(tokens.reasoning)
+      + toTokenCount(tokens.cache?.read)
+      + toTokenCount(tokens.cache?.write)
+    )
     let lastTokens: AssistantTokens | undefined
     let lastMessageId: string | undefined
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -575,7 +590,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (msg.role !== "assistant") continue
       const tokens = (msg as { tokens?: AssistantTokens }).tokens
       if (!tokens) continue
-      const total = tokens.input + tokens.output + tokens.reasoning + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0)
+      const total = getTokenTotal(tokens)
       if (total > 0) {
         lastTokens = tokens
         lastMessageId = msg.id
@@ -585,13 +600,23 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     if (!lastTokens) return null
 
-    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0)
+    const inputTokens = toTokenCount(lastTokens.input)
+    const outputTokens = toTokenCount(lastTokens.output)
+    const reasoningTokens = toTokenCount(lastTokens.reasoning)
+    const cacheReadTokens = toTokenCount(lastTokens.cache?.read)
+    const cacheWriteTokens = toTokenCount(lastTokens.cache?.write)
+    const totalTokens = inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens
     const thresholdLimit = contextLimit > 0 ? contextLimit : 200000
     const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined
+    const normalizedOutput = outputLimit > 0 ? Math.round((outputTokens / outputLimit) * 100) : undefined
 
     return {
       totalTokens,
+      inputTokens,
+      outputTokens,
+      reasoningTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
       percentage,
       contextLimit: contextLimit || 0,
       outputLimit: outputLimit || undefined,
