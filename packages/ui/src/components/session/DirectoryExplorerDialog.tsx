@@ -11,9 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useGitIdentitiesStore } from '@/stores/useGitIdentitiesStore';
 import { useFileSystemAccess } from '@/hooks/useFileSystemAccess';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
+import { IdentityDropdown } from '@/components/views/git/GitHeader';
 import {
   RiArrowDownSLine,
   RiArrowLeftSLine,
@@ -164,6 +166,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
   const projects = useProjectsStore((s) => s.projects);
   const addProject = useProjectsStore((s) => s.addProject);
+  const gitIdentityProfiles = useGitIdentitiesStore((s) => s.profiles);
+  const globalGitIdentity = useGitIdentitiesStore((s) => s.globalIdentity);
+  const defaultGitIdentityId = useGitIdentitiesStore((s) => s.defaultGitIdentityId);
+  const loadGitIdentityProfiles = useGitIdentitiesStore((s) => s.loadProfiles);
+  const loadGlobalGitIdentity = useGitIdentitiesStore((s) => s.loadGlobalIdentity);
+  const loadDefaultGitIdentityId = useGitIdentitiesStore((s) => s.loadDefaultGitIdentityId);
   const showHidden = useDirectoryShowHidden();
   const { isDesktop, requestAccess, startAccessing } = useFileSystemAccess();
   const { isMobile } = useDeviceInfo();
@@ -179,8 +187,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const [isConfirming, setIsConfirming] = React.useState(false);
   const [isOpeningFinder, setIsOpeningFinder] = React.useState(false);
   const [addButtonWidth, setAddButtonWidth] = React.useState(0);
+  const [isCloneMode, setIsCloneMode] = React.useState(false);
+  const [cloneRemoteUrl, setCloneRemoteUrl] = React.useState('');
+  const [selectedGitIdentityId, setSelectedGitIdentityId] = React.useState<string | null>(null);
 
   const explorerRootDirectory = dialogHomeDirectory || homeDirectory;
+  const canUseCloneMode = mode === 'add-project';
 
   const addedProjectPaths = React.useMemo(() => new Set(
     projects
@@ -195,6 +207,9 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     setHighlightedIndex(0);
     setIsConfirming(false);
     setIsOpeningFinder(false);
+    setIsCloneMode(false);
+    setCloneRemoteUrl('');
+    setSelectedGitIdentityId(null);
     requestAnimationFrame(() => focusPathInput(inputRef.current));
 
     let cancelled = false;
@@ -209,6 +224,42 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       cancelled = true;
     };
   }, [homeDirectory, initialPath, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    void loadGitIdentityProfiles();
+    void loadGlobalGitIdentity();
+    void loadDefaultGitIdentityId();
+  }, [loadDefaultGitIdentityId, loadGitIdentityProfiles, loadGlobalGitIdentity, open]);
+
+  const availableGitIdentities = React.useMemo(() => {
+    const unique = new Map<string, NonNullable<typeof globalGitIdentity>>();
+    if (globalGitIdentity) {
+      unique.set(globalGitIdentity.id, globalGitIdentity);
+    }
+    for (const profile of gitIdentityProfiles) {
+      unique.set(profile.id, profile);
+    }
+    return Array.from(unique.values());
+  }, [gitIdentityProfiles, globalGitIdentity]);
+
+  React.useEffect(() => {
+    if (!open || !isCloneMode || selectedGitIdentityId !== null) return;
+    const defaultId = typeof defaultGitIdentityId === 'string' ? defaultGitIdentityId.trim() : '';
+    if (defaultId && availableGitIdentities.some((identity) => identity.id === defaultId)) {
+      setSelectedGitIdentityId(defaultId);
+      return;
+    }
+    const firstSshIdentity = availableGitIdentities.find((identity) => identity.authType === 'ssh' || identity.sshKey);
+    if (firstSshIdentity) {
+      setSelectedGitIdentityId(firstSshIdentity.id);
+    }
+  }, [availableGitIdentities, defaultGitIdentityId, isCloneMode, open, selectedGitIdentityId]);
+
+  const selectedGitIdentity = React.useMemo(
+    () => availableGitIdentities.find((identity) => identity.id === selectedGitIdentityId) ?? null,
+    [availableGitIdentities, selectedGitIdentityId]
+  );
 
   const browseDirectoryDisplayPath = React.useMemo(() => getBrowseDirectoryPath(query), [query]);
   const browseFilterQuery = React.useMemo(
@@ -308,6 +359,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     )
   );
   const canAddProject = !isConfirming && !isOpeningFinder && !isAlreadyAdded && Boolean(targetPath);
+  const canSubmitClone = canAddProject && cloneRemoteUrl.trim().length > 0;
   const highlightedRow = rows[highlightedIndex] ?? null;
   const hasHighlightedBrowseItem = Boolean(
     highlightedRow && (highlightedRow.type === 'up' || (highlightedRow.type === 'directory' && !highlightedRow.disabled))
@@ -317,6 +369,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     : 'Ctrl';
   const submitActionLabel = isAlreadyAdded
     ? t('directoryExplorerDialog.actions.alreadyAdded')
+    : canUseCloneMode && isCloneMode
+      ? isConfirming
+        ? t('directoryExplorerDialog.actions.cloning')
+        : t('directoryExplorerDialog.actions.cloneAndAdd')
+    : isConfirming && mode === 'add-project'
+      ? t('directoryExplorerDialog.actions.adding')
     : confirmLabel
       || (mode === 'select-directory'
         ? t('directoryExplorerDialog.actions.selectFolder')
@@ -362,6 +420,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     if (!target || isConfirming) return;
     const normalized = normalizeDirectoryPath(target);
     if (mode === 'add-project' && normalized && addedProjectPaths.has(normalized)) return;
+    let selectedTarget = target;
 
     setIsConfirming(true);
     try {
@@ -371,11 +430,23 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         return;
       }
 
-      const shouldCreateSelection = shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath);
-      if (shouldCreateSelection) {
+      const shouldCreateSelection = !isCloneMode && shouldCreateTarget && normalizeDirectoryPath(target) === normalizeDirectoryPath(targetPath);
+      if (canUseCloneMode && isCloneMode) {
+        const remoteUrl = cloneRemoteUrl.trim();
+        if (!remoteUrl) {
+          toast.error(t('directoryExplorerDialog.toast.cloneUrlRequired'));
+          return;
+        }
+        const result = await opencodeClient.cloneRepository({
+          remoteUrl,
+          destinationPath: target,
+          gitIdentityId: selectedGitIdentity?.id ?? null,
+        });
+        selectedTarget = result.path;
+      } else if (shouldCreateSelection) {
         await opencodeClient.createDirectory(target, { allowOutsideWorkspace: true });
       }
-      const added = addProject(target);
+      const added = addProject(selectedTarget);
       if (!added) {
         toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
           description: t('directoryExplorerDialog.toast.selectValidDirectoryPath'),
@@ -390,7 +461,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     } finally {
       setIsConfirming(false);
     }
-  }, [addProject, addedProjectPaths, handleClose, isConfirming, mode, onSelectDirectory, shouldCreateTarget, targetPath, t]);
+  }, [addProject, addedProjectPaths, canUseCloneMode, cloneRemoteUrl, handleClose, isCloneMode, isConfirming, mode, onSelectDirectory, selectedGitIdentity?.id, shouldCreateTarget, targetPath, t]);
 
   const browseToDisplayPath = React.useCallback((displayPath: string) => {
     setQuery(ensureBrowseDirectoryPath(displayPath));
@@ -482,36 +553,59 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   );
 
   const inputSection = (
-    <div className="relative px-2.5 py-1.5">
-      <RiFolderAddLine className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/80" />
-      <Input
-        ref={inputRef}
-        value={query}
-        onChange={(event) => setQuery(normalizeSeparators(event.target.value))}
-        onKeyDown={handleKeyDown}
-        placeholder={t('directoryExplorerDialog.pathInput.placeholder')}
-        className="border-transparent bg-transparent pl-9 font-mono typography-ui-label shadow-none focus-visible:ring-0"
-        style={!isMobile && addButtonWidth > 0 ? { paddingRight: `${addButtonWidth + 24}px` } : undefined}
-        spellCheck={false}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-      />
-      {!isMobile ? (
-        <Button
-          ref={addButtonRef}
-          variant="outline"
-          size="xs"
-          tabIndex={-1}
-          className="absolute right-4 top-1/2 h-7 -translate-y-1/2 gap-1 px-2 typography-meta"
-          disabled={!canAddProject}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void finalizeSelection(targetPath)}
-          title={submitActionLabel}
-        >
-          {submitActionLabel}
-        </Button>
+    <div className="px-2.5 py-1.5">
+      {canUseCloneMode && isCloneMode ? (
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <Input
+            value={cloneRemoteUrl}
+            onChange={(event) => setCloneRemoteUrl(event.target.value)}
+            placeholder={t('directoryExplorerDialog.clone.remoteUrlPlaceholder')}
+            className="min-w-0 flex-1 border-border/60 bg-[var(--surface-elevated)] font-mono typography-ui-label shadow-none"
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+          />
+          <IdentityDropdown
+            activeProfile={selectedGitIdentity}
+            identities={availableGitIdentities}
+            onSelect={(profile) => setSelectedGitIdentityId(profile.id)}
+            isApplying={isConfirming}
+            iconOnly
+          />
+        </div>
       ) : null}
+      <div className="relative">
+        <RiFolderAddLine className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/80" />
+        <Input
+          ref={inputRef}
+          value={query}
+          onChange={(event) => setQuery(normalizeSeparators(event.target.value))}
+          onKeyDown={handleKeyDown}
+          placeholder={t('directoryExplorerDialog.pathInput.placeholder')}
+          className="border-transparent bg-transparent pl-9 font-mono typography-ui-label shadow-none focus-visible:ring-0"
+          style={!isMobile && addButtonWidth > 0 ? { paddingRight: `${addButtonWidth + 24}px` } : undefined}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+        />
+        {!isMobile ? (
+          <Button
+            ref={addButtonRef}
+            variant="outline"
+            size="xs"
+            tabIndex={-1}
+            className="absolute right-1.5 top-1/2 h-7 -translate-y-1/2 gap-1 px-2 typography-meta"
+            disabled={canUseCloneMode && isCloneMode ? !canSubmitClone : !canAddProject}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void finalizeSelection(targetPath)}
+            title={submitActionLabel}
+          >
+            {submitActionLabel}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 
@@ -602,10 +696,6 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           ? t('directoryExplorerDialog.footer.confirm')
           : t('directoryExplorerDialog.footer.add')}
       </span>
-      <span className="inline-flex items-center gap-1">
-        <span>Esc</span>
-        {t('directoryExplorerDialog.footer.close')}
-      </span>
     </div>
   );
 
@@ -614,15 +704,17 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       {!isMobile ? footerHints : null}
       <div className={cn('flex w-full flex-row justify-end gap-2 sm:w-auto', isMobile && 'justify-stretch')}>
         {isDesktop ? (
-          <Button variant="ghost" size="xs" onClick={handleOpenInFinder} disabled={isConfirming || isOpeningFinder}>
+          <Button variant="ghost" size="xs" onClick={handleOpenInFinder} disabled={isConfirming || isOpeningFinder || (canUseCloneMode && isCloneMode)}>
             {isOpeningFinder ? t('directoryExplorerDialog.actions.openingFinder') : t('directoryExplorerDialog.actions.openInFinder')}
           </Button>
         ) : null}
-        <Button variant="ghost" size="xs" onClick={handleClose} disabled={isConfirming || isOpeningFinder} className={cn(isMobile && 'flex-1')}>
-          {t('directoryExplorerDialog.actions.cancel')}
-        </Button>
+        {canUseCloneMode ? (
+          <Button variant="ghost" size="xs" onClick={() => setIsCloneMode((value) => !value)} disabled={isConfirming || isOpeningFinder} className={cn(isMobile && 'flex-1')}>
+            {isCloneMode ? t('directoryExplorerDialog.actions.addLocalProject') : t('directoryExplorerDialog.actions.cloneRepository')}
+          </Button>
+        ) : null}
         {isMobile ? (
-          <Button size="xs" onClick={() => void finalizeSelection(targetPath)} disabled={!canAddProject} className="flex-1">
+          <Button size="xs" onClick={() => void finalizeSelection(targetPath)} disabled={canUseCloneMode && isCloneMode ? !canSubmitClone : !canAddProject} className="flex-1">
             {submitActionLabel}
           </Button>
         ) : null}
