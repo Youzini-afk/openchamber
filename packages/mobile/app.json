@@ -28,7 +28,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./icon.png",
         "backgroundColor": "#111111"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -42,8 +46,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
+        "projectId": "15d58729-e6c0-40f2-9fd3-0e60a66c5383"
       }
-    }
+    },
+    "owner": "youzini"
   }
 }
