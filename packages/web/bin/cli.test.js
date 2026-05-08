@@ -3,7 +3,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
-import { parseArgs } from './cli.js';
+import { isProcessRunning, parseArgs } from './cli.js';
 
 describe('cli args', () => {
   it('accepts legacy daemon flags as no-ops', () => {
@@ -60,5 +60,29 @@ describe('cli entry detection', () => {
     };
 
     expect(normalizeCliEntryPath(unresolvedPath, realpath)).toBe(path.resolve(unresolvedPath));
+  });
+});
+
+describe('process detection', () => {
+  it('does not treat zombie processes as running instances on linux', () => {
+    const kill = (pid, signal) => {
+      expect(pid).toBe(27);
+      expect(signal).toBe(0);
+      return true;
+    };
+    const readFile = (filePath, encoding) => {
+      expect(filePath).toBe('/proc/27/stat');
+      expect(encoding).toBe('utf8');
+      return '27 (bun) Z 1 27 27 0 -1 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 0';
+    };
+
+    expect(isProcessRunning(27, { platform: 'linux', kill, readFile })).toBe(false);
+  });
+
+  it('treats live processes as running when proc state is not zombie', () => {
+    const kill = () => true;
+    const readFile = () => '27 (bun) S 1 27 27 0 -1 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 0';
+
+    expect(isProcessRunning(27, { platform: 'linux', kill, readFile })).toBe(true);
   });
 });

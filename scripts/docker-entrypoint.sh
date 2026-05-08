@@ -6,6 +6,9 @@ HOME="/home/openchamber"
 OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-${HOME}/.config/opencode}"
 export OPENCODE_CONFIG_DIR
 
+OPENCHAMBER_DATA_DIR="${OPENCHAMBER_DATA_DIR:-${HOME}/.config/openchamber}"
+export OPENCHAMBER_DATA_DIR
+
 SSH_DIR="${HOME}/.ssh"
 SSH_PRIVATE_KEY_PATH="${SSH_DIR}/id_ed25519"
 SSH_PUBLIC_KEY_PATH="${SSH_PRIVATE_KEY_PATH}.pub"
@@ -64,14 +67,20 @@ export OPENCHAMBER_HOST
 
 echo "[entrypoint] starting..."
 
+# PID/instance files are runtime state. In container deployments the data dir can
+# be persisted across pod restarts while the PID namespace is recreated, so an
+# old PID can point at an unrelated process in the new container and make the CLI
+# think OpenChamber is already running. Clear stale runtime files before start.
+if [ -d "${OPENCHAMBER_DATA_DIR}/run" ]; then
+  rm -f "${OPENCHAMBER_DATA_DIR}"/run/openchamber-*.pid "${OPENCHAMBER_DATA_DIR}"/run/openchamber-*.json 2>/dev/null || true
+fi
+
 if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
 
-set -- bun packages/web/bin/cli.js
+set -- bun packages/web/bin/cli.js --foreground
 if [ -n "${UI_PASSWORD:-}" ]; then
   set -- "$@" --ui-password "$UI_PASSWORD"
 fi
-"$@"
-
-exec bun packages/web/bin/cli.js logs
+exec "$@"

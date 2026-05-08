@@ -1779,13 +1779,29 @@ function removeInstanceFile(instanceFilePath) {
   }
 }
 
-function isProcessRunning(pid) {
+function isProcessRunning(pid, deps = {}) {
+  const kill = typeof deps.kill === 'function' ? deps.kill : process.kill.bind(process);
+  const platform = typeof deps.platform === 'string' ? deps.platform : process.platform;
+  const readFile = typeof deps.readFile === 'function' ? deps.readFile : fs.readFileSync;
+
   try {
-    process.kill(pid, 0);
-    return true;
+    kill(pid, 0);
   } catch {
     return false;
   }
+
+  if (platform === 'linux') {
+    try {
+      const stat = readFile(`/proc/${pid}/stat`, 'utf8');
+      const closingParenIndex = stat.lastIndexOf(')');
+      const state = closingParenIndex >= 0 ? stat.slice(closingParenIndex + 2).trim().split(/\s+/)[0] : '';
+      if (state === 'Z') return false;
+    } catch {
+      // If /proc is unavailable or unreadable, fall back to kill(pid, 0).
+    }
+  }
+
+  return true;
 }
 
 function waitForProcessExit(pid, timeoutMs) {
@@ -4980,6 +4996,7 @@ export {
   isValidTunnelDoctorResponse,
   readDesktopLocalPortFromSettings,
   getPidFilePath,
+  isProcessRunning,
   resolveTunnelProviders,
   fetchTunnelProvidersFromPort,
   fetchSystemInfoFromPort,
