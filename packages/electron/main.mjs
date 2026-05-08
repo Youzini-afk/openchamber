@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
+import { createTray, updateTrayMenu } from './tray.mjs';
+import { NotificationListener } from './notification-listener.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -135,6 +137,9 @@ const state = {
   windowGeometryRevisions: new Map(),
   sshStatuses: new Map(),
   sshLogs: new Map(),
+  tray: null,
+  notificationListener: null,
+  trayEnabled: false,
 };
 
 const quitRisk = {
@@ -186,6 +191,10 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
     } catch {
     }
     void sshManager.shutdownAll().catch(() => {});
+    if (state.notificationListener) {
+      state.notificationListener.stop();
+      state.notificationListener = null;
+    }
   }
 };
 
@@ -1410,6 +1419,85 @@ const resolveInitialUrl = async () => {
   return { initialUrl, localOrigin, localUiUrl, bootOutcome };
 };
 
+// ---------------------------------------------------------------------------
+// Tray + background notification listener for remote mode
+// ---------------------------------------------------------------------------
+
+const showOrCreateMainWindow = () => {
+  const windows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  if (windows.length > 0) {
+    const target = state.mainWindow && !state.mainWindow.isDestroyed()
+      ? state.mainWindow
+      : windows[0];
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+    return;
+  }
+  // No windows left — recreate main window with last known URL.
+  if (state.localOrigin || state.bootOutcome?.url) {
+    const config = readDesktopHostsConfig();
+    const localUiUrl = state.sidecarUrl || state.localOrigin;
+    const host = config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID
+      ? config.hosts.find((entry) => entry.id === config.defaultHostId)
+      : null;
+    const targetUrl = host?.url && !state.unreachableHosts.has(host.url) ? host.url : localUiUrl;
+    void createAdditionalWindow(targetUrl);
+  }
+};
+
+const quitFromTray = () => {
+  state.quitRequested = true;
+  if (state.notificationListener) {
+    state.notificationListener.stop();
+    state.notificationListener = null;
+  }
+  app.quit();
+};
+
+const getRemoteMode = () => {
+  const outcome = state.bootOutcome;
+  if (outcome?.target === 'remote' && outcome?.url) return outcome.url;
+  return 'local';
+};
+
+const setupTrayAndListener = (bootOutcome) => {
+  if (bootOutcome?.target !== 'remote') return;
+
+  // Enable tray for remote mode.
+  state.trayEnabled = true;
+  state.tray = createTray({
+    onShowWindow: showOrCreateMainWindow,
+    onQuit: quitFromTray,
+    getMode: getRemoteMode,
+  });
+
+  // Start background SSE notification listener.
+  const config = readDesktopHostsConfig();
+  const host = config.hosts.find((entry) => entry.id === bootOutcome.hostId);
+  const serverUrl = bootOutcome.url || host?.url;
+  if (!serverUrl) return;
+
+  // Resolve password: try host-level password from hosts config, then fall
+  // back to any UI password stored in settings (desktopHosts entries don't
+  // currently persist passwords, but the app may set OPENCHAMBER_UI_PASSWORD).
+  const password = host?.password
+    || readSettingsRoot()?.uiPassword
+    || process.env.OPENCHAMBER_UI_PASSWORD
+    || '';
+
+  state.notificationListener = new NotificationListener({
+    serverUrl,
+    password,
+    onNotification: (payload) => {
+      maybeShowNativeNotification(payload);
+    },
+  });
+  state.notificationListener.start().catch((error) => {
+    log.warn('[electron] notification listener start failed:', error?.message);
+  });
+};
+
 const compareSemver = (left, right) => {
   const a = String(left || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
   const b = String(right || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
@@ -2385,6 +2473,12 @@ app.on('window-all-closed', () => {
     return;
   }
 
+  // When tray is enabled (remote mode), hide windows instead of quitting.
+  // The app stays alive in the system tray to receive notifications.
+  if (state.trayEnabled && !state.quitRequested) {
+    return;
+  }
+
   if (!state.installingUpdate) {
     killSidecar();
     void sshManager.shutdownAll();
@@ -2463,6 +2557,11 @@ app.whenReady().then(async () => {
 
   const { initialUrl, localOrigin, bootOutcome } = await resolveInitialUrl();
   await activateMainWindow(initialUrl, localOrigin, bootOutcome);
+
+  // In remote mode, set up system tray and background notification listener
+  // so the app stays alive when windows are closed and can deliver OS-level
+  // notifications for task completion, errors, and permission requests.
+  setupTrayAndListener(bootOutcome);
 
   // Notify renderer on OS wake-from-sleep so the SSE event pipeline can
   // reconnect immediately instead of waiting for the heartbeat watchdog.
