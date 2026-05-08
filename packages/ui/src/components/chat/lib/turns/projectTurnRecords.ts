@@ -103,7 +103,6 @@ export const projectTurnRecords = (
     const turnByUserId = new Map<string, TurnRecord>();
     const groupedMessageIds = new Set<string>();
     const pendingAssistantByParentId = new Map<string, Array<{ message: ChatMessageEntry; index: number }>>();
-    let currentTurn: TurnRecord | undefined;
 
     const appendAssistantToTurn = (turn: TurnRecord, message: ChatMessageEntry, index: number) => {
         turn.assistantMessages.push(message);
@@ -117,66 +116,64 @@ export const projectTurnRecords = (
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
-        if (role === 'user') {
-            const turnId = message.info.id;
-            const turn: TurnRecord = {
-                turnId,
-                userMessageId: message.info.id,
-                userMessage: message,
-                headerMessageId: undefined,
-                messages: [createTurnMessageRecord(message, index)],
-                assistantMessageIds: [],
-                assistantMessages: [],
-                activityParts: [],
-                activitySegments: [],
-                summary: {},
-                summaryText: undefined,
-                hasTools: false,
-                hasReasoning: false,
-                diffStats: undefined,
-                stream: {
-                    isStreaming: false,
-                    isRetrying: false,
-                },
-            };
-            turns.push(turn);
-            turnByUserId.set(turn.userMessageId, turn);
-            groupedMessageIds.add(message.info.id);
-            currentTurn = turn;
-
-            const pendingAssistants = pendingAssistantByParentId.get(turn.userMessageId);
-            if (pendingAssistants) {
-                pendingAssistants.forEach((pending) => {
-                    appendAssistantToTurn(turn, pending.message, pending.index);
-                });
-                pendingAssistantByParentId.delete(turn.userMessageId);
-            }
+        if (role !== 'user') {
             return;
         }
 
+        const turnId = message.info.id;
+        const turn: TurnRecord = {
+            turnId,
+            userMessageId: message.info.id,
+            userMessage: message,
+            headerMessageId: undefined,
+            messages: [createTurnMessageRecord(message, index)],
+            assistantMessageIds: [],
+            assistantMessages: [],
+            activityParts: [],
+            activitySegments: [],
+            summary: {},
+            summaryText: undefined,
+            hasTools: false,
+            hasReasoning: false,
+            diffStats: undefined,
+            stream: {
+                isStreaming: false,
+                isRetrying: false,
+            },
+        };
+        turns.push(turn);
+        turnByUserId.set(turn.userMessageId, turn);
+        groupedMessageIds.add(message.info.id);
+
+        const pendingAssistants = pendingAssistantByParentId.get(turn.userMessageId);
+        if (pendingAssistants) {
+            pendingAssistants.forEach((pending) => {
+                appendAssistantToTurn(turn, pending.message, pending.index);
+            });
+            pendingAssistantByParentId.delete(turn.userMessageId);
+        }
+    });
+
+    messages.forEach((message, index) => {
+        const role = resolveMessageRole(message);
         if (role !== 'assistant') {
             return;
         }
 
         const parentId = getMessageParentId(message);
+        if (!parentId) {
+            return;
+        }
+
         const parentTurn = parentId ? turnByUserId.get(parentId) : undefined;
-        if (parentId && !parentTurn) {
+        if (!parentTurn) {
             const pendingAssistants = pendingAssistantByParentId.get(parentId) ?? [];
             pendingAssistants.push({ message, index });
             pendingAssistantByParentId.set(parentId, pendingAssistants);
             return;
         }
 
-        const targetTurn = parentTurn ?? currentTurn;
-        if (!targetTurn) {
-            return;
-        }
-
-        appendAssistantToTurn(targetTurn, message, index);
-
-        if (!parentTurn) {
-            currentTurn = targetTurn;
-        }
+        appendAssistantToTurn(parentTurn, message, index);
     });
 
     turns.forEach((turn) => {
@@ -205,6 +202,9 @@ export const projectTurnRecords = (
     const projection = projectTurnIndexes(turns);
     const ungroupedMessageIds = new Set<string>();
     messages.forEach((message) => {
+        if (resolveMessageRole(message) === 'assistant') {
+            return;
+        }
         if (!groupedMessageIds.has(message.info.id)) {
             ungroupedMessageIds.add(message.info.id);
         }
