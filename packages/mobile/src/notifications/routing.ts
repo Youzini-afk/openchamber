@@ -4,7 +4,14 @@ import type { WebView } from 'react-native-webview';
 
 export const getUrlFromNotificationData = (data: Record<string, unknown> | undefined): string | null => {
   const url = data?.url;
-  return typeof url === 'string' && url.length > 0 ? url : null;
+  if (typeof url === 'string' && url.length > 0) {
+    return url;
+  }
+  const sessionId = data?.sessionId;
+  if (typeof sessionId === 'string' && sessionId.length > 0) {
+    return `openchamber://open?sessionId=${encodeURIComponent(sessionId)}`;
+  }
+  return null;
 };
 
 export const routeWebViewToPath = (webViewRef: React.RefObject<WebView | null>, pathOrUrl: string): void => {
@@ -19,6 +26,9 @@ export const routeWebViewToPath = (webViewRef: React.RefObject<WebView | null>, 
 };
 
 export const parseOpenChamberLink = (url: string): string | null => {
+  if (url.startsWith('/')) {
+    return url;
+  }
   const parsed = Linking.parse(url);
   if (parsed.scheme !== 'openchamber') {
     return null;

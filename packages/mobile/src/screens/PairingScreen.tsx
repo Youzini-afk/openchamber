@@ -1,4 +1,5 @@
 import React from 'react';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { completePairing, normalizeServerUrl, parsePairingPayload } from '../api/mobileClient';
 import { getAppVersion, getDeviceName, getDevicePlatform } from '../notifications/push';
@@ -14,6 +15,9 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
   const [payloadText, setPayloadText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = React.useState(false);
+  const [scanned, setScanned] = React.useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
   const pair = React.useCallback(async () => {
     setBusy(true);
@@ -39,10 +43,61 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
     }
   }, [onPaired, payloadText, serverUrl]);
 
+  const openScanner = React.useCallback(async () => {
+    setError(null);
+    if (!permission?.granted) {
+      const nextPermission = await requestPermission();
+      if (!nextPermission.granted) {
+        setError('Camera permission is required to scan pairing QR codes.');
+        return;
+      }
+    }
+    setScanned(false);
+    setScannerOpen(true);
+  }, [permission?.granted, requestPermission]);
+
+  const handleBarcodeScanned = React.useCallback((result: BarcodeScanningResult) => {
+    if (scanned) return;
+    setScanned(true);
+    setScannerOpen(false);
+    setPayloadText(result.data);
+    try {
+      const payload = parsePairingPayload(result.data);
+      if (payload.serverUrl) {
+        setServerUrl(payload.serverUrl);
+      }
+    } catch {
+      // Keep scanned text visible so the user can inspect or edit it.
+    }
+  }, [scanned]);
+
+  if (scannerOpen) {
+    return (
+      <View style={styles.scannerContainer}>
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+        />
+        <View style={styles.scannerOverlay}>
+          <Text style={styles.scannerTitle}>Scan OpenChamber pairing code</Text>
+          <Pressable style={styles.secondaryButton} onPress={() => setScannerOpen(false)}>
+            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>OpenChamber Mobile</Text>
       <Text style={styles.subtitle}>Paste the pairing payload from Settings → Notifications → Mobile App.</Text>
+
+      <Pressable disabled={busy} onPress={() => void openScanner()} style={styles.secondaryButton}>
+        <Text style={styles.secondaryButtonText}>Scan QR code</Text>
+      </Pressable>
 
       <Text style={styles.label}>Server URL</Text>
       <TextInput
@@ -134,5 +189,43 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3a3a3a',
+    marginBottom: 16,
+    paddingHorizontal: 14,
+  },
+  secondaryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  scannerContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  camera: {
+    flex: 1,
+  },
+  scannerOverlay: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: 40,
+    borderRadius: 16,
+    backgroundColor: 'rgba(17,17,17,0.86)',
+    padding: 16,
+  },
+  scannerTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
   },
 });

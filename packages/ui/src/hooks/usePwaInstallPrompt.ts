@@ -4,6 +4,7 @@ import { isWebRuntime } from '@/lib/desktop';
 import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { useI18n } from '@/lib/i18n';
 import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
+import { isMobileAppRuntime } from '@/lib/mobileAppRuntime';
 
 type InstallPromptOutcome = 'accepted' | 'dismissed';
 
@@ -24,7 +25,7 @@ export const usePwaInstallPrompt = () => {
   }, [t]);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !isWebRuntime() || !browserTab) {
+    if (typeof window === 'undefined' || !isWebRuntime() || !browserTab || isMobileAppRuntime()) {
       return;
     }
 

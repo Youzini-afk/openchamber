@@ -47,6 +47,7 @@ import { MCP_OAUTH_CALLBACK_PATH } from '@/components/sections/mcp/mcpOAuth';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
 import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import { isMobileAppRuntime, useMobileAppViewport } from '@/lib/mobileAppRuntime';
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 
@@ -185,6 +186,7 @@ function App({ apis }: AppProps) {
   const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
+  const isMobileApp = React.useMemo(() => isMobileAppRuntime() || apis.runtime.platform === 'mobile-app', [apis.runtime.platform]);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const [bootInjectionStatus, setBootInjectionStatus] = React.useState<BootInjectionStatus>(() => {
     return getBootInjectionStatus();
@@ -210,6 +212,8 @@ function App({ apis }: AppProps) {
   React.useEffect(() => {
     applyMobileKeyboardMode(mobileKeyboardMode);
   }, [mobileKeyboardMode]);
+
+  useMobileAppViewport(isMobileApp);
 
   React.useEffect(() => {
     setIsVSCodeRuntime(apis.runtime.isVSCode);
@@ -516,15 +520,33 @@ function App({ apis }: AppProps) {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string }>).detail;
+      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string | null }>).detail;
       const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
       if (!sessionId) return;
-      void useSessionUIStore.getState().setCurrentSession(sessionId);
+      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
+        ? detail.directory.trim()
+        : undefined;
+      void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
     window.addEventListener('openchamber:open-session', handler as EventListener);
     return () => window.removeEventListener('openchamber:open-session', handler as EventListener);
   }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !isInitialized) return;
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = (params.get('session') ?? params.get('sessionId') ?? '').trim();
+    if (!sessionId) return;
+    const directory = (params.get('directory') ?? '').trim() || undefined;
+    void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
+    params.delete('session');
+    params.delete('sessionId');
+    params.delete('directory');
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [isInitialized]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;

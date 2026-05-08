@@ -5,13 +5,20 @@
     "scheme": "openchamber",
     "version": "1.10.2",
     "orientation": "portrait",
+    "icon": "./icon.png",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "bundleIdentifier": "ai.openchamber.mobile",
       "supportsTablet": true,
+      "icon": "./icon.png",
       "config": {
         "usesNonExemptEncryption": false
       }
@@ -19,10 +26,17 @@
     "android": {
       "package": "ai.openchamber.mobile",
       "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
         "backgroundColor": "#111111"
       }
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow OpenChamber to scan pairing QR codes."
+        }
+      ],
       "expo-secure-store",
       "expo-notifications"
     ],

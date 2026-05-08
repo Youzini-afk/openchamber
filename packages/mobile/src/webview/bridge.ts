@@ -1,5 +1,6 @@
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { Linking, Share } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 interface BridgeRequest {
   id?: string;
@@ -86,6 +87,14 @@ export const handleBridgeMessage = async (event: WebViewMessageEvent): Promise<{
           .join('\n'),
       });
       return { id: request.id, ok: true, result: {} };
+    }
+
+    if (request.type === 'setBadge') {
+      const count = typeof request.payload?.count === 'number' && Number.isFinite(request.payload.count)
+        ? Math.max(0, Math.floor(request.payload.count))
+        : 0;
+      await Notifications.setBadgeCountAsync(count);
+      return { id: request.id, ok: true, result: { count } };
     }
 
     return { id: request.id, ok: false, error: `Unsupported bridge request: ${request.type}` };
