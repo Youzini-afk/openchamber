@@ -74,6 +74,10 @@ import { createNotificationEmitterRuntime } from './lib/notifications/emitter-ru
 import { createNotificationTriggerRuntime } from './lib/notifications/runtime.js';
 import { createPushRuntime } from './lib/notifications/push-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
+import { createMobileDeviceStore } from './lib/mobile/device-store.js';
+import { createMobilePairingRuntime } from './lib/mobile/pairing-runtime.js';
+import { createMobilePushRuntime } from './lib/mobile/push-runtime.js';
+import { registerMobileRoutes } from './lib/mobile/routes.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
@@ -264,6 +268,7 @@ const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
   : path.join(os.homedir(), '.config', 'openchamber');
 const SETTINGS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
 const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subscriptions.json');
+const MOBILE_DEVICES_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'mobile-devices.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
 const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 1;
@@ -370,6 +375,21 @@ const isAnyUiVisible = (...args) => pushRuntime.isAnyUiVisible(...args);
 const isUiVisible = (...args) => pushRuntime.isUiVisible(...args);
 const ensurePushInitialized = (...args) => pushRuntime.ensurePushInitialized(...args);
 const setPushInitialized = (...args) => pushRuntime.setPushInitialized(...args);
+
+const mobileDeviceStore = createMobileDeviceStore({
+  fsPromises,
+  path,
+  crypto,
+  mobileDevicesFilePath: MOBILE_DEVICES_FILE_PATH,
+});
+const mobilePushRuntime = createMobilePushRuntime({
+  deviceStore: mobileDeviceStore,
+});
+const sendMobilePushToAllDevices = (...args) => mobilePushRuntime.sendMobilePushToAllDevices(...args);
+const mobilePairingRuntime = createMobilePairingRuntime({
+  crypto,
+  deviceStore: mobileDeviceStore,
+});
 
 const TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW = 128;
 const TERMINAL_INPUT_WS_REBIND_WINDOW_MS = 60 * 1000;
@@ -678,6 +698,7 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   emitDesktopNotification,
   broadcastUiNotification,
   sendPushToAllUiSessions,
+  sendMobilePushToAllDevices,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
 });
@@ -827,6 +848,7 @@ const bootstrapRuntime = createBootstrapRuntime({
   registerAuthAndAccessRoutes,
   registerTtsRoutes,
   registerNotificationRoutes,
+  registerMobileRoutes,
   registerOpenChamberRoutes,
   express,
 });
@@ -1162,6 +1184,9 @@ async function main(options = {}) {
     fetchFreeZenModels,
     getCachedZenModels,
     setAutoAcceptSession,
+    mobileDeviceStore,
+    mobilePairingRuntime,
+    mobilePushRuntime,
   });
   uiAuthController = bootstrapResult.uiAuthController;
 

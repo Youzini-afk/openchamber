@@ -6,6 +6,7 @@ export const createBootstrapRuntime = (dependencies) => {
     registerAuthAndAccessRoutes,
     registerTtsRoutes,
     registerNotificationRoutes,
+    registerMobileRoutes,
     registerOpenChamberRoutes,
     express,
   } = dependencies;
@@ -49,6 +50,9 @@ export const createBootstrapRuntime = (dependencies) => {
       fetchFreeZenModels,
       getCachedZenModels,
       setAutoAcceptSession,
+      mobileDeviceStore,
+      mobilePairingRuntime,
+      mobilePushRuntime,
     } = options;
 
     registerServerStatusRoutes(app, {
@@ -105,6 +109,15 @@ export const createBootstrapRuntime = (dependencies) => {
       setPushInitialized,
       setAutoAcceptSession,
     });
+
+    if (typeof registerMobileRoutes === 'function') {
+      registerMobileRoutes(app, {
+        uiAuthController,
+        deviceStore: mobileDeviceStore,
+        pairingRuntime: mobilePairingRuntime,
+        mobilePushRuntime,
+      });
+    }
 
     registerOpenChamberRoutes(app, {
       fs,

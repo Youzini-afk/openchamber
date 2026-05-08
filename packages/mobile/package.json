@@ -1,0 +1,32 @@
+{
+  "name": "@openchamber/mobile",
+  "version": "1.10.2",
+  "private": true,
+  "type": "module",
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "dev": "expo start --dev-client",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "latest",
+    "expo": "latest",
+    "expo-constants": "latest",
+    "expo-device": "latest",
+    "expo-linking": "latest",
+    "expo-notifications": "latest",
+    "expo-secure-store": "latest",
+    "expo-status-bar": "latest",
+    "react": "^19.1.1",
+    "react-native": "latest",
+    "react-native-webview": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "typescript": "~5.8.3"
+  }
+}

@@ -389,6 +389,11 @@ export const createUiAuth = ({
       handleResetAuth: (_req, res) => {
         res.status(400).json({ error: 'UI password not configured' });
       },
+      issueTrustedSession: async (req, res) => {
+        const token = crypto.randomBytes(32).toString('base64url');
+        setSessionCookie(req, res, token, TRUSTED_DEVICE_SESSION_TTL_MS);
+        return token;
+      },
       ensureSessionToken,
       dispose: () => {
 
@@ -664,6 +669,7 @@ export const createUiAuth = ({
     handlePasskeyList,
     handlePasskeyRevoke,
     handleResetAuth,
+    issueTrustedSession: (req, res) => issueSession(req, res, { trustDevice: true }),
     ensureSessionToken: async (req, _res) => {
       const token = getTokenFromRequest(req);
       return (await isSessionValid(token)) ? token : null;

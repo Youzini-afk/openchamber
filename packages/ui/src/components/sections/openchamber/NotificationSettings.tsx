@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import type { MobileDevice, MobilePairStartResult } from '@/lib/api/types';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
   completion: {
@@ -85,6 +86,9 @@ export const NotificationSettings: React.FC = () => {
   const [pushSubscribed, setPushSubscribed] = React.useState(false);
   const [pushBusy, setPushBusy] = React.useState(false);
   const [fetchedZenModels, setFetchedZenModels] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [mobileDevices, setMobileDevices] = React.useState<MobileDevice[]>([]);
+  const [mobileBusy, setMobileBusy] = React.useState(false);
+  const [mobilePairing, setMobilePairing] = React.useState<MobilePairStartResult | null>(null);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -194,6 +198,20 @@ export const NotificationSettings: React.FC = () => {
 
     void refresh();
   }, [isBrowser]);
+
+  const refreshMobileDevices = React.useCallback(async () => {
+    const apis = getRegisteredRuntimeAPIs();
+    if (!apis?.mobile) {
+      setMobileDevices([]);
+      return;
+    }
+    const result = await apis.mobile.listDevices();
+    setMobileDevices(Array.isArray(result?.devices) ? result.devices : []);
+  }, []);
+
+  React.useEffect(() => {
+    void refreshMobileDevices();
+  }, [refreshMobileDevices]);
 
   const handleToggleChange = async (checked: boolean) => {
     if (isDesktop) {
@@ -533,6 +551,64 @@ export const NotificationSettings: React.FC = () => {
     }
   };
 
+  const handleStartMobilePairing = async () => {
+    const apis = getRegisteredRuntimeAPIs();
+    if (!apis?.mobile) {
+      toast.error('Mobile API is unavailable');
+      return;
+    }
+    setMobileBusy(true);
+    try {
+      const result = await apis.mobile.startPairing({
+        serverUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+      if (!result?.pairingToken) {
+        toast.error('Failed to create mobile pairing code');
+        return;
+      }
+      setMobilePairing(result);
+      toast.success('Mobile pairing code created');
+    } finally {
+      setMobileBusy(false);
+    }
+  };
+
+  const handleTestMobilePush = async (deviceId: string) => {
+    const apis = getRegisteredRuntimeAPIs();
+    if (!apis?.mobile) {
+      toast.error('Mobile API is unavailable');
+      return;
+    }
+    setMobileBusy(true);
+    try {
+      const result = await apis.mobile.sendTestPush(deviceId);
+      if (result?.ok) {
+        toast.success('Mobile test push sent');
+        void refreshMobileDevices();
+      } else {
+        toast.error('Mobile test push failed');
+      }
+    } finally {
+      setMobileBusy(false);
+    }
+  };
+
+  const handleDeleteMobileDevice = async (deviceId: string) => {
+    const apis = getRegisteredRuntimeAPIs();
+    if (!apis?.mobile) {
+      toast.error('Mobile API is unavailable');
+      return;
+    }
+    setMobileBusy(true);
+    try {
+      await apis.mobile.deleteDevice(deviceId);
+      await refreshMobileDevices();
+      toast.success('Mobile device removed');
+    } finally {
+      setMobileBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
 
@@ -632,6 +708,65 @@ export const NotificationSettings: React.FC = () => {
             </div>
           )}
         </div>
+
+        {isBrowser && (
+          <div className="mb-8">
+            <div className="mb-1 px-1">
+              <h3 className="typography-ui-header font-medium text-foreground">
+                Mobile App
+              </h3>
+              <p className="typography-meta text-muted-foreground mt-0.5">
+                Pair a single-server mobile WebView app for native push notifications and direct session deep links.
+              </p>
+            </div>
+
+            <section className="px-2 pb-2 pt-0 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={mobileBusy} onClick={() => void handleStartMobilePairing()}>
+                  Create pairing code
+                </Button>
+                <Button type="button" variant="ghost" size="sm" disabled={mobileBusy} onClick={() => void refreshMobileDevices()}>
+                  Refresh devices
+                </Button>
+              </div>
+
+              {mobilePairing && (
+                <div className="rounded-md border border-border/60 bg-surface-muted px-3 py-2">
+                  <p className="typography-ui-label text-foreground">Pairing payload</p>
+                  <p className="typography-meta text-muted-foreground mt-1">
+                    Expires at {new Date(mobilePairing.expiresAt).toLocaleTimeString()}.
+                  </p>
+                  <code className="mt-2 block max-h-32 overflow-auto rounded bg-surface px-2 py-1 typography-code text-foreground">
+                    {JSON.stringify(mobilePairing.qrPayload)}
+                  </code>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {mobileDevices.length === 0 ? (
+                  <p className="typography-meta text-muted-foreground/70">No mobile devices paired.</p>
+                ) : mobileDevices.map((device) => (
+                  <div key={device.id} className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="typography-ui-label text-foreground">{device.name}</p>
+                      <p className="typography-meta text-muted-foreground/70">
+                        {device.platform} · Push {device.pushEnabled ? 'enabled' : 'not registered'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" disabled={mobileBusy || !device.pushEnabled} onClick={() => void handleTestMobilePush(device.id)}>
+                        Test push
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={mobileBusy} onClick={() => void handleDeleteMobileDevice(device.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
 
         {nativeNotificationsEnabled && canShowNotifications && (
           <>

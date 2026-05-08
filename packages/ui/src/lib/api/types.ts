@@ -1,6 +1,6 @@
 import type { WorktreeMetadata } from '@/types/worktree';
 
-export type RuntimePlatform = 'web' | 'desktop' | 'vscode';
+export type RuntimePlatform = 'web' | 'desktop' | 'vscode' | 'mobile-app';
 
 export interface RuntimeDescriptor {
   platform: RuntimePlatform;
@@ -872,6 +872,44 @@ export interface PushAPI {
   setVisibility(payload: { visible: boolean }): Promise<{ ok: true } | null>;
 }
 
+export interface MobileDevice {
+  id: string;
+  name: string;
+  platform: 'ios' | 'android' | 'unknown';
+  appVersion?: string | null;
+  pushProvider?: string | null;
+  pushEnabled: boolean;
+  enabled: boolean;
+  createdAt: number;
+  lastSeenAt?: number | null;
+  lastPushSuccessAt?: number | null;
+  lastPushFailureAt?: number | null;
+}
+
+export interface MobilePairStartResult {
+  pairingToken: string;
+  expiresAt: number;
+  serverUrl: string | null;
+  qrPayload: {
+    serverUrl: string | null;
+    pairingToken: string;
+  };
+}
+
+export interface MobileTestPushResult {
+  ok: boolean;
+  sent?: number;
+  failed?: number;
+  reason?: string;
+}
+
+export interface MobileAPI {
+  startPairing(payload?: { serverUrl?: string }): Promise<MobilePairStartResult | null>;
+  listDevices(): Promise<{ devices: MobileDevice[] } | null>;
+  deleteDevice(deviceId: string): Promise<{ ok: true; deleted: boolean } | null>;
+  sendTestPush(deviceId: string): Promise<MobileTestPushResult | null>;
+}
+
 export type GitHubUserSummary = {
   login: string;
   id?: number;
@@ -1206,6 +1244,7 @@ export interface RuntimeAPIs {
   notifications: NotificationsAPI;
   github?: GitHubAPI;
   push?: PushAPI;
+  mobile?: MobileAPI;
   diagnostics?: DiagnosticsAPI;
   tools: ToolsAPI;
   editor?: EditorAPI;

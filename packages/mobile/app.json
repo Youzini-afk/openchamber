@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "OpenChamber",
+    "slug": "openchamber-mobile",
+    "scheme": "openchamber",
+    "version": "1.10.2",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "ai.openchamber.mobile",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "ai.openchamber.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#111111"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}

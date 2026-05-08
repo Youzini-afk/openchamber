@@ -12,6 +12,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     emitDesktopNotification,
     broadcastUiNotification,
     sendPushToAllUiSessions,
+    sendMobilePushToAllDevices,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
   } = deps;
@@ -47,6 +48,15 @@ export const createNotificationTriggerRuntime = (deps) => {
       return '/';
     }
     return `/?session=${encodeURIComponent(sessionId)}`;
+  };
+
+  const sendMobileNotification = (payload) => {
+    if (typeof sendMobilePushToAllDevices !== 'function') {
+      return;
+    }
+    void sendMobilePushToAllDevices(payload).catch((error) => {
+      console.warn('[Notification] Mobile push failed:', error?.message || error);
+    });
   };
 
   const getCachedSessionParentId = (sessionId) => {
@@ -277,6 +287,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           },
           { requireNoSse: true },
         );
+        sendMobileNotification({
+          title,
+          body,
+          tag: `ready-${sessionId}`,
+          data: {
+            url: buildSessionDeepLinkUrl(sessionId),
+            sessionId,
+            type: 'ready',
+          },
+        });
       }
 
       if (info?.role === 'assistant' && info?.finish === 'error' && sessionId) {
@@ -336,6 +356,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           },
           { requireNoSse: true },
         );
+        sendMobileNotification({
+          title,
+          body,
+          tag: `error-${sessionId}`,
+          data: {
+            url: buildSessionDeepLinkUrl(sessionId),
+            sessionId,
+            type: 'error',
+          },
+        });
       }
 
       return;
@@ -414,6 +444,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           },
           { requireNoSse: true },
         );
+        sendMobileNotification({
+          title,
+          body,
+          tag: `question-${sessionId}`,
+          data: {
+            url: buildSessionDeepLinkUrl(sessionId),
+            sessionId,
+            type: 'question',
+          },
+        });
       }, PUSH_QUESTION_DEBOUNCE_MS);
 
       pushQuestionDebounceTimers.set(sessionId, timer);
@@ -534,6 +574,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           },
           { requireNoSse: true },
         );
+        sendMobileNotification({
+          title,
+          body,
+          tag: `permission-${sessionId}`,
+          data: {
+            url: buildSessionDeepLinkUrl(sessionId),
+            sessionId,
+            type: 'permission',
+          },
+        });
       }, PUSH_PERMISSION_DEBOUNCE_MS);
 
       pushPermissionDebounceTimers.set(sessionId, { timer, requestKey });
