@@ -520,12 +520,13 @@ function App({ apis }: AppProps) {
     if (typeof window === 'undefined') return;
 
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string | null }>).detail;
+      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string }>).detail;
       const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
       if (!sessionId) return;
       const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
         ? detail.directory.trim()
-        : undefined;
+        : null;
+      useUIStore.getState().setActiveMainTab('chat');
       void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
     };
 
@@ -547,6 +548,30 @@ function App({ apis }: AppProps) {
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
     window.history.replaceState(window.history.state, '', nextUrl);
   }, [isInitialized]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ directory?: string; projectId?: string }>).detail;
+      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
+        ? detail.directory.trim()
+        : null;
+      const projectId = typeof detail?.projectId === 'string' && detail.projectId.trim().length > 0
+        ? detail.projectId.trim()
+        : null;
+      useUIStore.getState().setActiveMainTab('chat');
+      useUIStore.getState().setSessionSwitcherOpen(false);
+      useSessionUIStore.getState().openNewSessionDraft({
+        selectedProjectId: projectId,
+        directoryOverride: directory,
+        preserveDirectoryOverride: Boolean(directory),
+      });
+    };
+
+    window.addEventListener('openchamber:open-draft-session', handler as EventListener);
+    return () => window.removeEventListener('openchamber:open-draft-session', handler as EventListener);
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;

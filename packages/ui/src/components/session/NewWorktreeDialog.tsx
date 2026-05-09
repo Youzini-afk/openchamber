@@ -130,10 +130,22 @@ const sanitizeRemoteName = (value: string): string => {
   return normalized || 'pr-head';
 };
 
-const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, remoteBranches: string[]) => {
+const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, localBranches: string[], remoteBranches: string[]) => {
   const headBranch = normalizeBranchName(pr.head || '');
   if (!headBranch) {
     throw new Error('PR head branch is missing');
+  }
+
+  if (localBranches.includes(headBranch)) {
+    return {
+      existingBranch: headBranch,
+      setUpstream: undefined,
+      upstreamRemote: undefined,
+      upstreamBranch: undefined,
+      ensureRemoteName: undefined,
+      ensureRemoteUrl: undefined,
+      sourceLabel: headBranch,
+    };
   }
 
   const availableRemoteBranch = remoteBranches.find((remoteBranch) => {
@@ -731,11 +743,15 @@ export function NewWorktreeDialog({
       
       // Only run server validation if we have values
       if (normalizedBranch && normalizedWorktree) {
+        const linkedPr = mode === 'new-branch' ? newBranchState.linkedPr : null;
+        const prConfig = linkedPr ? resolvePrWorktreeConfig(linkedPr, localBranches, remoteBranches) : null;
         const result = await validateWorktreeCreate(projectRef, {
-          mode: mode === 'existing-branch' ? 'existing' : 'new',
+          mode: mode === 'existing-branch' || prConfig ? 'existing' : 'new',
           branchName: normalizedBranch,
           worktreeName: normalizedWorktree,
-          existingBranch: mode === 'existing-branch' ? normalizedBranch : undefined,
+          existingBranch: prConfig?.existingBranch ?? (mode === 'existing-branch' ? normalizedBranch : undefined),
+          ...(prConfig?.ensureRemoteName ? { ensureRemoteName: prConfig.ensureRemoteName } : {}),
+          ...(prConfig?.ensureRemoteUrl ? { ensureRemoteUrl: prConfig.ensureRemoteUrl } : {}),
         });
         
         if (abortController.signal.aborted) return;
@@ -774,8 +790,11 @@ export function NewWorktreeDialog({
     projectRef,
     mode,
     newBranchState.branchName,
+    newBranchState.linkedPr,
     existingBranchState.selectedBranch,
     currentState.worktreeName,
+    localBranches,
+    remoteBranches,
     validation.touched,
     validationAbortController,
     isCreating,
@@ -843,7 +862,7 @@ export function NewWorktreeDialog({
       let sourceLabel = '';
       const args = (() => {
         if (linkedPr) {
-          const prConfig = resolvePrWorktreeConfig(linkedPr, remoteBranches);
+          const prConfig = resolvePrWorktreeConfig(linkedPr, localBranches, remoteBranches);
           sourceLabel = prConfig.sourceLabel;
           return {
             preferredName: normalizedBranch || normalizedWorktree,

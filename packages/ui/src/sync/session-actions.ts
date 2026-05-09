@@ -14,6 +14,11 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { partitionMessagesByRevert } from "./revert-filter"
+import { materializeSessionSnapshots } from "./materialization"
+import { stripMessageDiffSnapshots } from "./sanitize"
+
+const MESSAGE_REFETCH_LIMIT = 200
+const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
 let _sdk: OpencodeClient | null = null
@@ -649,6 +654,26 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   }
 }
 
+export async function refetchSessionMessages(sessionId: string): Promise<void> {
+  const store = dirStore()
+  const result = await sdk().session.messages({ sessionID: sessionId, directory: dir(), limit: MESSAGE_REFETCH_LIMIT })
+  const records = (result.data ?? []).filter((record: { info?: { id?: string } }) => !!record?.info?.id)
+  if (records.length === 0) return
+
+  store.setState((state) => {
+    const materialized = materializeSessionSnapshots(
+      state,
+      sessionId,
+      records.map((record: { info: Message; parts?: Part[] }) => ({
+        info: stripMessageDiffSnapshots(record.info),
+        parts: record.parts ?? [],
+      })),
+      { skipPartTypes: MESSAGE_REFETCH_SKIP_PARTS },
+    )
+    return { message: materialized.message, part: materialized.part }
+  })
+}
+
 /**
  * Unrevert — restore all previously reverted messages.
  * Restore all previously reverted messages. Aborts if busy, merges result.
@@ -677,6 +702,7 @@ export async function unrevertSession(sessionId: string): Promise<void> {
       store.setState({ session: sessions })
     }
   }
+  await refetchSessionMessages(sessionId)
 }
 
 /**

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.10.4] - 2026-05-09
+
+- Desktop/Mini Chat: improved Mini Chat session controls with current context usage in the compact header and a single header action that opens either the active session or current draft in Mini Chat.
+- Chat/Input: collapsed model, variant, and agent labels more gracefully on narrow widths, keeping prompt controls usable in tight panels.
+- Git/Worktrees: pull-request worktrees can now reuse an existing local branch when it matches the PR head, reducing blocked setup flows.
+- Git: deduplicated lightweight and full status refreshes separately, preventing stale or mismatched Git updates during background polling (thanks to @isanchez404).
+- Files: ignored stale file loads, guarded pending navigation, and stopped switching files when save fails, reducing lost edits and wrong-file previews (thanks to @isanchez404).
+- Terminal: cleaned up idle WebSocket connections and scoped SSE connection-open handling per retry attempt, improving terminal reconnect behavior (thanks to @isanchez404).
+- Settings/UI: improved keyboard and screen-reader support for resizable Settings navigation and collapsible sidebar groups (thanks to @isanchez404).
+- Reliability/Sync: preserved message part update ordering so live chat output stays consistent during rapid streaming updates (thanks to @isanchez404).
+
+## [1.10.3] - 2026-05-08
+
+- Desktop/Electron: added Mini Chat windows for focused conversations without the full workspace shell, including session/draft handoff back to the main window, always-on-top pinning, and quick access from the header, session list, command palette, and keyboard shortcuts.
+- Desktop/Startup: show the splash window earlier while the local runtime starts, making app launch feel more responsive.
+- Chat/Scrolling: rebuilt auto-follow behavior so active responses stay pinned when you want them to, while wheel, touch, keyboard, scrollbar, and find-in-page interactions more reliably release control when you scroll away.
+- Chat/Scrolling: restored saved scroll positions more consistently after session switches, hydration, and draft-to-session transitions, reducing jumps to the wrong part of a conversation.
+- Chat/UI: tightened scroll-to-bottom behavior so the button appears only after you move past the visible bottom spacer, and code-block scrolling no longer prevents the main chat from releasing auto-follow when the nested block cannot scroll further.
+- Chat/Input: fixed attachment-only queued sends, stale attachment restores, stale file-search results, autocomplete tab handling, and focusable removal controls so drafting stays reliable across queued, linked, and restored messages (thanks to @isanchez404).
+- Reliability/Sync: reduced stale and duplicate live-state updates across request arrays, retry metadata, streaming indicators, and session status events, cutting unnecessary rerenders and stuck activity states during long-running chats (thanks to @isanchez404).
+- Files/Skills: ignored stale directory refreshes and outdated skills catalog/repo scans, keeping file and skills views from showing results from an older workspace or request (thanks to @isanchez404).
+- Git/Terminal/Desktop: fixed sandbox database loading in ESM, forwarded lightweight Git status mode across runtimes, preserved Electron SSH desktop hosts when saving instances, and made terminal UTF-8 locale fallbacks platform-aware (thanks to @isanchez404, @liyiopener).
+- UI/Reliability: added smaller polish fixes for mobile Settings Escape handling, Multirun model limits, text-selection cleanup, and upstream event-stream cancellation (thanks to @isanchez404).
+
 ## [1.10.2] - 2026-05-07
 
 - Projects: added repository cloning to the Add Project flow, so you can clone a repo into a chosen folder and open it in OpenChamber without leaving setup.
