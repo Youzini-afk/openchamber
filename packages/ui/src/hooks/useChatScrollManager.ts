@@ -398,6 +398,7 @@ export const useChatScrollManager = ({
         // Handle pin/unpin logic
         if (event?.isTrusted && !isProgrammatic) {
             if (scrollingUp && isPinnedRef.current) {
+                cancelScrollFollow();
                 setFollowMode('none');
                 updatePinnedState(false);
             }
@@ -419,6 +420,7 @@ export const useChatScrollManager = ({
         const estimatedIndex = Math.floor(position * sessionMessageCount);
         queueViewportAnchor(currentSessionId, estimatedIndex, { scrollTop, scrollHeight, clientHeight });
     }, [
+        cancelScrollFollow,
         currentSessionId,
         getDistanceFromBottom,
         getPinThreshold,
@@ -558,7 +560,7 @@ export const useChatScrollManager = ({
             }
         }
 
-        if (hasNonBottomPosition && !sessionIsWorking) {
+        if (hasNonBottomPosition) {
             setFollowMode('none');
             updatePinnedState(false);
         } else {
@@ -601,19 +603,10 @@ export const useChatScrollManager = ({
             const scrollHeightChanged = nextScrollHeight !== lastScrollHeight;
             const clientHeightChanged = nextClientHeight !== lastClientHeight;
 
-            if (scrollHeightChanged && isPinnedRef.current && sessionIsWorking) {
-                setFollowMode('smooth');
-                scrollToBottomInternal({ followBottom: true });
-                lastScrollHeight = nextScrollHeight;
-                lastClientHeight = nextClientHeight;
-                updateScrollButtonVisibility();
-                return;
-            }
-
             if (clientHeightChanged) {
                 const previousDistanceFromBottom = Math.max(
                     0,
-                    lastScrollHeight - lastScrollTopRef.current - lastClientHeight,
+                    lastScrollHeight - container.scrollTop - lastClientHeight,
                 );
 
                 if (isPinnedRef.current) {
@@ -633,15 +626,24 @@ export const useChatScrollManager = ({
                     updateScrollButtonVisibility();
                     return;
                 }
+
+                lastScrollHeight = nextScrollHeight;
+                lastClientHeight = nextClientHeight;
+                updateScrollButtonVisibility();
+                return;
+            }
+
+            if (scrollHeightChanged && isPinnedRef.current && sessionIsWorking) {
+                setFollowMode('smooth');
+                scrollToBottomInternal({ followBottom: true });
+                lastScrollHeight = nextScrollHeight;
+                lastClientHeight = nextClientHeight;
+                updateScrollButtonVisibility();
+                return;
             }
 
             lastScrollHeight = nextScrollHeight;
             lastClientHeight = nextClientHeight;
-
-            if (clientHeightChanged && !scrollHeightChanged) {
-                updateScrollButtonVisibility();
-                return;
-            }
 
             if (scrollHeightChanged && shouldSkipLiveContentSync()) {
                 return;

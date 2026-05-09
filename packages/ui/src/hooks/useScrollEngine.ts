@@ -33,14 +33,9 @@ const FAST_SPRING = {
     bounce: 0,
 };
 
-// Exponential smoothing factor for the follow-bottom rAF loop.
-// Each frame: scrollTop += (target - scrollTop) * LERP_FACTOR
-// ~0.12-0.18 gives a smooth camera-follow feel at 60fps.
-const LERP_FACTOR = 0.14;
-
 // When the remaining distance is below this, snap exactly to bottom.
 const SNAP_EPSILON = 0.5;
-const FOLLOW_STABLE_FRAME_LIMIT = 8;
+const FOLLOW_STABLE_FRAME_LIMIT = 2;
 
 export const useScrollEngine = ({
     containerRef,
@@ -91,7 +86,7 @@ export const useScrollEngine = ({
         cancelFollow();
     }, [cancelSpring, cancelFollow]);
 
-    // One burst of the lerp loop — runs until scrollTop catches up to bottom, then stops.
+    // One burst of bottom-following — runs until bottom is stable, then stops.
     // Re-invoked by observers when persist mode content grows.
     const runFollowBurst = React.useCallback(() => {
         if (followActiveRef.current) return;
@@ -114,7 +109,7 @@ export const useScrollEngine = ({
                 return;
             }
 
-            const target = c.scrollHeight - c.clientHeight;
+            const target = Math.max(0, c.scrollHeight - c.clientHeight);
             const current = c.scrollTop;
             const delta = target - current;
 
@@ -134,7 +129,7 @@ export const useScrollEngine = ({
             }
 
             stableFrames = 0;
-            c.scrollTop = current + delta * LERP_FACTOR;
+            c.scrollTop = target;
             followRafRef.current = window.requestAnimationFrame(tick);
         };
 
@@ -206,7 +201,9 @@ export const useScrollEngine = ({
                 return;
             }
 
-            // Follow-bottom mode: start the continuous lerp loop
+            // Follow-bottom mode: snap on each content/layout change instead of easing.
+            // Easing keeps the scroll position perpetually behind during streaming and
+            // can visibly fight viewport/input resizes.
             if (followBottom) {
                 cancelSpring();
                 startFollowLoop(persistFollow);

@@ -186,7 +186,7 @@ function App({ apis }: AppProps) {
   const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
-  const isMobileApp = React.useMemo(() => isMobileAppRuntime() || apis.runtime.platform === 'mobile-app', [apis.runtime.platform]);
+  const enableMobileAppViewport = React.useMemo(() => isMobileAppRuntime(), []);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const [bootInjectionStatus, setBootInjectionStatus] = React.useState<BootInjectionStatus>(() => {
     return getBootInjectionStatus();
@@ -213,7 +213,7 @@ function App({ apis }: AppProps) {
     applyMobileKeyboardMode(mobileKeyboardMode);
   }, [mobileKeyboardMode]);
 
-  useMobileAppViewport(isMobileApp);
+  useMobileAppViewport(enableMobileAppViewport);
 
   React.useEffect(() => {
     setIsVSCodeRuntime(apis.runtime.isVSCode);

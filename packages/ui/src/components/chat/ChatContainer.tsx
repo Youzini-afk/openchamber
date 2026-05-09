@@ -597,7 +597,7 @@ export const ChatContainer: React.FC = () => {
         // Check if this session has a saved non-bottom scroll position.
         const savedMemState = sessionMemoryStateMap.get(currentSessionId);
         const savedPos = savedMemState?.scrollPosition;
-        if (savedPos && !sessionIsWorking) {
+        if (savedPos) {
             const savedMaxScroll = Math.max(0, savedPos.scrollHeight - savedPos.clientHeight);
             // Use the same pixel threshold as the pin logic: 10% of clientHeight, clamped.
             const threshold = Math.max(24, Math.min(200, savedPos.clientHeight * 0.10));
@@ -611,7 +611,7 @@ export const ChatContainer: React.FC = () => {
 
         await resumeToBottomInstant();
         clearRestoreInProgress(currentSessionId);
-    }, [clearRestoreInProgress, currentSessionId, restoreSavedScrollPosition, resumeToBottomInstant, scrollToBottom, sessionIsWorking, sessionMemoryStateMap]);
+    }, [clearRestoreInProgress, currentSessionId, restoreSavedScrollPosition, resumeToBottomInstant, scrollToBottom, sessionMemoryStateMap]);
 
     const resumeToLatestInstant = React.useCallback((options?: { force?: boolean }) => {
         void runLatestInstantResume(options);
