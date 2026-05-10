@@ -46,8 +46,10 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerAppWorkflow).toContain('build-app:');
     expect(dockerAppWorkflow).toContain('needs: [build-runtime-base]');
     expect(dockerAppWorkflow).toContain('Dockerfile.base');
-    expect(dockerAppWorkflow).toContain('BASE_IMAGE_NAME: ${{ github.repository_owner }}/openchamber-runtime-base');
-    expect(dockerAppWorkflow).toContain('APP_IMAGE_NAME: ${{ github.repository_owner }}/openchamber');
+    expect(dockerAppWorkflow).toContain('BASE_IMAGE_NAME: youzini-afk/openchamber-runtime-base');
+    expect(dockerAppWorkflow).toContain('APP_IMAGE_NAME: youzini-afk/openchamber');
+    expect(dockerAppWorkflow).toContain('DEFAULT_RUNTIME_BASE_IMAGE: ghcr.io/youzini-afk/openchamber-runtime-base:main');
+    expect(dockerAppWorkflow).not.toContain('github.repository_owner }}/openchamber');
   });
 
   it('installs GitHub CLI from the official apt repository', () => {
