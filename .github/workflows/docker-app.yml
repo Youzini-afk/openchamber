@@ -10,6 +10,7 @@ on:
       - bun.lock
       - package.json
       - packages/**
+      - scripts/docker-build-only-wrapper.sh
       - scripts/docker-entrypoint.sh
       - .github/workflows/docker-app.yml
   workflow_dispatch:

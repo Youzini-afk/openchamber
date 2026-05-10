@@ -6,6 +6,7 @@ const repoRoot = path.resolve(import.meta.dirname, '..');
 const appDockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
 const runtimeBaseDockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile.base'), 'utf8');
 const dockerAppWorkflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/docker-app.yml'), 'utf8');
+const dockerBuildOnlyWrapper = fs.readFileSync(path.join(repoRoot, 'scripts/docker-build-only-wrapper.sh'), 'utf8');
 
 const getAptInstallPackages = () => {
   const matches = runtimeBaseDockerfile.matchAll(/apt-get install\s+-y\s+--no-install-recommends\s+([\s\S]*?)(?=\s+&&)/g);
@@ -49,6 +50,7 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerAppWorkflow).toContain('BASE_IMAGE_NAME: youzini-afk/openchamber-runtime-base');
     expect(dockerAppWorkflow).toContain('APP_IMAGE_NAME: youzini-afk/openchamber');
     expect(dockerAppWorkflow).toContain('DEFAULT_RUNTIME_BASE_IMAGE: ghcr.io/youzini-afk/openchamber-runtime-base:main');
+    expect(dockerAppWorkflow).toContain('scripts/docker-build-only-wrapper.sh');
     expect(dockerAppWorkflow).not.toContain('github.repository_owner }}/openchamber');
   });
 
@@ -93,5 +95,35 @@ describe('cloud Docker toolbelt', () => {
     expect(runtimeBaseDockerfile).toContain('https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz');
     expect(runtimeBaseDockerfile).toContain('node --version');
     expect(runtimeBaseDockerfile).toContain('npm --version');
+  });
+
+  it('provides a daemonless Docker build-only wrapper without host socket access', () => {
+    expect(runtimeBaseDockerfile).toContain('moby/buildkit@sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c');
+    expect(runtimeBaseDockerfile).toContain('v0.26.2 rootless/daemonless');
+    expect(runtimeBaseDockerfile).toContain('/usr/bin/rootlesskit /usr/local/bin/rootlesskit');
+    expect(aptInstallPackages.has('slirp4netns')).toBe(true);
+    expect(aptInstallPackages.has('uidmap')).toBe(true);
+    expect(runtimeBaseDockerfile).toContain("echo 'openchamber:100000:65536' >> /etc/subuid");
+    expect(runtimeBaseDockerfile).toContain("echo 'openchamber:100000:65536' >> /etc/subgid");
+    expect(runtimeBaseDockerfile).toContain('docker build --network=none /tmp/openchamber-docker-smoke');
+    expect(runtimeBaseDockerfile).toContain('COPY --chmod=0755 scripts/docker-build-only-wrapper.sh /usr/local/bin/docker');
+    expect(runtimeBaseDockerfile).toContain('docker --version && buildctl --version');
+    expect(runtimeBaseDockerfile).not.toContain('/var/run/docker.sock');
+
+    expect(dockerBuildOnlyWrapper).toContain('OpenChamber Docker build-only mode is active.');
+    expect(dockerBuildOnlyWrapper).toContain('buildctl-daemonless.sh build');
+    expect(dockerBuildOnlyWrapper).toContain('--output" "type=cacheonly');
+    expect(dockerBuildOnlyWrapper).toContain('add_output_arg');
+    expect(dockerBuildOnlyWrapper).toContain('registry push outputs are disabled');
+    expect(dockerBuildOnlyWrapper).toContain('force-network-mode=none');
+    expect(dockerBuildOnlyWrapper).toContain('--no-cache');
+    expect(dockerBuildOnlyWrapper).toContain('ROOTLESSKIT');
+    expect(dockerBuildOnlyWrapper).toContain('--net=slirp4netns');
+    expect(dockerBuildOnlyWrapper).toContain('--disable-host-loopback');
+    expect(dockerBuildOnlyWrapper).toContain('docker build');
+    expect(dockerBuildOnlyWrapper).toContain('docker buildx build');
+    expect(dockerBuildOnlyWrapper).toContain('run|compose|ps|exec|pull|push');
+    expect(dockerBuildOnlyWrapper).toContain('reject_command "$1"');
+    expect(dockerBuildOnlyWrapper).toContain('/var/run/docker.sock');
   });
 });

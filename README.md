@@ -263,6 +263,12 @@ Managed-local path note: `OPENCHAMBER_TUNNEL_CONFIG` must point to a path inside
 
 **Built-in cloud tools:** The Docker image includes common agent/terminal tools such as `git`, `ssh`, `gh`, `rg`, `curl`, `jq`, `python3`, `zip`, and `unzip`. On amd64 images it also preinstalls Google Chrome through Playwright's installer so Playwright MCP/browser QA can run without a manual `npx playwright install chrome`. In Settings -> GitHub, use **Sync to Terminal** after connecting GitHub so terminal `git` and `gh` commands can reuse the container-local account.
 
+**Safe Dockerfile builds for agents:** The Docker image includes a `docker` compatibility wrapper for shared-host deployments. It supports `docker build ...` and `docker buildx build ...` through rootless/daemonless BuildKit without mounting `/var/run/docker.sock` or exposing the host Docker daemon. By default, builds use cache-only output to validate Dockerfiles; use local artifact outputs such as `--output type=oci,dest=/tmp/image.tar` if you need an artifact. Registry push outputs are blocked. Runtime commands such as `docker run`, `docker compose`, `docker ps`, `docker exec`, `docker pull`, and `docker push` are intentionally rejected. This keeps agent Dockerfile validation available while avoiding host-level Docker control on shared servers.
+
+This build-only wrapper is not a general sandbox for untrusted Dockerfiles; Dockerfile `RUN` steps execute within the OpenChamber container's isolation boundary. It is designed to prevent host Docker daemon access, not to replace a dedicated disposable builder VM for hostile workloads.
+
+If you run a private, trusted single-user deployment and intentionally want full host Docker control, do not use the default safe wrapper as a security boundary; use a separate runner/VM or explicitly mount a Docker socket in your own deployment with the understanding that `/var/run/docker.sock` access is effectively host-level privilege.
+
 ### Reverse proxy notes
 
 - For a complete reverse proxy setup guide, see [`docs/REVERSE_PROXY.md`](./docs/REVERSE_PROXY.md).
