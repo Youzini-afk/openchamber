@@ -208,6 +208,27 @@ docker compose up -d
 
 Available at `http://localhost:3000`.
 
+Prebuilt images are published to GitHub Container Registry:
+
+```bash
+docker run --rm -p 3000:3000 ghcr.io/youzini-afk/openchamber:latest
+```
+
+For local image builds, build the heavy runtime base once and pass it to the app image build:
+
+```bash
+docker build -f Dockerfile.base -t openchamber-runtime-base:local .
+docker build --build-arg RUNTIME_BASE_IMAGE=openchamber-runtime-base:local -t openchamber:local .
+```
+
+For Zeabur or other cloud hosts, prefer deploying the prebuilt app image instead of letting the platform build from the repository:
+
+```text
+ghcr.io/youzini-afk/openchamber:latest
+```
+
+The app listens on port `3000`. If the GHCR package is private, configure registry credentials in your host for `ghcr.io`; making the app image public avoids that extra step.
+
 **UI Password:**
 ```yaml
 environment:

@@ -1,8 +1,15 @@
 services:
   openchamber:
+    # Use the prebuilt image for faster startup:
+    # image: ghcr.io/youzini-afk/openchamber:latest
+    # Or keep the local build path below for development/custom images.
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Build Dockerfile.base locally first and change this to
+        # openchamber-runtime-base:local for fully local app image builds.
+        RUNTIME_BASE_IMAGE: ghcr.io/youzini-afk/openchamber-runtime-base:main
     container_name: openchamber
     ports:
       - "3000:3000"
@@ -15,7 +22,8 @@ services:
       - ./data/opencode/config:/home/openchamber/.config/opencode
       - ./data/ssh:/home/openchamber/.ssh
       - ./workspaces:/home/openchamber/workspaces
-    #environment:
+    environment:
+      OPENCHAMBER_WORKSPACE_ROOT: /home/openchamber/workspaces
     # OPENCHAMBER_HOST: 0.0.0.0  # Bind address (default in Docker: 0.0.0.0)
     # UI_PASSWORD: your_secure_password_here  # Uncomment to set UI password
     # OPENCHAMBER_TUNNEL_PROVIDER: cloudflare
