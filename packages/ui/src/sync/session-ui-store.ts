@@ -204,6 +204,12 @@ export type SessionUIState = {
   pendingChangesBarDismissed: Map<string, string>
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
 
+  // Right sidebar Git panel: selected directory per session/scope.
+  // Missing entry means "follow the session directory".
+  rightSidebarGitDirectories: Map<string, string>
+  getRightSidebarGitDirectory: (scopeKey: string) => string | null
+  setRightSidebarGitDirectory: (scopeKey: string, directory: string | null) => void
+
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
   openNewSessionDraft: (options?: Partial<NewSessionDraftState>) => void
@@ -361,6 +367,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   lastLoadedDirectory: null,
   sessionPlanAvailable: new Map(),
   pendingChangesBarDismissed: new Map(),
+  rightSidebarGitDirectories: new Map(),
 
   // ---------------------------------------------------------------------------
   // setCurrentSession
@@ -705,6 +712,26 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       map.set(sessionId, signature);
     }
     set({ pendingChangesBarDismissed: map });
+  },
+
+  getRightSidebarGitDirectory: (scopeKey) => {
+    return get().rightSidebarGitDirectories.get(scopeKey) ?? null
+  },
+
+  setRightSidebarGitDirectory: (scopeKey, directory) => {
+    const normalized = normalizePath(directory)
+    set((state) => {
+      const current = state.rightSidebarGitDirectories.get(scopeKey) ?? null
+      if (current === normalized) return state
+
+      const next = new Map(state.rightSidebarGitDirectories)
+      if (normalized) {
+        next.set(scopeKey, normalized)
+      } else {
+        next.delete(scopeKey)
+      }
+      return { rightSidebarGitDirectories: next }
+    })
   },
 
   // ---------------------------------------------------------------------------

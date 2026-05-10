@@ -17,34 +17,10 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
 
 type RightTab = 'git' | 'files' | 'context';
-const RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY = 'oc.rightSidebar.gitDirectory';
 
 const normalizeDirectoryPath = (value?: string | null): string => (
   (value || '').replace(/\\/g, '/').replace(/\/+$/g, '')
 );
-
-const readStoredGitDirectory = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const stored = window.localStorage.getItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY);
-    return stored?.trim() || null;
-  } catch {
-    return null;
-  }
-};
-
-const writeStoredGitDirectory = (directory: string | null) => {
-  if (typeof window === 'undefined') return;
-  try {
-    if (directory?.trim()) {
-      window.localStorage.setItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY, directory.trim());
-    } else {
-      window.localStorage.removeItem(RIGHT_SIDEBAR_GIT_DIRECTORY_STORAGE_KEY);
-    }
-  } catch {
-    // Ignore storage failures; the selector still works for the current page lifetime.
-  }
-};
 
 /**
  * Keeps git status fresh while the right sidebar is open.
@@ -136,12 +112,11 @@ const RightSidebarGitPanel: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory();
   const sessionDirectory = currentSessionDirectory || effectiveDirectory;
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
-  const [selectedDirectory, setSelectedDirectory] = React.useState<string | null>(() => readStoredGitDirectory());
   const normalizedSessionDirectory = React.useMemo(
     () => normalizeDirectoryPath(sessionDirectory),
     [sessionDirectory]
   );
-  const sessionFollowKey = React.useMemo(() => {
+  const gitDirectoryScopeKey = React.useMemo(() => {
     if (currentSessionId) {
       return `session:${currentSessionId}`;
     }
@@ -150,37 +125,26 @@ const RightSidebarGitPanel: React.FC = () => {
     }
     return null;
   }, [currentSessionId, normalizedSessionDirectory]);
-  const lastSessionFollowKeyRef = React.useRef<string | null>(null);
+  const selectedDirectory = useSessionUIStore((state) => (
+    gitDirectoryScopeKey ? state.rightSidebarGitDirectories.get(gitDirectoryScopeKey) ?? null : null
+  ));
+  const setRightSidebarGitDirectory = useSessionUIStore((state) => state.setRightSidebarGitDirectory);
 
   React.useEffect(() => {
-    if (lastSessionFollowKeyRef.current === sessionFollowKey) {
-      return;
-    }
-
-    lastSessionFollowKeyRef.current = sessionFollowKey;
-    if (selectedDirectory) {
-      setSelectedDirectory(null);
-      writeStoredGitDirectory(null);
-    }
-  }, [selectedDirectory, sessionFollowKey]);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || !currentSessionId || !gitDirectoryScopeKey) {
       return;
     }
 
     const handleSessionReselected = (event: Event) => {
       const sessionId = (event as CustomEvent<string>).detail;
-      if (!sessionId || sessionId !== currentSessionId) {
-        return;
+      if (sessionId === currentSessionId) {
+        setRightSidebarGitDirectory(gitDirectoryScopeKey, null);
       }
-      setSelectedDirectory(null);
-      writeStoredGitDirectory(null);
     };
 
     window.addEventListener('openchamber:session-reselected', handleSessionReselected);
     return () => window.removeEventListener('openchamber:session-reselected', handleSessionReselected);
-  }, [currentSessionId]);
+  }, [currentSessionId, gitDirectoryScopeKey, setRightSidebarGitDirectory]);
 
   const gitDirectory = selectedDirectory || sessionDirectory || null;
   const isFollowingSession = Boolean(
@@ -196,14 +160,16 @@ const RightSidebarGitPanel: React.FC = () => {
       && (!sessionDirectory || normalizeDirectoryPath(normalized) !== normalizeDirectoryPath(sessionDirectory))
       ? normalized
       : null;
-    setSelectedDirectory(nextDirectory);
-    writeStoredGitDirectory(nextDirectory);
-  }, [sessionDirectory]);
+    if (gitDirectoryScopeKey) {
+      setRightSidebarGitDirectory(gitDirectoryScopeKey, nextDirectory);
+    }
+  }, [gitDirectoryScopeKey, sessionDirectory, setRightSidebarGitDirectory]);
 
   const handleFollowSession = React.useCallback(() => {
-    setSelectedDirectory(null);
-    writeStoredGitDirectory(null);
-  }, []);
+    if (gitDirectoryScopeKey) {
+      setRightSidebarGitDirectory(gitDirectoryScopeKey, null);
+    }
+  }, [gitDirectoryScopeKey, setRightSidebarGitDirectory]);
 
   return (
     <GitView
