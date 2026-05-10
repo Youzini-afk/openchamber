@@ -16,13 +16,14 @@ RUN bun install --frozen-lockfile --ignore-scripts
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-RUN bun run build:web
+RUN OPENCHAMBER_LOW_MEMORY_BUILD=1 bun run build:web
 
 FROM oven/bun:1.3.6 AS runtime
 WORKDIR /home/openchamber
 
 ARG TARGETARCH
 ARG GO_VERSION=1.26.2
+ARG GOPLS_VERSION=v0.21.1
 ARG NODE_VERSION=24.15.0
 
 ENV PATH=/usr/local/node/bin:/usr/local/go/bin:${PATH}
@@ -117,7 +118,7 @@ ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/
 RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo /home/openchamber/.rustup && \
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
   rustc --version && cargo --version && \
-  go install golang.org/x/tools/gopls@latest && \
+  go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
   npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
   npm install -g opencode-ai pnpm tsx typescript typescript-language-server yarn && \
   gopls version && tsc --version && typescript-language-server --version && pnpm --version && yarn --version

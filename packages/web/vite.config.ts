@@ -9,6 +9,7 @@ import { themeStoragePlugin } from '../../vite-theme-plugin';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
 const pwaDevEnabled = process.env.OPENCHAMBER_DISABLE_PWA_DEV !== '1';
+const lowMemoryBuild = process.env.OPENCHAMBER_LOW_MEMORY_BUILD === '1';
 const reactScanToggle = (process.env.VITE_ENABLE_REACT_SCAN ?? '').toLowerCase();
 const enableReactScan = reactScanToggle === '1' || reactScanToggle === 'true' || reactScanToggle === 'on' || reactScanToggle === 'yes';
 
@@ -17,7 +18,7 @@ export default defineConfig({
   plugins: [
     react({
       babel: {
-        plugins: ['babel-plugin-react-compiler'],
+        plugins: lowMemoryBuild ? [] : ['babel-plugin-react-compiler'],
       },
     }),
     {
@@ -101,6 +102,7 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,
     rollupOptions: {
+      maxParallelFileOps: lowMemoryBuild ? 24 : 1000,
       input: {
         main: path.resolve(__dirname, 'index.html'),
         miniChat: path.resolve(__dirname, 'mini-chat.html'),
