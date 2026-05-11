@@ -552,6 +552,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         sessionMessageCount,
         sessionIsWorking,
         isMobile,
+        messageListRef,
         onActiveTurnChange: handleActiveTurnChange,
     });
 

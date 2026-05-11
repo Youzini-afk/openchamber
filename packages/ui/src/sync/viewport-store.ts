@@ -12,6 +12,10 @@ export type SessionMemoryState = {
     scrollTop: number
     scrollHeight: number
     clientHeight: number
+    messageAnchor?: {
+      messageId: string
+      offsetTop: number
+    }
   }
   isStreaming: boolean
   streamStartTime?: number

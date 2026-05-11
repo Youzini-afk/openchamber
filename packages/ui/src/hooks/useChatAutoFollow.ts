@@ -23,7 +23,15 @@ interface UseChatAutoFollowOptions {
     sessionMessageCount: number;
     sessionIsWorking: boolean;
     isMobile: boolean;
+    messageListRef?: React.RefObject<ViewportAnchorHandle | null>;
     onActiveTurnChange?: (turnId: string | null) => void;
+}
+
+type ViewportMessageAnchor = NonNullable<NonNullable<SessionMemoryState['scrollPosition']>['messageAnchor']>;
+
+interface ViewportAnchorHandle {
+    captureViewportAnchor: () => ViewportMessageAnchor | null;
+    restoreViewportAnchor: (anchor: ViewportMessageAnchor) => boolean;
 }
 
 export interface UseChatAutoFollowResult {
@@ -109,6 +117,7 @@ export const useChatAutoFollow = ({
     sessionMessageCount,
     sessionIsWorking,
     isMobile,
+    messageListRef,
     onActiveTurnChange,
 }: UseChatAutoFollowOptions): UseChatAutoFollowResult => {
     const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -134,7 +143,11 @@ export const useChatAutoFollow = ({
     const settledFramesRef = React.useRef(0);
     const lastScrollTopRef = React.useRef(0);
     const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-    const pendingSaveRef = React.useRef<{ sessionId: string; anchor: number } | null>(null);
+    const pendingSaveRef = React.useRef<{
+        sessionId: string;
+        anchor: number;
+        messageAnchor?: ViewportMessageAnchor;
+    } | null>(null);
     const settleBurstRafRef = React.useRef<number | null>(null);
     const lastUserReleaseAtRef = React.useRef(0);
     // When restoreSnapshot is invoked while ChatViewport is still hydrating
@@ -320,6 +333,7 @@ export const useChatAutoFollow = ({
             scrollTop: container.scrollTop,
             scrollHeight: container.scrollHeight,
             clientHeight: container.clientHeight,
+            ...(pending.messageAnchor ? { messageAnchor: pending.messageAnchor } : {}),
         });
         pendingSaveRef.current = null;
     }, [updateViewportAnchor]);
@@ -336,13 +350,14 @@ export const useChatAutoFollow = ({
             : 0;
         const anchor = Math.floor(anchorRatio * sessionMessageCountRef.current);
 
-        pendingSaveRef.current = { sessionId, anchor };
+        const messageAnchor = messageListRef?.current?.captureViewportAnchor() ?? undefined;
+        pendingSaveRef.current = { sessionId, anchor, messageAnchor };
         if (saveTimerRef.current !== null) return;
         saveTimerRef.current = setTimeout(() => {
             saveTimerRef.current = null;
             flushSave();
         }, SAVE_DEBOUNCE_MS);
-    }, [flushSave]);
+    }, [flushSave, messageListRef]);
 
     const saveSnapshotNow = React.useCallback(() => {
         flushSave();
@@ -371,28 +386,30 @@ export const useChatAutoFollow = ({
             writeScrollTopInstant(target);
             if (sessionWorkingRef.current) {
                 startFollowLoop();
+            } else {
+                startSettleBurst();
             }
-            startSettleBurst();
             return false;
         }
 
-        const savedMaxScroll = Math.max(0, saved.scrollHeight - saved.clientHeight);
-        const ratio = savedMaxScroll > 0 ? saved.scrollTop / savedMaxScroll : 0;
-        const currentMaxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-        const targetTop = Math.round(ratio * currentMaxScroll);
-
         setStateValue('released');
-        writeScrollTopInstant(targetTop);
+        if (saved.messageAnchor && messageListRef?.current?.restoreViewportAnchor(saved.messageAnchor)) {
+            markProgrammaticWrite();
+            lastScrollTopRef.current = container.scrollTop;
+        } else {
+            writeScrollTopInstant(saved.scrollTop);
+        }
 
         const memState = useViewportStore.getState().sessionMemoryState.get(sessionId);
         updateViewportAnchor(sessionId, memState?.viewportAnchor ?? 0, {
             scrollTop: container.scrollTop,
             scrollHeight: container.scrollHeight,
             clientHeight: container.clientHeight,
+            ...(saved.messageAnchor ? { messageAnchor: saved.messageAnchor } : {}),
         });
 
         return true;
-    }, [isMobile, setStateValue, startFollowLoop, startSettleBurst, updateViewportAnchor, writeScrollTopInstant]);
+    }, [isMobile, markProgrammaticWrite, messageListRef, setStateValue, startFollowLoop, startSettleBurst, updateViewportAnchor, writeScrollTopInstant]);
 
     React.useEffect(() => {
         if (!currentSessionId || currentSessionId === lastSessionIdRef.current) {
@@ -566,7 +583,6 @@ export const useChatAutoFollow = ({
         const observer = new ResizeObserver(() => {
             const nextScrollHeight = container.scrollHeight;
             const nextClientHeight = container.clientHeight;
-            const scrollHeightChanged = nextScrollHeight !== lastScrollHeight;
             const clientHeightChanged = nextClientHeight !== lastClientHeight;
 
             updateOverflowAndButton();
@@ -597,10 +613,6 @@ export const useChatAutoFollow = ({
 
             lastScrollHeight = nextScrollHeight;
             lastClientHeight = nextClientHeight;
-
-            if (scrollHeightChanged && stateRef.current === 'following' && sessionWorkingRef.current) {
-                startFollowLoop();
-            }
         });
         observer.observe(container);
         const inner = container.firstElementChild;
@@ -608,7 +620,7 @@ export const useChatAutoFollow = ({
             observer.observe(inner);
         }
         return () => observer.disconnect();
-    }, [containerEl, markProgrammaticWrite, startFollowLoop, updateOverflowAndButton]);
+    }, [containerEl, markProgrammaticWrite, updateOverflowAndButton]);
 
     React.useEffect(() => {
         updateOverflowAndButton();
