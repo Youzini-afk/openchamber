@@ -320,7 +320,13 @@ run_build() {
   chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
   export BUILDKITD_FLAGS="${BUILDKITD_FLAGS:---oci-worker-no-process-sandbox --oci-worker-snapshotter=native}"
-  export ROOTLESSKIT="${ROOTLESSKIT:-rootlesskit --net=slirp4netns --copy-up=/etc --disable-host-loopback}"
+  # Keep the default compatible with restricted Docker build/runtime environments
+  # that disallow rootlesskit's user namespace setup. buildctl-daemonless.sh will
+  # start buildkitd directly as the non-root openchamber user when ROOTLESSKIT is
+  # empty. Operators who know their runtime supports rootlesskit can override this
+  # env var, for example:
+  #   ROOTLESSKIT='rootlesskit --net=slirp4netns --copy-up=/etc --disable-host-loopback'
+  export ROOTLESSKIT="${ROOTLESSKIT:-}"
 
   print_build_only_notice
   if [[ ${#tags[@]} -gt 0 && "$has_output" == "0" ]]; then

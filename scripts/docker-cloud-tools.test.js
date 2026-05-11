@@ -118,7 +118,8 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerBuildOnlyWrapper).toContain('force-network-mode=none');
     expect(dockerBuildOnlyWrapper).toContain('--no-cache');
     expect(dockerBuildOnlyWrapper).toContain('ROOTLESSKIT');
-    expect(dockerBuildOnlyWrapper).toContain('--net=slirp4netns');
+    expect(dockerBuildOnlyWrapper).toContain('Operators who know their runtime supports rootlesskit');
+    expect(dockerBuildOnlyWrapper).toContain("export ROOTLESSKIT=\"${ROOTLESSKIT:-}\"");
     expect(dockerBuildOnlyWrapper).toContain('--disable-host-loopback');
     expect(dockerBuildOnlyWrapper).toContain('docker build');
     expect(dockerBuildOnlyWrapper).toContain('docker buildx build');
