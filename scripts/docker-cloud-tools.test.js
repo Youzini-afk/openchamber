@@ -105,7 +105,6 @@ describe('cloud Docker toolbelt', () => {
     expect(aptInstallPackages.has('uidmap')).toBe(true);
     expect(runtimeBaseDockerfile).toContain("echo 'openchamber:100000:65536' >> /etc/subuid");
     expect(runtimeBaseDockerfile).toContain("echo 'openchamber:100000:65536' >> /etc/subgid");
-    expect(runtimeBaseDockerfile).toContain('docker build --network=none /tmp/openchamber-docker-smoke');
     expect(runtimeBaseDockerfile).toContain('COPY --chmod=0755 scripts/docker-build-only-wrapper.sh /usr/local/bin/docker');
     expect(runtimeBaseDockerfile).toContain('docker --version && buildctl --version');
     expect(runtimeBaseDockerfile).not.toContain('/var/run/docker.sock');

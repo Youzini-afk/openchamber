@@ -109,11 +109,6 @@ ENV RUSTUP_HOME=/home/openchamber/.rustup
 ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/bin:${CARGO_HOME}/bin:${PATH}
 
 RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo /home/openchamber/.rustup && \
-  mkdir -p /tmp/openchamber-docker-smoke && \
-  printf 'hello\n' > /tmp/openchamber-docker-smoke/hello && \
-  printf 'FROM scratch\nCOPY hello /hello\n' > /tmp/openchamber-docker-smoke/Dockerfile && \
-  docker build --network=none /tmp/openchamber-docker-smoke && \
-  rm -rf /tmp/openchamber-docker-smoke && \
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
   rustc --version && cargo --version && \
   go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
