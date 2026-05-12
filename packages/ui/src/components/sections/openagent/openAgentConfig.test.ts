@@ -103,6 +103,7 @@ describe('openAgentConfig helpers', () => {
         categories: {
           deep: { model: 'openai/gpt-5.5' },
         },
+        disabled_hooks: ['todo-continuation-enforcer'],
       },
       project: {
         overriddenAgents: ['oracle'],
@@ -115,6 +116,7 @@ describe('openAgentConfig helpers', () => {
       categories: {
         deep: { model: 'openai/gpt-5.5' },
       },
+      disabled_hooks: ['todo-continuation-enforcer'],
     });
 
     expect(buildOpenAgentSavePayload(123, draft)).toEqual({
@@ -123,6 +125,7 @@ describe('openAgentConfig helpers', () => {
       categories: {
         deep: { model: 'openai/gpt-5.5' },
       },
+      disabled_hooks: ['todo-continuation-enforcer'],
     });
   });
 
@@ -133,12 +136,14 @@ describe('openAgentConfig helpers', () => {
           sisyphus: { model: 'openai/gpt-5.5', temperature: 1 },
         },
         categories: {},
+        disabled_hooks: [],
       },
       {
         agents: {
           sisyphus: { temperature: 1, model: 'openai/gpt-5.5' },
         },
         categories: {},
+        disabled_hooks: [],
       },
     )).toBe(false);
   });

@@ -51,7 +51,7 @@ describe('oh-my-openagent config helpers', () => {
       format: 'jsonc',
       isLegacy: false,
     });
-    expect(result.raw).toEqual({ agents: {}, categories: {} });
+    expect(result.raw).toEqual({ agents: {}, categories: {}, disabled_hooks: [] });
   });
 
   it('reads JSONC config and preserves unrelated fields and comments when saving agents and categories', async () => {
@@ -62,6 +62,7 @@ describe('oh-my-openagent config helpers', () => {
       '{',
       '  // keep this comment',
       '  "notification": { "force_enable": true },',
+      '  "disabled_hooks": ["context-window-monitor", "unknown-hook"],',
       '  "agents": {',
       '    "sisyphus": { "model": "openai/old", "maxTokens": 4096 }',
       '  },',
@@ -84,6 +85,7 @@ describe('oh-my-openagent config helpers', () => {
       categories: {
         deep: { model: 'custom/deep-model', maxTokens: '' },
       },
+      disabled_hooks: ['todo-continuation-enforcer', 'atlas', 'atlas', 'unknown-hook'],
     });
 
     const content = fs.readFileSync(configPath, 'utf8');
@@ -97,6 +99,7 @@ describe('oh-my-openagent config helpers', () => {
     expect(parsed.categories).toEqual({
       deep: { model: 'custom/deep-model' },
     });
+    expect(parsed.disabled_hooks).toEqual(['atlas', 'todo-continuation-enforcer']);
   });
 
   it('edits a legacy oh-my-opencode config file when no canonical config exists', async () => {

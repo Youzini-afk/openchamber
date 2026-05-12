@@ -36,12 +36,14 @@ export type OpenAgentOverrideRecord = Record<string, OpenAgentOverride>;
 export interface OpenAgentDraft {
   agents: OpenAgentOverrideRecord;
   categories: OpenAgentOverrideRecord;
+  disabled_hooks: string[];
 }
 
 export interface OpenAgentConfigResponseLike {
   raw?: {
     agents?: OpenAgentOverrideRecord;
     categories?: OpenAgentOverrideRecord;
+    disabled_hooks?: string[];
   };
   project?: {
     overriddenAgents?: string[];
@@ -66,6 +68,7 @@ export interface OpenAgentSavePayload {
   expectedMtimeMs: number | null;
   agents: OpenAgentOverrideRecord;
   categories: OpenAgentOverrideRecord;
+  disabled_hooks: string[];
 }
 
 export interface OpenAgentDefinition {
@@ -115,6 +118,11 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => (
 const normalizeString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 );
+
+export const normalizeDisabledHooks = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map(normalizeString).filter(Boolean))).sort();
+};
 
 const normalizeFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number') {
@@ -356,6 +364,7 @@ export function createOpenAgentDraftFromConfig(config: OpenAgentConfigResponseLi
   return {
     agents: cloneJson(config?.raw?.agents ?? {}),
     categories: cloneJson(config?.raw?.categories ?? {}),
+    disabled_hooks: normalizeDisabledHooks(config?.raw?.disabled_hooks),
   };
 }
 
@@ -364,6 +373,7 @@ export function buildOpenAgentSavePayload(expectedMtimeMs: number | null, draft:
     expectedMtimeMs,
     agents: normalizeOpenAgentRecord('agent', draft.agents),
     categories: normalizeOpenAgentRecord('category', draft.categories),
+    disabled_hooks: normalizeDisabledHooks(draft.disabled_hooks),
   };
 }
 
@@ -389,10 +399,12 @@ export function hasOpenAgentDraftChanges(initial: OpenAgentDraft, draft: OpenAge
   const normalizedInitial = {
     agents: normalizeOpenAgentRecord('agent', initial.agents),
     categories: normalizeOpenAgentRecord('category', initial.categories),
+    disabled_hooks: normalizeDisabledHooks(initial.disabled_hooks),
   };
   const normalizedDraft = {
     agents: normalizeOpenAgentRecord('agent', draft.agents),
     categories: normalizeOpenAgentRecord('category', draft.categories),
+    disabled_hooks: normalizeDisabledHooks(draft.disabled_hooks),
   };
   return stableStringifyOpenAgent(normalizedInitial) !== stableStringifyOpenAgent(normalizedDraft);
 }

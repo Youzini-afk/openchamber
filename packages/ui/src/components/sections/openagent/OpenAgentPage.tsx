@@ -61,6 +61,29 @@ const REASONING_OPTIONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 const TEXT_VERBOSITY_OPTIONS = ['low', 'medium', 'high'];
 const THINKING_OPTIONS = ['enabled', 'disabled'];
 
+const CONTINUATION_HOOKS = [
+  {
+    id: 'todo-continuation-enforcer',
+    label: 'Todo continuation',
+    description: '根据未完成 todos 继续会话。关闭后可减少 stale todo 反复触发。',
+  },
+  {
+    id: 'atlas',
+    label: 'Atlas auto-continue',
+    description: 'Atlas 任务管理/续跑 hook。关闭后会降低自动分发和继续执行倾向。',
+  },
+  {
+    id: 'stop-continuation-guard',
+    label: 'Stop continuation guard',
+    description: '记录用户停止意图，供其他 continuation hooks 遵守。通常建议保留。',
+  },
+  {
+    id: 'compaction-todo-preserver',
+    label: 'Compaction todo preserver',
+    description: '压缩上下文时保留 todo 状态。关闭后压缩后可能少带任务状态。',
+  },
+] as const;
+
 type OpenAgentGroup = 'main' | 'sub' | 'category' | 'custom';
 
 type OpenAgentDisplayItem = {
@@ -169,6 +192,10 @@ const getItemStatus = (
 };
 
 const normalizeCustomId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-');
+
+const normalizeHookList = (hooks: string[] | undefined): string[] => (
+  Array.from(new Set((hooks ?? []).map((hook) => hook.trim()).filter(Boolean))).sort()
+);
 
 function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -886,6 +913,7 @@ function JsonPreviewDialog({
   const preview = React.useMemo(() => {
     const payload = buildOpenAgentSavePayload(expectedMtimeMs, draft);
     return JSON.stringify({
+      disabled_hooks: payload.disabled_hooks,
       agents: payload.agents,
       categories: payload.categories,
     }, null, 2);
@@ -903,6 +931,52 @@ function JsonPreviewDialog({
         </pre>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ContinuationHooksSection() {
+  const draft = useOpenAgentConfigStore((state) => state.draft);
+  const setDisabledHooks = useOpenAgentConfigStore((state) => state.setDisabledHooks);
+  const disabledHooks = React.useMemo(() => new Set(normalizeHookList(draft.disabled_hooks)), [draft.disabled_hooks]);
+
+  const setHookEnabled = (hookId: string, enabled: boolean) => {
+    const next = new Set(disabledHooks);
+    if (enabled) {
+      next.delete(hookId);
+    } else {
+      next.add(hookId);
+    }
+    setDisabledHooks(Array.from(next));
+  };
+
+  return (
+    <section className="rounded-lg border border-border/70 bg-background p-3">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h3 className="typography-ui-label font-semibold text-foreground">Continuation hooks</h3>
+          <p className="max-w-3xl typography-ui text-muted-foreground">
+            这些是 Oh My OpenAgent 的自动续跑相关 hook，不属于 Magic Context。关闭 Todo continuation 可减少 stale todo 反复触发和重复子任务派发。
+          </p>
+        </div>
+        {disabledHooks.size > 0 ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">已禁用 {disabledHooks.size}</Badge> : null}
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {CONTINUATION_HOOKS.map((hook) => {
+          const enabled = !disabledHooks.has(hook.id);
+          return (
+            <div key={hook.id} className="flex min-w-0 items-start justify-between gap-3 rounded-md border border-border/70 bg-[var(--surface-elevated)] px-3 py-2">
+              <div className="min-w-0 space-y-0.5">
+                <div className="typography-ui-label font-medium text-foreground">{hook.label}</div>
+                <div className="font-mono typography-micro text-muted-foreground">{hook.id}</div>
+                <div className="typography-micro text-muted-foreground">{hook.description}</div>
+              </div>
+              <Switch checked={enabled} onCheckedChange={(checked) => setHookEnabled(hook.id, Boolean(checked))} aria-label={`启用 ${hook.label}`} />
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1098,6 +1172,8 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
           </div>
         </div>
       </div>
+
+      <ContinuationHooksSection />
 
       <OpenAgentGroupSection
         title="主 Agent"

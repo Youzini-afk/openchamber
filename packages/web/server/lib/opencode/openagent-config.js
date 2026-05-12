@@ -18,6 +18,62 @@ const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', '
 const TEXT_VERBOSITIES = new Set(['low', 'medium', 'high']);
 const MODES = new Set(['subagent', 'primary', 'all']);
 const THINKING_TYPES = new Set(['enabled', 'disabled']);
+const KNOWN_HOOKS = new Set([
+  'todo-continuation-enforcer',
+  'context-window-monitor',
+  'session-recovery',
+  'session-notification',
+  'comment-checker',
+  'tool-output-truncator',
+  'question-label-truncator',
+  'directory-agents-injector',
+  'directory-readme-injector',
+  'empty-task-response-detector',
+  'think-mode',
+  'model-fallback',
+  'anthropic-context-window-limit-recovery',
+  'preemptive-compaction',
+  'rules-injector',
+  'background-notification',
+  'auto-update-checker',
+  'startup-toast',
+  'keyword-detector',
+  'agent-usage-reminder',
+  'non-interactive-env',
+  'interactive-bash-session',
+  'thinking-block-validator',
+  'tool-pair-validator',
+  'ralph-loop',
+  'category-skill-reminder',
+  'compaction-context-injector',
+  'compaction-todo-preserver',
+  'claude-code-hooks',
+  'auto-slash-command',
+  'edit-error-recovery',
+  'json-error-recovery',
+  'delegate-task-retry',
+  'prometheus-md-only',
+  'sisyphus-junior-notepad',
+  'team-tool-gating',
+  'no-sisyphus-gpt',
+  'no-hephaestus-non-gpt',
+  'start-work',
+  'atlas',
+  'unstable-agent-babysitter',
+  'task-resume-info',
+  'stop-continuation-guard',
+  'tasks-todowrite-disabler',
+  'runtime-fallback',
+  'write-existing-file-guard',
+  'bash-file-read-guard',
+  'anthropic-effort',
+  'hashline-read-enhancer',
+  'read-image-resizer',
+  'todo-description-override',
+  'webfetch-redirect-guard',
+  'fsync-skip-warning',
+  'legacy-plugin-toast',
+]);
 
 const JSONC_FORMATTING_OPTIONS = {
   insertSpaces: true,
@@ -59,6 +115,14 @@ function isPlainObject(value) {
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function sanitizeDisabledHooks(input) {
+  if (!Array.isArray(input)) return [];
+  return Array.from(new Set(input
+    .map(normalizeString)
+    .filter((hook) => hook && KNOWN_HOOKS.has(hook))))
+    .sort();
 }
 
 function normalizeFiniteNumber(value) {
@@ -719,7 +783,10 @@ function buildCategoryItems(userCategories, projectCategories) {
 }
 
 function updateJsoncProperty(content, key, value) {
-  const nextValue = isPlainObject(value) && Object.keys(value).length > 0 ? value : undefined;
+  const nextValue = (
+    (isPlainObject(value) && Object.keys(value).length > 0)
+    || (Array.isArray(value) && value.length > 0)
+  ) ? value : undefined;
   const edits = modifyJsonc(content, [key], nextValue, {
     formattingOptions: JSONC_FORMATTING_OPTIONS,
   });
@@ -733,6 +800,7 @@ function readOpenAgentConfig(options = {}) {
   const targetConfig = readJsoncFile(targetDetection.path);
   const userAgents = getSection(targetConfig, 'agents');
   const userCategories = getSection(targetConfig, 'categories');
+  const disabledHooks = sanitizeDisabledHooks(targetConfig.disabled_hooks);
 
   const projectBaseDir = directory ? path.join(directory, '.opencode') : null;
   const projectDetection = projectBaseDir ? detectOpenAgentConfigFile(projectBaseDir) : null;
@@ -762,6 +830,7 @@ function readOpenAgentConfig(options = {}) {
     raw: {
       agents: userAgents,
       categories: userCategories,
+      disabled_hooks: disabledHooks,
     },
   };
 }
@@ -777,6 +846,7 @@ function saveOpenAgentConfig(input = {}) {
 
   const agents = sanitizeOverrideRecord(input.agents, 'agent');
   const categories = sanitizeOverrideRecord(input.categories, 'category');
+  const disabledHooks = sanitizeDisabledHooks(input.disabled_hooks);
 
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
@@ -787,6 +857,7 @@ function saveOpenAgentConfig(input = {}) {
 
   content = updateJsoncProperty(content, 'agents', agents);
   content = updateJsoncProperty(content, 'categories', categories);
+  content = updateJsoncProperty(content, 'disabled_hooks', disabledHooks);
 
   parseJsoncObject(content, targetPath);
 

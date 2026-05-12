@@ -56,6 +56,7 @@ export const registerOpenAgentRoutes = (app, dependencies = {}) => {
         expectedMtimeMs: body.expectedMtimeMs ?? null,
         agents: body.agents ?? {},
         categories: body.categories ?? {},
+        disabled_hooks: body.disabled_hooks ?? [],
       });
 
       if (typeof refreshOpenCodeAfterConfigChange === 'function') {

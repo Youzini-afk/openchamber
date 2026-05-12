@@ -77,6 +77,7 @@ interface OpenAgentConfigStore {
   loadConfig: (options?: { force?: boolean }) => Promise<boolean>;
   setPluginEnabled: (enabled: boolean) => Promise<OpenAgentMutationResult>;
   updateDraftItem: (kind: OpenAgentKind, id: string, patch: Record<string, unknown>) => void;
+  setDisabledHooks: (hooks: string[]) => void;
   resetItem: (kind: OpenAgentKind, id: string) => void;
   discardChanges: () => void;
   saveChanges: () => Promise<OpenAgentMutationResult>;
@@ -89,7 +90,7 @@ const DEFAULT_CACHE_KEY = '__default__';
 const loadInFlight = new Map<string, Promise<boolean>>();
 const lastLoadedAt = new Map<string, number>();
 
-const emptyDraft = (): OpenAgentDraft => ({ agents: {}, categories: {} });
+const emptyDraft = (): OpenAgentDraft => ({ agents: {}, categories: {}, disabled_hooks: [] });
 
 const cloneDraft = (draft: OpenAgentDraft): OpenAgentDraft => JSON.parse(JSON.stringify(draft));
 
@@ -296,6 +297,16 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
           });
 
           return { draft, error: null };
+        });
+      },
+
+      setDisabledHooks: (hooks) => {
+        set({
+          draft: {
+            ...get().draft,
+            disabled_hooks: Array.from(new Set(hooks.map((hook) => hook.trim()).filter(Boolean))).sort(),
+          },
+          error: null,
         });
       },
 
