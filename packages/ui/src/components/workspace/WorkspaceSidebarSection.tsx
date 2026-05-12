@@ -51,10 +51,53 @@ type WorkspaceSidebarSectionProps = {
 };
 
 const TRASH_PATH = '.trash';
+const TREE_INDENT_PX = 14;
+const TREE_ROW_LEFT_PADDING_PX = 4;
+const MAX_TREE_GUIDE_DEPTH = 18;
 
 const entryDepthPadding = (depth: number): React.CSSProperties => ({
-  paddingLeft: `${Math.min(depth, 6) * 12 + 4}px`,
+  paddingLeft: `${Math.min(depth, MAX_TREE_GUIDE_DEPTH) * TREE_INDENT_PX + TREE_ROW_LEFT_PADDING_PX}px`,
 });
+
+type TreeLineage = boolean[];
+
+const TreeGuides: React.FC<{ depth: number; lineage: TreeLineage }> = ({ depth, lineage }) => {
+  if (depth <= 0) return null;
+
+  const visibleDepth = Math.min(depth, MAX_TREE_GUIDE_DEPTH);
+  const currentDepth = visibleDepth - 1;
+  const currentHasNextSibling = Boolean(lineage[depth - 1]);
+  const currentX = TREE_ROW_LEFT_PADDING_PX + currentDepth * TREE_INDENT_PX + TREE_INDENT_PX / 2;
+
+  return (
+    <div className="pointer-events-none absolute inset-y-0 left-0" aria-hidden="true">
+      {lineage.slice(0, Math.max(0, visibleDepth - 1)).map((hasNextSibling, index) => (
+        hasNextSibling ? (
+          <span
+            key={`ancestor-${index}`}
+            className="absolute inset-y-0 w-px bg-border/55"
+            style={{ left: `${TREE_ROW_LEFT_PADDING_PX + index * TREE_INDENT_PX + TREE_INDENT_PX / 2}px` }}
+          />
+        ) : null
+      ))}
+      <span
+        className={cn(
+          'absolute top-0 w-px bg-border/55',
+          currentHasNextSibling ? 'bottom-0' : 'h-1/2',
+        )}
+        style={{ left: `${currentX}px` }}
+      />
+      <span
+        className="absolute h-px bg-border/55"
+        style={{
+          left: `${currentX}px`,
+          top: '50%',
+          width: `${TREE_INDENT_PX / 2}px`,
+        }}
+      />
+    </div>
+  );
+};
 
 const childPath = (parent: string, name: string): string => {
   const trimmedName = name.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
@@ -282,7 +325,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     t,
   ]);
 
-  const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number): React.ReactNode => {
+  const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number, lineage: TreeLineage = []): React.ReactNode => {
     const isDirectory = entry.type === 'directory';
     const isTrashRoot = entry.relativePath === TRASH_PATH;
     const isInsideTrash = isTrashRelativePath(entry.relativePath);
@@ -296,13 +339,14 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     return (
       <React.Fragment key={entry.relativePath}>
         <div
-          className="group/workspace-row flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-interactive-hover"
+          className="group/workspace-row relative flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-interactive-hover"
           style={entryDepthPadding(depth)}
           onContextMenu={(event) => {
             event.preventDefault();
             setContextMenuPath(entry.relativePath);
           }}
         >
+          <TreeGuides depth={depth} lineage={lineage} />
           <button
             type="button"
             className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
@@ -493,7 +537,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                 {t('workspace.sidebar.trash.empty')}
               </div>
             ) : null}
-            {children.map((child) => renderEntry(child, depth + 1))}
+            {children.map((child, index) => renderEntry(child, depth + 1, [...lineage, index < children.length - 1]))}
           </div>
         ) : null}
       </React.Fragment>
@@ -661,9 +705,9 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
           </div>
         ) : null}
         {rootEntries.length > 0 ? (
-          rootEntries.map((entry) => renderEntry(entry, 0))
+          rootEntries.map((entry, index) => renderEntry(entry, 0, [Boolean(trashEntry) || index < rootEntries.length - 1]))
         ) : null}
-        {trashEntry ? renderEntry(trashEntry, 0) : null}
+        {trashEntry ? renderEntry(trashEntry, 0, [false]) : null}
       </div>
     </section>
   );
