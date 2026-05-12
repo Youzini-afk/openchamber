@@ -938,6 +938,11 @@ function ContinuationHooksSection() {
   const draft = useOpenAgentConfigStore((state) => state.draft);
   const setDisabledHooks = useOpenAgentConfigStore((state) => state.setDisabledHooks);
   const disabledHooks = React.useMemo(() => new Set(normalizeHookList(draft.disabled_hooks)), [draft.disabled_hooks]);
+  const disabledContinuationHookCount = React.useMemo(
+    () => CONTINUATION_HOOKS.filter((hook) => disabledHooks.has(hook.id)).length,
+    [disabledHooks]
+  );
+  const otherDisabledHookCount = Math.max(0, disabledHooks.size - disabledContinuationHookCount);
 
   const setHookEnabled = (hookId: string, enabled: boolean) => {
     const next = new Set(disabledHooks);
@@ -958,8 +963,14 @@ function ContinuationHooksSection() {
             这些是 Oh My OpenAgent 的自动续跑相关 hook，不属于 Magic Context。关闭 Todo continuation 可减少 stale todo 反复触发和重复子任务派发。
           </p>
         </div>
-        {disabledHooks.size > 0 ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">已禁用 {disabledHooks.size}</Badge> : null}
+        {disabledContinuationHookCount > 0 ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">已禁用 {disabledContinuationHookCount}</Badge> : null}
       </div>
+
+      {otherDisabledHookCount > 0 ? (
+        <p className="mt-2 typography-micro text-muted-foreground">
+          另有 {otherDisabledHookCount} 个非续跑 hook 已在配置中禁用，不显示在此区块。
+        </p>
+      ) : null}
 
       <div className="mt-3 grid gap-2 md:grid-cols-2">
         {CONTINUATION_HOOKS.map((hook) => {
