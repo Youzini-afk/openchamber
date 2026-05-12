@@ -365,6 +365,7 @@ export const ProvidersPage: React.FC = () => {
   const [editingCustomProviderId, setEditingCustomProviderId] = React.useState<string | null>(null);
   const [customProviderEditLoading, setCustomProviderEditLoading] = React.useState(false);
   const customProviderApiKeyInputRef = React.useRef<HTMLInputElement | null>(null);
+  const previousSelectedProviderIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -474,13 +475,24 @@ export const ProvidersPage: React.FC = () => {
 
   React.useEffect(() => {
     if (selectedProviderId === ADD_PROVIDER_ID) {
+      if (previousSelectedProviderIdRef.current !== ADD_PROVIDER_ID) {
+        setCandidateProviderId('');
+        setProviderSearchQuery('');
+        setProviderDropdownOpen(false);
+        setIsCustomProviderMode(false);
+        setEditingCustomProviderId(null);
+        setCustomProviderForm(createEmptyCustomProviderForm());
+        setCustomProviderModelImportDialog(null);
+      }
       setShowAuthPanel(true);
+      previousSelectedProviderIdRef.current = selectedProviderId;
       return;
     }
 
     setShowAuthPanel(false);
     setEditingCustomProviderId(null);
-  }, [selectedProviderId, t]);
+    previousSelectedProviderIdRef.current = selectedProviderId || null;
+  }, [selectedProviderId]);
 
   React.useEffect(() => {
     if (!selectedProviderId || selectedProviderId === ADD_PROVIDER_ID) {
