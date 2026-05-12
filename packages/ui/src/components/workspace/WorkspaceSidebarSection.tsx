@@ -54,6 +54,7 @@ const TRASH_PATH = '.trash';
 const TREE_INDENT_PX = 14;
 const TREE_ROW_LEFT_PADDING_PX = 4;
 const MAX_TREE_GUIDE_DEPTH = 18;
+const TREE_GUIDE_LINE_CLASS = 'bg-muted-foreground/40 group-hover/workspace-row:bg-muted-foreground/60';
 
 const entryDepthPadding = (depth: number): React.CSSProperties => ({
   paddingLeft: `${Math.min(depth, MAX_TREE_GUIDE_DEPTH) * TREE_INDENT_PX + TREE_ROW_LEFT_PADDING_PX}px`,
@@ -75,20 +76,21 @@ const TreeGuides: React.FC<{ depth: number; lineage: TreeLineage }> = ({ depth, 
         hasNextSibling ? (
           <span
             key={`ancestor-${index}`}
-            className="absolute inset-y-0 w-px bg-border/55"
+            className={cn('absolute inset-y-0 w-[1.5px] rounded-full', TREE_GUIDE_LINE_CLASS)}
             style={{ left: `${TREE_ROW_LEFT_PADDING_PX + index * TREE_INDENT_PX + TREE_INDENT_PX / 2}px` }}
           />
         ) : null
       ))}
       <span
         className={cn(
-          'absolute top-0 w-px bg-border/55',
+          'absolute top-0 w-[1.5px] rounded-full',
+          TREE_GUIDE_LINE_CLASS,
           currentHasNextSibling ? 'bottom-0' : 'h-1/2',
         )}
         style={{ left: `${currentX}px` }}
       />
       <span
-        className="absolute h-px bg-border/55"
+        className={cn('absolute h-[1.5px] rounded-full', TREE_GUIDE_LINE_CLASS)}
         style={{
           left: `${currentX}px`,
           top: '50%',
