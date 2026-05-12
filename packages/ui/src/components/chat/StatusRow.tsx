@@ -10,7 +10,7 @@ import {
   RiTimeLine,
 } from "@remixicon/react";
 import { cn } from "@/lib/utils";
-import { useDirectorySync } from "@/sync/sync-context";
+import { useDirectoryStore, useDirectorySync } from "@/sync/sync-context";
 import type { Todo } from "@opencode-ai/sdk/v2/client";
 
 // Compat aliases for old TodoItem shape
@@ -18,7 +18,7 @@ type TodoItem = Todo & { id?: string };
 type TodoStatus = string;
 type TodoPriority = string;
 import { useUIStore } from "@/stores/useUIStore";
-import { useTodosPersistStore } from "@/stores/useTodosPersistStore";
+import { createTodoSignature, useTodosPersistStore } from "@/stores/useTodosPersistStore";
 import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -163,6 +163,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = React.useState(false);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const directoryStore = useDirectoryStore();
   const todosRecord = useDirectorySync((state) => state.todo);
   const persistedSessionTodos = useTodosPersistStore(
     React.useCallback(
@@ -170,12 +171,20 @@ export const StatusRow: React.FC<StatusRowProps> = ({
       [currentSessionId],
     ),
   );
-  const todos: TodoItem[] = React.useMemo(() => {
+  const rawTodos: TodoItem[] = React.useMemo(() => {
     if (!currentSessionId) return EMPTY_TODOS;
     const live = todosRecord[currentSessionId];
     if (live && live.length > 0) return live;
     return persistedSessionTodos ?? EMPTY_TODOS;
   }, [todosRecord, persistedSessionTodos, currentSessionId]);
+  const todosSignature = React.useMemo(() => createTodoSignature(rawTodos), [rawTodos]);
+  const isTodosDismissed = useTodosPersistStore(
+    React.useCallback(
+      (state) => (currentSessionId && todosSignature ? state.dismissed[currentSessionId]?.signature === todosSignature : false),
+      [currentSessionId, todosSignature],
+    ),
+  );
+  const todos = isTodosDismissed ? EMPTY_TODOS : rawTodos;
   const isMobile = useUIStore((state) => state.isMobile);
   const isCompact = isMobile || isVSCodeRuntime();
 
@@ -235,6 +244,19 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   }, [isExpanded]);
 
   const toggleExpanded = () => setIsExpanded((prev) => !prev);
+  const clearCurrentSessionTodos = React.useCallback(() => {
+    if (!currentSessionId || !todosSignature) return;
+
+    directoryStore.setState((state) => {
+      if (!state.todo[currentSessionId]) return {};
+      const nextTodo = { ...state.todo };
+      delete nextTodo[currentSessionId];
+      return { todo: nextTodo };
+    });
+    useTodosPersistStore.getState().dismissSessionTodos(currentSessionId, todosSignature);
+    useTodosPersistStore.getState().setSessionTodos(currentSessionId, undefined);
+    setIsExpanded(false);
+  }, [currentSessionId, directoryStore, todosSignature]);
   const todoSummaryLabel = t('chat.statusRow.summary.activeLeft', {
     active: statusSummary.active,
     left: statusSummary.left,
@@ -343,11 +365,22 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               )}
             >
               {/* Header */}
-              <div className="flex items-center gap-1.5 px-2 py-1 typography-ui-label font-medium text-muted-foreground">
-                <span>{t('chat.statusRow.tasksTitle')}</span>
-                <span className="typography-meta tabular-nums">
-                  {progress.completed}/{progress.total}
-                </span>
+              <div className="flex items-center justify-between gap-2 px-2 py-1 typography-ui-label font-medium text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span>{t('chat.statusRow.tasksTitle')}</span>
+                  <span className="typography-meta tabular-nums">
+                    {progress.completed}/{progress.total}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearCurrentSessionTodos}
+                  className="typography-meta flex-shrink-0 rounded-md px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-[var(--interactive-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                  aria-label={t('chat.statusRow.todo.clearAria' as never)}
+                  title={t('chat.statusRow.todo.clearAria' as never)}
+                >
+                  {t('chat.statusRow.todo.clear' as never)}
+                </button>
               </div>
 
               {/* Todo list */}

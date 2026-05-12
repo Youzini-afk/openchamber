@@ -1515,6 +1515,8 @@ export const dict = {
   'chat.statusRow.todo.priority.low': 'Low priority',
   'chat.statusRow.actions.stopGeneratingAria': 'Stop generating',
   'chat.statusRow.tasksTitle': 'Tasks',
+  'chat.statusRow.todo.clear': 'Clear',
+  'chat.statusRow.todo.clearAria': 'Clear tasks for this session',
   'chat.statusRow.summary.activeLeft': '{active} active · {left} left',
   'chat.statusRow.aborted': 'Aborted',
   'chat.errorBoundary.title': 'Chat Error',

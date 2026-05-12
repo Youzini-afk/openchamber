@@ -1481,6 +1481,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.statusRow.todo.priority.low': '低优先级',
   'chat.statusRow.actions.stopGeneratingAria': '停止生成',
   'chat.statusRow.tasksTitle': '任务',
+  'chat.statusRow.todo.clear': '清理',
+  'chat.statusRow.todo.clearAria': '清理当前会话的任务列表',
   'chat.statusRow.summary.activeLeft': '{active} 个活跃 · 剩余 {left} 个',
   'chat.statusRow.aborted': '已中止',
   'chat.errorBoundary.title': '聊天错误',

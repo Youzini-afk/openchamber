@@ -10,11 +10,29 @@ interface SessionTodosRecord {
     touchedAt: number;
 }
 
+interface DismissedTodosRecord {
+    signature: string;
+    touchedAt: number;
+}
+
 interface TodosPersistState {
     sessions: Record<string, SessionTodosRecord>;
+    dismissed: Record<string, DismissedTodosRecord>;
     setSessionTodos: (sessionId: string, todos: Todo[] | undefined) => void;
     getSessionTodos: (sessionId: string) => Todo[] | undefined;
+    dismissSessionTodos: (sessionId: string, signature: string) => void;
+    isSessionTodosDismissed: (sessionId: string, signature: string) => boolean;
 }
+
+export const createTodoSignature = (todos: Todo[] | undefined): string => {
+    if (!todos || todos.length === 0) return '';
+    return todos
+        .map((todo) => {
+            const item = todo as Todo & { id?: string };
+            return [item.id ?? '', item.content ?? '', item.status ?? '', item.priority ?? ''].join('\u001f');
+        })
+        .join('\u001e');
+};
 
 const evictOldest = (sessions: Record<string, SessionTodosRecord>): Record<string, SessionTodosRecord> => {
     const ids = Object.keys(sessions);
@@ -34,6 +52,7 @@ export const useTodosPersistStore = create<TodosPersistState>()(
         persist(
             (set, get) => ({
                 sessions: {},
+                dismissed: {},
                 setSessionTodos: (sessionId, todos) => {
                     if (!sessionId) return;
                     set((state) => {
@@ -51,12 +70,25 @@ export const useTodosPersistStore = create<TodosPersistState>()(
                     if (!sessionId) return undefined;
                     return get().sessions[sessionId]?.todos;
                 },
+                dismissSessionTodos: (sessionId, signature) => {
+                    if (!sessionId || !signature) return;
+                    set((state) => ({
+                        dismissed: {
+                            ...state.dismissed,
+                            [sessionId]: { signature, touchedAt: Date.now() },
+                        },
+                    }));
+                },
+                isSessionTodosDismissed: (sessionId, signature) => {
+                    if (!sessionId || !signature) return false;
+                    return get().dismissed[sessionId]?.signature === signature;
+                },
             }),
             {
                 name: 'openchamber-session-todos',
                 version: 1,
                 storage: createJSONStorage(() => getSafeStorage()),
-                partialize: (state) => ({ sessions: state.sessions }),
+                partialize: (state) => ({ sessions: state.sessions, dismissed: state.dismissed }),
             },
         ),
         { name: 'TodosPersistStore' },
