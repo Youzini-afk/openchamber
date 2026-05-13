@@ -10,7 +10,7 @@ import {
 
 const PLUGIN_NAME = 'opencode-magic-context';
 const OFFICIAL_NPM_PLUGIN_NAME = '@cortexkit/opencode-magic-context';
-const YOUZINI_NPM_PLUGIN_NAME = '@youzini-afk/opencode-magic-context';
+const YOUZINI_NPM_PLUGIN_NAME = '@youzini/opencode-magic-context';
 const MAGIC_CONTEXT_PLUGIN_NAMES = new Set([PLUGIN_NAME, OFFICIAL_NPM_PLUGIN_NAME, YOUZINI_NPM_PLUGIN_NAME]);
 const CONFIG_BASENAME = 'magic-context';
 const SCHEMA_URL = 'https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json';

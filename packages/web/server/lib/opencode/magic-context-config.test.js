@@ -225,10 +225,10 @@ describe('magic-context config helpers', () => {
     const userConfigDir = path.join(tempHome, '.config', 'opencode');
     fs.mkdirSync(userConfigDir, { recursive: true });
     fs.writeFileSync(path.join(userConfigDir, 'opencode.jsonc'), JSON.stringify({
-      plugin: ['@youzini-afk/opencode-magic-context@0.18.0-youzini.0'],
+      plugin: ['@youzini/opencode-magic-context@0.18.0-youzini.0'],
     }, null, 2));
     fs.writeFileSync(path.join(userConfigDir, 'tui.jsonc'), JSON.stringify({
-      plugin: ['@youzini-afk/opencode-magic-context'],
+      plugin: ['@youzini/opencode-magic-context'],
     }, null, 2));
 
     const { readMagicContextConfig } = await loadMagicContextModule();
@@ -237,12 +237,12 @@ describe('magic-context config helpers', () => {
 
     expect(result.plugin).toMatchObject({
       detected: true,
-      entry: '@youzini-afk/opencode-magic-context@0.18.0-youzini.0',
+      entry: '@youzini/opencode-magic-context@0.18.0-youzini.0',
       configPath: path.join(userConfigDir, 'opencode.jsonc'),
     });
     expect(result.diagnostics.tui).toMatchObject({
       detected: true,
-      entry: '@youzini-afk/opencode-magic-context',
+      entry: '@youzini/opencode-magic-context',
       configPath: path.join(userConfigDir, 'tui.jsonc'),
     });
   });
