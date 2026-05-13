@@ -245,7 +245,9 @@ function DiagnosticsPanel({
   return (
     <div className="grid gap-2 pt-1 md:grid-cols-2 xl:grid-cols-4">
       <DiagnosticItem label="插件注册" ok={pluginOk}>
-        {pluginOk ? `${config?.plugin.entry ?? '已注册'} @ ${config?.plugin.configPath ?? '未知路径'}` : 'OpenCode 配置中没有检测到 @cortexkit/opencode-magic-context。'}
+        {pluginOk
+          ? `${config?.plugin.entry ?? '已注册'} @ ${config?.plugin.configPath ?? '未知路径'}`
+          : 'OpenCode 配置中没有检测到 @cortexkit/opencode-magic-context 或 @youzini-afk/opencode-magic-context。'}
       </DiagnosticItem>
       <DiagnosticItem label="TUI sidebar" ok={tuiOk}>
         {tuiOk ? `${diagnostics?.tui?.entry ?? '已注册'} @ ${diagnostics?.tui?.configPath ?? '未知路径'}` : '没有检测到 TUI sidebar 注册；只影响侧栏增强，不影响核心 hook。'}
@@ -1544,7 +1546,7 @@ export const MagicContextPage: React.FC = () => {
           {t('settings.page.magicContext.title')}
         </h2>
         <p className="typography-ui text-muted-foreground">
-          配置 @cortexkit/opencode-magic-context 的全局 magic-context.jsonc；项目级配置只读取提示，不在此页写入。
+          配置 Magic Context 插件（@cortexkit/opencode-magic-context 或 @youzini-afk/opencode-magic-context）的全局 magic-context.jsonc；项目级配置只读取提示，不在此页写入。
         </p>
       </div>
 

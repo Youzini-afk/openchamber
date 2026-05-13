@@ -221,6 +221,32 @@ describe('magic-context config helpers', () => {
     });
   });
 
+  it('detects the Youzini Magic Context fork package as a valid plugin entry', async () => {
+    const userConfigDir = path.join(tempHome, '.config', 'opencode');
+    fs.mkdirSync(userConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(userConfigDir, 'opencode.jsonc'), JSON.stringify({
+      plugin: ['@youzini-afk/opencode-magic-context@0.18.0-youzini.0'],
+    }, null, 2));
+    fs.writeFileSync(path.join(userConfigDir, 'tui.jsonc'), JSON.stringify({
+      plugin: ['@youzini-afk/opencode-magic-context'],
+    }, null, 2));
+
+    const { readMagicContextConfig } = await loadMagicContextModule();
+
+    const result = readMagicContextConfig();
+
+    expect(result.plugin).toMatchObject({
+      detected: true,
+      entry: '@youzini-afk/opencode-magic-context@0.18.0-youzini.0',
+      configPath: path.join(userConfigDir, 'opencode.jsonc'),
+    });
+    expect(result.diagnostics.tui).toMatchObject({
+      detected: true,
+      entry: '@youzini-afk/opencode-magic-context',
+      configPath: path.join(userConfigDir, 'tui.jsonc'),
+    });
+  });
+
   it('reports project-level magic-context overrides without using them as the write target', async () => {
     const projectDir = path.join(tempHome, 'project');
     const projectConfigPath = path.join(projectDir, 'magic-context.jsonc');

@@ -9,10 +9,12 @@ import {
 } from 'jsonc-parser';
 
 const PLUGIN_NAME = 'opencode-magic-context';
-const NPM_PLUGIN_NAME = '@cortexkit/opencode-magic-context';
+const OFFICIAL_NPM_PLUGIN_NAME = '@cortexkit/opencode-magic-context';
+const YOUZINI_NPM_PLUGIN_NAME = '@youzini-afk/opencode-magic-context';
+const MAGIC_CONTEXT_PLUGIN_NAMES = new Set([PLUGIN_NAME, OFFICIAL_NPM_PLUGIN_NAME, YOUZINI_NPM_PLUGIN_NAME]);
 const CONFIG_BASENAME = 'magic-context';
 const SCHEMA_URL = 'https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json';
-const TUI_PLUGIN_NAME = NPM_PLUGIN_NAME;
+const TUI_PLUGIN_NAMES = MAGIC_CONTEXT_PLUGIN_NAMES;
 const OMO_PLUGIN_NAMES = new Set(['oh-my-openagent', 'oh-my-opencode']);
 const OMO_CONFIG_BASENAMES = ['oh-my-openagent', 'oh-my-opencode'];
 const CONFLICTING_OMO_HOOKS = [
@@ -176,8 +178,7 @@ function getPackageName(entry) {
 function matchesMagicContextPlugin(entry) {
   const entryName = getPluginEntryName(entry).toLowerCase();
   const packageName = getPackageName(entry);
-  return packageName === PLUGIN_NAME
-    || packageName === NPM_PLUGIN_NAME
+  return MAGIC_CONTEXT_PLUGIN_NAMES.has(packageName)
     || entryName.includes('opencode-magic-context')
     || entryName.includes('magic-context/packages/plugin');
 }
@@ -407,7 +408,7 @@ function findPluginEntry(directory) {
 function findTuiPluginEntry() {
   for (const configPath of getUserTuiConfigCandidates()) {
     for (const entry of readPluginEntriesFromConfig(configPath)) {
-      if (matchesMagicContextPlugin(entry) || entry.includes(TUI_PLUGIN_NAME)) {
+      if (matchesMagicContextPlugin(entry) || TUI_PLUGIN_NAMES.has(getPackageName(entry))) {
         return {
           detected: true,
           entry,
