@@ -110,11 +110,12 @@ ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/
 
 RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo /home/openchamber/.rustup && \
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
+  rustup component add rust-analyzer && \
   rustc --version && cargo --version && \
   go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
   npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
   npm install -g opencode-ai pnpm tsx typescript typescript-language-server yarn && \
-  gopls version && tsc --version && typescript-language-server --version && pnpm --version && yarn --version && \
+  rust-analyzer --version && gopls version && tsc --version && typescript-language-server --version && pnpm --version && yarn --version && \
   docker --version && buildctl --version
 
 # cloudflared 2026.3.0 - update digest explicitly when upgrading
