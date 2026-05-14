@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.10.4",
+  "version": "1.11.0",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -64,6 +64,7 @@
     "mobile:android": "bun run --cwd packages/mobile android",
     "mobile:prebuild": "bun run --cwd packages/mobile prebuild",
     "docs:validate": "node scripts/docs/validate-docs.mjs",
+    "doctor": "node scripts/react-doctor.mjs",
     "icons:sprite": "node scripts/generate-file-type-sprite.mjs",
     "icons:generate": "bun run scripts/generate-icon-sprite.mjs",
     "themes:port:opencode": "tsx scripts/port-opencode-theme.ts",
