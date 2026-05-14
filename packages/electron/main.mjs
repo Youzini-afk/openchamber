@@ -794,6 +794,7 @@ const spawnLocalServer = async () => {
     attachSignals: false,
     exitOnShutdown: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
+    getIsWindowFocused: isAnyWindowFocused,
   });
 
   const port = handle.getPort();
@@ -1125,6 +1126,20 @@ const dispatchCheckForUpdates = () => {
   for (const browserWindow of BrowserWindow.getAllWindows()) {
     dispatchDomEventToWindow(browserWindow, 'openchamber:check-for-updates');
   }
+};
+
+const reloadMenuTargetWindow = () => {
+  const target = getMenuTargetWindow();
+  if (!target || target.isDestroyed()) return;
+  target.webContents.reload();
+};
+
+const relaunchFromMenu = () => {
+  prepareForQuit();
+  setImmediate(() => {
+    app.relaunch();
+    app.exit(0);
+  });
 };
 
 const nextWindowLabel = () => {
@@ -2476,6 +2491,8 @@ const buildMacMenu = () => {
         },
         { type: 'separator' },
         { label: 'Settings', accelerator: 'Cmd+,', click: () => dispatchAction('settings') },
+        { label: 'Reload Webview', click: () => reloadMenuTargetWindow() },
+        { label: 'Restart', click: () => relaunchFromMenu() },
         { label: 'Command Palette', accelerator: 'Cmd+P', click: () => dispatchAction('command-palette') },
         { type: 'separator' },
         { role: 'services' },

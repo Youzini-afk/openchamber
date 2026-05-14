@@ -1,9 +1,8 @@
 import React from 'react';
-import { RiBookletLine, RiFolder3Line, RiGitBranchLine } from '@remixicon/react';
 
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { ProjectNotesTodoPanel } from '@/components/session/ProjectNotesTodoPanel';
-import { GitView } from '@/components/views/GitView';
+import { Icon } from "@/components/icon/Icon";
 import { useGitStore } from '@/stores/useGitStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -12,15 +11,11 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { formatDirectoryName } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { useSessionUIStore } from '@/sync/session-ui-store';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
+const GitView = React.lazy(() => import('@/components/views/GitView').then((module) => ({ default: module.GitView })));
 
 type RightTab = 'git' | 'files' | 'context';
-
-const normalizeDirectoryPath = (value?: string | null): string => (
-  (value || '').replace(/\\/g, '/').replace(/\/+$/g, '')
-);
 
 /**
  * Keeps git status fresh while the right sidebar is open.
@@ -105,81 +100,10 @@ const WorkspaceFilesPanel: React.FC = () => (
 );
 
 const RightSidebarGitPanel: React.FC = () => {
-  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const currentSessionDirectory = useSessionUIStore((state) => (
-    state.currentSessionId ? state.getDirectoryForSession(state.currentSessionId) : null
-  ));
-  const effectiveDirectory = useEffectiveDirectory();
-  const sessionDirectory = currentSessionDirectory || effectiveDirectory;
-  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
-  const normalizedSessionDirectory = React.useMemo(
-    () => normalizeDirectoryPath(sessionDirectory),
-    [sessionDirectory]
-  );
-  const gitDirectoryScopeKey = React.useMemo(() => {
-    if (currentSessionId) {
-      return `session:${currentSessionId}`;
-    }
-    if (normalizedSessionDirectory) {
-      return `directory:${normalizedSessionDirectory}`;
-    }
-    return null;
-  }, [currentSessionId, normalizedSessionDirectory]);
-  const selectedDirectory = useSessionUIStore((state) => (
-    gitDirectoryScopeKey ? state.rightSidebarGitDirectories.get(gitDirectoryScopeKey) ?? null : null
-  ));
-  const setRightSidebarGitDirectory = useSessionUIStore((state) => state.setRightSidebarGitDirectory);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined' || !currentSessionId || !gitDirectoryScopeKey) {
-      return;
-    }
-
-    const handleSessionReselected = (event: Event) => {
-      const sessionId = (event as CustomEvent<string>).detail;
-      if (sessionId === currentSessionId) {
-        setRightSidebarGitDirectory(gitDirectoryScopeKey, null);
-      }
-    };
-
-    window.addEventListener('openchamber:session-reselected', handleSessionReselected);
-    return () => window.removeEventListener('openchamber:session-reselected', handleSessionReselected);
-  }, [currentSessionId, gitDirectoryScopeKey, setRightSidebarGitDirectory]);
-
-  const gitDirectory = selectedDirectory || sessionDirectory || null;
-  const isFollowingSession = Boolean(
-    !selectedDirectory
-    || (normalizedSessionDirectory && normalizeDirectoryPath(selectedDirectory) === normalizedSessionDirectory)
-  );
-
-  useRightSidebarGitSync(gitDirectory ?? undefined, isRightSidebarOpen);
-
-  const handleDirectoryChange = React.useCallback((directory: string) => {
-    const normalized = directory.trim();
-    const nextDirectory = normalized
-      && (!sessionDirectory || normalizeDirectoryPath(normalized) !== normalizeDirectoryPath(sessionDirectory))
-      ? normalized
-      : null;
-    if (gitDirectoryScopeKey) {
-      setRightSidebarGitDirectory(gitDirectoryScopeKey, nextDirectory);
-    }
-  }, [gitDirectoryScopeKey, sessionDirectory, setRightSidebarGitDirectory]);
-
-  const handleFollowSession = React.useCallback(() => {
-    if (gitDirectoryScopeKey) {
-      setRightSidebarGitDirectory(gitDirectoryScopeKey, null);
-    }
-  }, [gitDirectoryScopeKey, setRightSidebarGitDirectory]);
-
   return (
-    <GitView
-      directoryOverride={gitDirectory}
-      showDirectorySelector
-      sessionDirectory={sessionDirectory ?? null}
-      isFollowingSessionDirectory={isFollowingSession}
-      onDirectoryChange={handleDirectoryChange}
-      onFollowSessionDirectory={handleFollowSession}
-    />
+    <React.Suspense fallback={null}>
+      <GitView />
+    </React.Suspense>
   );
 };
 
@@ -187,22 +111,26 @@ export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
   const setRightSidebarTab = useUIStore((state) => state.setRightSidebarTab);
+  const effectiveDirectory = useEffectiveDirectory();
+  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
+
+  useRightSidebarGitSync(effectiveDirectory, isRightSidebarOpen);
 
   const tabItems = React.useMemo(() => [
     {
       id: 'git',
       label: t('layout.rightSidebar.git'),
-      icon: <RiGitBranchLine className="h-3.5 w-3.5" />,
+      icon: <Icon name="git-branch" className="h-3.5 w-3.5" />,
     },
     {
       id: 'files',
       label: t('layout.rightSidebar.files'),
-      icon: <RiFolder3Line className="h-3.5 w-3.5" />,
+      icon: <Icon name="folder-3" className="h-3.5 w-3.5" />,
     },
     {
       id: 'context',
       label: t('layout.rightSidebar.context'),
-      icon: <RiBookletLine className="h-3.5 w-3.5" />,
+      icon: <Icon name="booklet" className="h-3.5 w-3.5" />,
     },
   ], [t]);
 

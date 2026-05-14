@@ -17,9 +17,8 @@ import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
-import { getModelVariantKeys } from '@/lib/modelVariants';
+import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
-import { RiArrowDownSLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
 
 type TodoSendTarget = 'session' | 'worktree';
@@ -71,7 +70,7 @@ const ThinkingPill = ({ value, options, disabled, onChange }: ThinkingPillProps)
       )}
     >
       <span className="typography-micro whitespace-nowrap font-medium capitalize">{label}</span>
-      <RiArrowDownSLine className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+      <Icon name="arrow-down-s" className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
     </div>
   );
 
@@ -161,8 +160,8 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
 
   const variantOptions = React.useMemo(() => {
     const provider = providers.find((item) => item.id === execution.providerID);
-    const model = provider?.models?.find((item) => item.id === execution.modelID);
-    return getModelVariantKeys(model);
+    const model = provider?.models?.find((item) => item.id === execution.modelID) as { variants?: Record<string, unknown> } | undefined;
+    return model?.variants ? Object.keys(model.variants) : [];
   }, [providers, execution.providerID, execution.modelID]);
 
   const hasVariantOptions = variantOptions.length > 0;
