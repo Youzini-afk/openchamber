@@ -69,6 +69,84 @@ function buildModelLimit(context, output) {
   };
 }
 
+function firstPositiveInteger(...values) {
+  for (const value of values) {
+    const normalized = normalizePositiveInteger(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function readContextLimit(entry) {
+  if (!isPlainObject(entry)) {
+    return undefined;
+  }
+
+  const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
+  return firstPositiveInteger(
+    limitInput.context,
+    limitInput.contextLimit,
+    limitInput.context_limit,
+    limitInput.contextWindow,
+    limitInput.context_window,
+    limitInput.contextLength,
+    limitInput.context_length,
+    limitInput.maxContext,
+    limitInput.max_context,
+    limitInput.maxContextLength,
+    limitInput.max_context_length,
+    limitInput.inputTokenLimit,
+    limitInput.input_token_limit,
+    entry.context,
+    entry.contextLimit,
+    entry.context_limit,
+    entry.contextWindow,
+    entry.context_window,
+    entry.contextLength,
+    entry.context_length,
+    entry.maxContext,
+    entry.max_context,
+    entry.maxContextLength,
+    entry.max_context_length,
+    entry.inputTokenLimit,
+    entry.input_token_limit,
+  );
+}
+
+function readOutputLimit(entry) {
+  if (!isPlainObject(entry)) {
+    return undefined;
+  }
+
+  const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
+  return firstPositiveInteger(
+    limitInput.output,
+    limitInput.outputLimit,
+    limitInput.output_limit,
+    limitInput.outputTokenLimit,
+    limitInput.output_token_limit,
+    limitInput.maxOutput,
+    limitInput.max_output,
+    limitInput.maxOutputTokens,
+    limitInput.max_output_tokens,
+    entry.output,
+    entry.outputLimit,
+    entry.output_limit,
+    entry.outputTokenLimit,
+    entry.output_token_limit,
+    entry.maxOutput,
+    entry.max_output,
+    entry.maxOutputTokens,
+    entry.max_output_tokens,
+  );
+}
+
+function readModelLimit(entry) {
+  return buildModelLimit(readContextLimit(entry), readOutputLimit(entry));
+}
+
 function normalizeBooleanTrue(value) {
   return value === true;
 }
@@ -251,14 +329,7 @@ function normalizeModels(models) {
 
     const modelEntry = isPlainObject(entry) ? entry : {};
     const modelName = normalizeNonEmptyString(modelEntry.name);
-    const limitInput = isPlainObject(modelEntry.limit) ? modelEntry.limit : {};
-    const context = isPlainObject(entry)
-      ? normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length)
-      : undefined;
-    const output = isPlainObject(entry)
-      ? normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit)
-      : undefined;
-    const limit = buildModelLimit(context, output);
+    const limit = readModelLimit(modelEntry);
     const options = normalizeModelOptions(modelEntry);
     const attachment = normalizeModelCapability(modelEntry, 'attachment') || supportsImageInput(modelEntry);
     const reasoning = normalizeModelCapability(modelEntry, 'reasoning');
@@ -353,7 +424,6 @@ function normalizeProviderConfigModels(models) {
           return null;
         }
 
-        const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
         const options = normalizeModelOptions(entry);
         const editableOptions = options ? { ...options } : undefined;
         const reasoningEffort = normalizeReasoningEffort(editableOptions?.reasoningEffort ?? entry.reasoningEffort ?? entry.reasoning_effort);
@@ -373,8 +443,8 @@ function normalizeProviderConfigModels(models) {
           ...(variants ? { variants } : {}),
           ...(editableOptions && Object.keys(editableOptions).length > 0 ? { options: editableOptions } : {}),
           ...(() => {
-            const context = normalizePositiveInteger(limitInput.context ?? entry.context ?? entry.contextLimit ?? entry.context_length);
-            const output = normalizePositiveInteger(limitInput.output ?? entry.output ?? entry.outputLimit ?? entry.output_token_limit);
+            const context = readContextLimit(entry);
+            const output = readOutputLimit(entry);
             return {
               ...(context ? { context } : {}),
               ...(output ? { output } : {}),
@@ -397,9 +467,8 @@ function normalizeProviderConfigModels(models) {
       }
 
       const modelEntry = isPlainObject(entry) ? entry : {};
-      const limitInput = isPlainObject(modelEntry.limit) ? modelEntry.limit : {};
-      const context = normalizePositiveInteger(limitInput.context ?? modelEntry.context ?? modelEntry.contextLimit ?? modelEntry.context_length);
-      const output = normalizePositiveInteger(limitInput.output ?? modelEntry.output ?? modelEntry.outputLimit ?? modelEntry.output_token_limit);
+      const context = readContextLimit(modelEntry);
+      const output = readOutputLimit(modelEntry);
       const options = normalizeModelOptions(modelEntry);
       const editableOptions = options ? { ...options } : undefined;
       const reasoningEffort = normalizeReasoningEffort(editableOptions?.reasoningEffort ?? modelEntry.reasoningEffort ?? modelEntry.reasoning_effort);
@@ -635,32 +704,7 @@ function normalizeFetchedModel(providerType, entry) {
   const displayName = normalizeNonEmptyString(
     entry.displayName ?? entry.display_name ?? entry.title ?? '',
   );
-  const limitInput = isPlainObject(entry.limit) ? entry.limit : {};
-  const context = normalizePositiveInteger(
-    limitInput.context ??
-    entry.context ??
-    entry.contextWindow ??
-    entry.context_window ??
-    entry.contextLength ??
-    entry.context_length ??
-    entry.maxContext ??
-    entry.max_context ??
-    entry.maxContextLength ??
-    entry.max_context_length ??
-    entry.inputTokenLimit ??
-    entry.input_token_limit,
-  );
-  const output = normalizePositiveInteger(
-    limitInput.output ??
-    entry.output ??
-    entry.outputTokenLimit ??
-    entry.output_token_limit ??
-    entry.maxOutput ??
-    entry.max_output ??
-    entry.maxOutputTokens ??
-    entry.max_output_tokens,
-  );
-  const limit = buildModelLimit(context, output);
+  const limit = readModelLimit(entry);
   const options = normalizeModelOptions(entry);
 
   return {

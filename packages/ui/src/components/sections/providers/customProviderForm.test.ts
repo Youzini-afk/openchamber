@@ -81,6 +81,56 @@ describe('custom provider form helpers', () => {
     ]);
   });
 
+  test('normalizes provider limit aliases to standard custom provider payload limits', () => {
+    expect(normalizeCustomProviderModelRows([
+      {
+        id: 'window-model',
+        name: 'Window Model',
+        context_window: '256,000',
+        max_output_tokens: '16,384',
+      },
+      {
+        id: 'limit-model',
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+      },
+      {
+        id: 'fallback-model',
+        context: '',
+        output: '0',
+        limit: {
+          context_window: 64000,
+          max_output_tokens: 4096,
+        },
+      },
+    ])).toEqual([
+      {
+        id: 'window-model',
+        name: 'Window Model',
+        limit: {
+          context: 256000,
+          output: 16384,
+        },
+      },
+      {
+        id: 'limit-model',
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+      },
+      {
+        id: 'fallback-model',
+        limit: {
+          context: 64000,
+          output: 4096,
+        },
+      },
+    ]);
+  });
+
   test('creates editable form state from a saved custom provider config', () => {
     expect(createCustomProviderFormStateFromConfig({
       providerId: 'editable',
@@ -202,6 +252,48 @@ describe('custom provider form helpers', () => {
           high: { reasoningEffort: 'high' },
           max: { reasoningEffort: 'max' },
         },
+      },
+    ]);
+  });
+
+  test('creates editable form state from standard limit metadata and aliases', () => {
+    expect(createCustomProviderFormStateFromConfig({
+      providerId: 'editable',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'limit-model',
+          limit: {
+            context: 256000,
+            output: 16384,
+          },
+        },
+        {
+          id: 'alias-model',
+          context_window: 128000,
+          max_output_tokens: 8192,
+        },
+      ],
+    }).models).toEqual([
+      {
+        id: 'limit-model',
+        name: '',
+        context: '256000',
+        output: '16384',
+        attachment: false,
+        tool_call: false,
+        reasoning: false,
+        reasoningEffort: '',
+      },
+      {
+        id: 'alias-model',
+        name: '',
+        context: '128000',
+        output: '8192',
+        attachment: false,
+        tool_call: false,
+        reasoning: false,
+        reasoningEffort: '',
       },
     ]);
   });

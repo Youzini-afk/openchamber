@@ -241,6 +241,78 @@ describe('provider config helpers', () => {
     });
   });
 
+  it('normalizes custom provider model limit aliases to standard limit metadata', async () => {
+    const { upsertProviderConfig, getProviderConfig } = await loadProvidersModule();
+
+    upsertProviderConfig({
+      id: 'limit-alias-provider',
+      name: 'Limit Alias Provider',
+      baseURL: 'https://api.example.com/v1',
+      models: [
+        {
+          id: 'window-model',
+          name: 'Window Model',
+          context_window: '256,000',
+          max_output_tokens: '16,384',
+        },
+        {
+          id: 'input-token-model',
+          inputTokenLimit: 128000,
+          outputTokenLimit: 8192,
+        },
+        {
+          id: 'fallback-model',
+          context: '',
+          output: '0',
+          limit: {
+            context_window: 64000,
+            max_output_tokens: 4096,
+          },
+        },
+      ],
+    });
+
+    const configPath = path.join(tempHome, '.config', 'opencode', 'config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(config.provider['limit-alias-provider'].models['window-model']).toEqual({
+      name: 'Window Model',
+      limit: {
+        context: 256000,
+        output: 16384,
+      },
+    });
+    expect(config.provider['limit-alias-provider'].models['input-token-model']).toEqual({
+      limit: {
+        context: 128000,
+        output: 8192,
+      },
+    });
+    expect(config.provider['limit-alias-provider'].models['fallback-model']).toEqual({
+      limit: {
+        context: 64000,
+        output: 4096,
+      },
+    });
+    expect(getProviderConfig('limit-alias-provider').models).toMatchObject([
+      {
+        id: 'window-model',
+        context: 256000,
+        output: 16384,
+      },
+      {
+        id: 'input-token-model',
+        context: 128000,
+        output: 8192,
+      },
+      {
+        id: 'fallback-model',
+        context: 64000,
+        output: 4096,
+      },
+    ]);
+  });
+
   it('preserves fetched model limits when only one side is available', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

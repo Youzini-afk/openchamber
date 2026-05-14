@@ -6,12 +6,56 @@ export interface CustomProviderModelRowInput {
   id: string;
   name?: string;
   context?: string | number;
+  contextLimit?: string | number;
+  context_limit?: string | number;
+  contextWindow?: string | number;
+  context_window?: string | number;
+  contextLength?: string | number;
+  context_length?: string | number;
+  maxContext?: string | number;
+  max_context?: string | number;
+  maxContextLength?: string | number;
+  max_context_length?: string | number;
+  inputTokenLimit?: string | number;
+  input_token_limit?: string | number;
   output?: string | number;
+  outputLimit?: string | number;
+  output_limit?: string | number;
+  outputTokenLimit?: string | number;
+  output_token_limit?: string | number;
+  maxOutput?: string | number;
+  max_output?: string | number;
+  maxOutputTokens?: string | number;
+  max_output_tokens?: string | number;
   attachment?: boolean;
   tool_call?: boolean;
   toolCall?: boolean;
   reasoning?: boolean;
   reasoningEffort?: string;
+  limit?: {
+    context?: string | number;
+    contextLimit?: string | number;
+    context_limit?: string | number;
+    contextWindow?: string | number;
+    context_window?: string | number;
+    contextLength?: string | number;
+    context_length?: string | number;
+    maxContext?: string | number;
+    max_context?: string | number;
+    maxContextLength?: string | number;
+    max_context_length?: string | number;
+    inputTokenLimit?: string | number;
+    input_token_limit?: string | number;
+    output?: string | number;
+    outputLimit?: string | number;
+    output_limit?: string | number;
+    outputTokenLimit?: string | number;
+    output_token_limit?: string | number;
+    maxOutput?: string | number;
+    max_output?: string | number;
+    maxOutputTokens?: string | number;
+    max_output_tokens?: string | number;
+  };
   options?: Record<string, unknown>;
   modalities?: {
     input?: string[];
@@ -139,6 +183,70 @@ const buildModelLimit = (context?: number, output?: number): CustomProviderModel
     ...(output ? { output } : {}),
   };
 };
+
+const firstPositiveInteger = (...values: unknown[]): number | undefined => {
+  for (const value of values) {
+    const normalized = normalizePositiveInteger(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+};
+
+const readContextLimit = (entry: CustomProviderModelRowInput): number | undefined => (
+  firstPositiveInteger(
+    entry.limit?.context,
+    entry.limit?.contextLimit,
+    entry.limit?.context_limit,
+    entry.limit?.contextWindow,
+    entry.limit?.context_window,
+    entry.limit?.contextLength,
+    entry.limit?.context_length,
+    entry.limit?.maxContext,
+    entry.limit?.max_context,
+    entry.limit?.maxContextLength,
+    entry.limit?.max_context_length,
+    entry.limit?.inputTokenLimit,
+    entry.limit?.input_token_limit,
+    entry.context,
+    entry.contextLimit,
+    entry.context_limit,
+    entry.contextWindow,
+    entry.context_window,
+    entry.contextLength,
+    entry.context_length,
+    entry.maxContext,
+    entry.max_context,
+    entry.maxContextLength,
+    entry.max_context_length,
+    entry.inputTokenLimit,
+    entry.input_token_limit,
+  )
+);
+
+const readOutputLimit = (entry: CustomProviderModelRowInput): number | undefined => (
+  firstPositiveInteger(
+    entry.limit?.output,
+    entry.limit?.outputLimit,
+    entry.limit?.output_limit,
+    entry.limit?.outputTokenLimit,
+    entry.limit?.output_token_limit,
+    entry.limit?.maxOutput,
+    entry.limit?.max_output,
+    entry.limit?.maxOutputTokens,
+    entry.limit?.max_output_tokens,
+    entry.output,
+    entry.outputLimit,
+    entry.output_limit,
+    entry.outputTokenLimit,
+    entry.output_token_limit,
+    entry.maxOutput,
+    entry.max_output,
+    entry.maxOutputTokens,
+    entry.max_output_tokens,
+  )
+);
 
 const containsImageModality = (value: unknown): boolean => {
   if (!Array.isArray(value)) {
@@ -270,8 +378,8 @@ export const normalizeCustomProviderModelRows = (
     seen.add(id);
 
     const name = trimString(row.name);
-    const context = normalizePositiveInteger(row.context);
-    const output = normalizePositiveInteger(row.output);
+    const context = readContextLimit(row);
+    const output = readOutputLimit(row);
     const limit = buildModelLimit(context, output);
     const options = buildModelOptions(row.options, row.reasoningEffort);
     const attachment = row.attachment === true;
@@ -317,8 +425,8 @@ const mergeModelRow = (
   return {
     id: trimString(imported.id) || existing.id,
     name: trimString(imported.name) || existing.name,
-    context: normalizePositiveIntegerInputValue(imported.context) || existing.context,
-    output: normalizePositiveIntegerInputValue(imported.output) || existing.output,
+    context: normalizePositiveIntegerInputValue(readContextLimit(imported)) || existing.context,
+    output: normalizePositiveIntegerInputValue(readOutputLimit(imported)) || existing.output,
     attachment: imported.attachment === true || containsImageModality(imported.modalities?.input),
     tool_call: imported.tool_call === true || imported.toolCall === true,
     reasoning: imported.reasoning === true,
@@ -372,8 +480,8 @@ export const createCustomProviderFormStateFromConfig = (
           return {
             id: trimString(model.id),
             name: trimString(model.name),
-            context: normalizePositiveIntegerInputValue(model.context),
-            output: normalizePositiveIntegerInputValue(model.output),
+            context: normalizePositiveIntegerInputValue(readContextLimit(model)),
+            output: normalizePositiveIntegerInputValue(readOutputLimit(model)),
             attachment: model.attachment === true || containsImageModality(model.modalities?.input),
             tool_call: model.tool_call === true || model.toolCall === true,
             reasoning: model.reasoning === true,
