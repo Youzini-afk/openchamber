@@ -56,6 +56,8 @@ import { ConflictDialog } from './git/ConflictDialog';
 import { StashDialog } from './git/StashDialog';
 import { InProgressOperationBanner } from './git/InProgressOperationBanner';
 import { BranchIntegrationSection, type OperationLogEntry } from './git/BranchIntegrationSection';
+import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
+import { Button } from '@/components/ui/button';
 import type { GitRemote } from '@/lib/gitApi';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { cn } from '@/lib/utils';
@@ -223,7 +225,10 @@ const normalizePath = (value?: string | null): string =>
 export const GitView: React.FC = () => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
-  const currentDirectory = useEffectiveDirectory();
+  const sessionDirectory = useEffectiveDirectory();
+  const [gitDirectoryOverride, setGitDirectoryOverride] = React.useState<string | null>(null);
+  const [isDirectorySelectorOpen, setIsDirectorySelectorOpen] = React.useState(false);
+  const currentDirectory = gitDirectoryOverride || sessionDirectory;
   const [worktreeBootstrapStatus, setWorktreeBootstrapStatus] = React.useState<'pending' | 'ready' | 'failed' | null>(null);
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -232,6 +237,13 @@ export const GitView: React.FC = () => {
   const worktreeMap = useSessionUIStore((s) => s.worktreeMetadata);
   const availableWorktrees = useSessionUIStore((s) => s.availableWorktrees);
   const normalizedCurrentDirectory = normalizePath(currentDirectory);
+  React.useEffect(() => {
+    if (!gitDirectoryOverride) return;
+    if (!sessionDirectory) return;
+    if (normalizePath(gitDirectoryOverride) === normalizePath(sessionDirectory)) {
+      setGitDirectoryOverride(null);
+    }
+  }, [gitDirectoryOverride, sessionDirectory]);
   const inferredWorktreeMetadata = React.useMemo(() => {
     if (!normalizedCurrentDirectory) {
       return undefined;
@@ -2116,20 +2128,43 @@ export const GitView: React.FC = () => {
     }
 
     return (
-      <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-        <Icon name="git-branch" className="mb-3 size-6 text-muted-foreground" />
-        <p className="typography-ui-label font-semibold text-foreground">
-          {t('gitView.empty.notGitRepository')}
-        </p>
-        <p className="typography-meta mt-1 text-muted-foreground">
-          {t('gitView.empty.notGitRepositoryDescription')}
-        </p>
-        {repairActions.includes('open-without-worktree-features') ? (
-          <p className="typography-meta mt-2 text-muted-foreground">
-            {t('gitView.empty.worktreeFeaturesUnavailable')}
+      <>
+        <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+          <Icon name="git-branch" className="mb-3 size-6 text-muted-foreground" />
+          <p className="typography-ui-label font-semibold text-foreground">
+            {t('gitView.empty.notGitRepository')}
           </p>
-        ) : null}
-      </div>
+          <p className="typography-meta mt-1 text-muted-foreground">
+            {t('gitView.empty.notGitRepositoryDescription')}
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setIsDirectorySelectorOpen(true)}>
+              <Icon name="folder-6" className="size-4" />
+              {t('gitView.directorySelector.choose')}
+            </Button>
+            {gitDirectoryOverride ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setGitDirectoryOverride(null)}>
+                {t('gitView.directorySelector.followSession')}
+              </Button>
+            ) : null}
+          </div>
+          {repairActions.includes('open-without-worktree-features') ? (
+            <p className="typography-meta mt-2 text-muted-foreground">
+              {t('gitView.empty.worktreeFeaturesUnavailable')}
+            </p>
+          ) : null}
+        </div>
+        <DirectoryExplorerDialog
+          open={isDirectorySelectorOpen}
+          onOpenChange={setIsDirectorySelectorOpen}
+          mode="select-directory"
+          title={t('gitView.directorySelector.dialogTitle')}
+          description={t('gitView.directorySelector.dialogDescription')}
+          confirmLabel={t('gitView.directorySelector.dialogConfirm')}
+          initialPath={currentDirectory ?? null}
+          onSelectDirectory={setGitDirectoryOverride}
+        />
+      </>
     );
   }
 

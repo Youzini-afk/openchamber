@@ -29,6 +29,12 @@ import { useI18n } from '@/lib/i18n';
 interface DirectoryExplorerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode?: 'add-project' | 'select-directory';
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
+  initialPath?: string | null;
+  onSelectDirectory?: (path: string) => void;
 }
 
 type BrowseEntry = {
@@ -140,6 +146,12 @@ const resolveFreshFilesystemHome = async (): Promise<string | null> => {
 export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = ({
   open,
   onOpenChange,
+  mode = 'add-project',
+  title,
+  description,
+  confirmLabel,
+  initialPath,
+  onSelectDirectory,
 }) => {
   const { t } = useI18n();
   const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
@@ -180,7 +192,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
   React.useEffect(() => {
     if (!open) return;
-    setQuery('~/');
+    setQuery(initialPath?.trim() || '~/');
     setEntries([]);
     setHighlightedIndex(0);
     setIsConfirming(false);
@@ -201,7 +213,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     return () => {
       cancelled = true;
     };
-  }, [homeDirectory, open]);
+  }, [homeDirectory, initialPath, open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -306,11 +318,11 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         value: `browse:${entry.path}`,
         name: entry.name,
         path: entry.path,
-        disabled: Boolean(normalized && addedProjectPaths.has(normalized)),
+        disabled: mode === 'add-project' && Boolean(normalized && addedProjectPaths.has(normalized)),
       });
     }
     return nextRows;
-  }, [addedProjectPaths, filteredEntries, query]);
+  }, [addedProjectPaths, filteredEntries, mode, query]);
 
   React.useEffect(() => {
     setHighlightedIndex(0);
@@ -334,7 +346,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       || (!hasTrailingPathSeparator(query) && browseFilterQuery.trim().length > 0 && exactEntry === null)
     )
   );
-  const canAddProject = !isConfirming && !isOpeningFinder && !isAlreadyAdded && Boolean(targetPath);
+  const canAddProject = !isConfirming && !isOpeningFinder && (mode === 'select-directory' || !isAlreadyAdded) && Boolean(targetPath);
   const canSubmitClone = canAddProject && cloneRemoteUrl.trim().length > 0;
   const highlightedRow = rows[highlightedIndex] ?? null;
   const hasHighlightedBrowseItem = Boolean(
@@ -343,7 +355,9 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const submitModifierLabel = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
     ? '⌘'
     : 'Ctrl';
-  const submitActionLabel = isAlreadyAdded
+  const submitActionLabel = mode === 'select-directory'
+    ? confirmLabel ?? t('directoryExplorerDialog.actions.addProject')
+    : isAlreadyAdded
     ? t('directoryExplorerDialog.actions.alreadyAdded')
     : isCloneMode
       ? isConfirming
@@ -413,6 +427,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       } else if (shouldCreateSelection) {
         await opencodeClient.createDirectory(target, { allowOutsideWorkspace: true });
       }
+      if (mode === 'select-directory') {
+        onSelectDirectory?.(selectedTarget);
+        handleClose();
+        return;
+      }
+
       const added = addProject(selectedTarget);
       if (!added) {
         toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
@@ -428,7 +448,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     } finally {
       setIsConfirming(false);
     }
-  }, [addProject, addedProjectPaths, cloneRemoteUrl, handleClose, isCloneMode, isConfirming, selectedGitIdentity?.id, shouldCreateTarget, targetPath, t]);
+  }, [addProject, addedProjectPaths, cloneRemoteUrl, handleClose, isCloneMode, isConfirming, mode, onSelectDirectory, selectedGitIdentity?.id, shouldCreateTarget, targetPath, t]);
 
   const browseToDisplayPath = React.useCallback((displayPath: string) => {
     setQuery(ensureBrowseDirectoryPath(displayPath));
@@ -673,9 +693,11 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
             {isOpeningFinder ? t('directoryExplorerDialog.actions.openingFinder') : t('directoryExplorerDialog.actions.openInFinder')}
           </Button>
         ) : null}
-        <Button variant="ghost" size="xs" onClick={() => setIsCloneMode((value) => !value)} disabled={isConfirming || isOpeningFinder} className={cn(isMobile && 'flex-1')}>
-          {isCloneMode ? t('directoryExplorerDialog.actions.addLocalProject') : t('directoryExplorerDialog.actions.cloneRepository')}
-        </Button>
+        {mode === 'add-project' ? (
+          <Button variant="ghost" size="xs" onClick={() => setIsCloneMode((value) => !value)} disabled={isConfirming || isOpeningFinder} className={cn(isMobile && 'flex-1')}>
+            {isCloneMode ? t('directoryExplorerDialog.actions.addLocalProject') : t('directoryExplorerDialog.actions.cloneRepository')}
+          </Button>
+        ) : null}
         {isMobile ? (
           <Button size="xs" onClick={() => void finalizeSelection(targetPath)} disabled={isCloneMode ? !canSubmitClone : !canAddProject} className="flex-1">
             {submitActionLabel}
@@ -690,7 +712,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
       <MobileOverlayPanel
         open={open}
         onClose={handleClose}
-        title={t('directoryExplorerDialog.title')}
+        title={title ?? t('directoryExplorerDialog.title')}
         className="h-[88dvh] max-h-[720px] max-w-full"
         contentMaxHeightClassName="flex-1"
         footer={<div className="flex flex-col gap-2">{renderFooter()}</div>}
@@ -712,8 +734,8 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         <DialogHeader className="px-5 pb-2 pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <DialogTitle>{t('directoryExplorerDialog.title')}</DialogTitle>
-              <DialogDescription className="mt-2">{t('directoryExplorerDialog.description')}</DialogDescription>
+              <DialogTitle>{title ?? t('directoryExplorerDialog.title')}</DialogTitle>
+              <DialogDescription className="mt-2">{description ?? t('directoryExplorerDialog.description')}</DialogDescription>
             </div>
             {showHiddenToggle}
           </div>
