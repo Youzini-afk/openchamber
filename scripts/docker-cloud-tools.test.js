@@ -7,6 +7,7 @@ const appDockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8')
 const runtimeBaseDockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile.base'), 'utf8');
 const dockerAppWorkflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/docker-app.yml'), 'utf8');
 const dockerBuildOnlyWrapper = fs.readFileSync(path.join(repoRoot, 'scripts/docker-build-only-wrapper.sh'), 'utf8');
+const dockerEntrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf8');
 
 const getAptInstallPackages = () => {
   const matches = runtimeBaseDockerfile.matchAll(/apt-get install\s+-y\s+--no-install-recommends\s+([\s\S]*?)(?=\s+&&)/g);
@@ -102,9 +103,14 @@ describe('cloud Docker toolbelt', () => {
   it('preinstalls JavaScript validation fallback dependencies for cloud workspaces', () => {
     expect(runtimeBaseDockerfile).toContain('ARG NODE_TYPES_VERSION=24.12.4');
     expect(runtimeBaseDockerfile).toContain('ARG VITEST_VERSION=4.1.6');
-    expect(runtimeBaseDockerfile).toContain('npm install --prefix /home/openchamber --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION}');
+    expect(runtimeBaseDockerfile).toContain('OPENCHAMBER_VALIDATION_NODE_MODULES=/home/openchamber/.openchamber-validation/node_modules');
+    expect(runtimeBaseDockerfile).toContain('npm install --prefix /home/openchamber/.openchamber-validation --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION}');
     expect(runtimeBaseDockerfile).toContain('vitest --version');
     expect(runtimeBaseDockerfile).toContain('require.resolve(\'@types/node/package.json\')');
+    expect(dockerEntrypoint).toContain('OPENCHAMBER_WORKSPACE_ROOT="${OPENCHAMBER_WORKSPACE_ROOT:-${HOME}/workspaces}"');
+    expect(dockerEntrypoint).toContain('WORKSPACE_NODE_MODULES="${OPENCHAMBER_WORKSPACE_ROOT}/node_modules"');
+    expect(dockerEntrypoint).toContain('ln -s "${OPENCHAMBER_VALIDATION_NODE_MODULES}/@types/node"');
+    expect(dockerEntrypoint).toContain('ln -s "${OPENCHAMBER_VALIDATION_NODE_MODULES}/.bin/vitest"');
   });
 
   it('provides a daemonless Docker build-only wrapper without host socket access', () => {

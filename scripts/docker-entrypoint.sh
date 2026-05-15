@@ -9,6 +9,12 @@ export OPENCODE_CONFIG_DIR
 OPENCHAMBER_DATA_DIR="${OPENCHAMBER_DATA_DIR:-${HOME}/.config/openchamber}"
 export OPENCHAMBER_DATA_DIR
 
+OPENCHAMBER_WORKSPACE_ROOT="${OPENCHAMBER_WORKSPACE_ROOT:-${HOME}/workspaces}"
+export OPENCHAMBER_WORKSPACE_ROOT
+
+OPENCHAMBER_VALIDATION_NODE_MODULES="${OPENCHAMBER_VALIDATION_NODE_MODULES:-${HOME}/.openchamber-validation/node_modules}"
+export OPENCHAMBER_VALIDATION_NODE_MODULES
+
 SSH_DIR="${HOME}/.ssh"
 SSH_PRIVATE_KEY_PATH="${SSH_DIR}/id_ed25519"
 SSH_PUBLIC_KEY_PATH="${SSH_PRIVATE_KEY_PATH}.pub"
@@ -40,6 +46,20 @@ fi
 if [ -f "${SSH_PUBLIC_KEY_PATH}" ]; then
   echo "[entrypoint] SSH public key:"
   cat "${SSH_PUBLIC_KEY_PATH}"
+fi
+
+if [ -d "${OPENCHAMBER_VALIDATION_NODE_MODULES}" ]; then
+  WORKSPACE_NODE_MODULES="${OPENCHAMBER_WORKSPACE_ROOT}/node_modules"
+  if mkdir -p "${WORKSPACE_NODE_MODULES}/@types" "${WORKSPACE_NODE_MODULES}/.bin" 2>/dev/null; then
+    if [ ! -e "${WORKSPACE_NODE_MODULES}/@types/node" ] && [ -e "${OPENCHAMBER_VALIDATION_NODE_MODULES}/@types/node" ]; then
+      ln -s "${OPENCHAMBER_VALIDATION_NODE_MODULES}/@types/node" "${WORKSPACE_NODE_MODULES}/@types/node" 2>/dev/null || true
+    fi
+    if [ ! -e "${WORKSPACE_NODE_MODULES}/.bin/vitest" ] && [ -e "${OPENCHAMBER_VALIDATION_NODE_MODULES}/.bin/vitest" ]; then
+      ln -s "${OPENCHAMBER_VALIDATION_NODE_MODULES}/.bin/vitest" "${WORKSPACE_NODE_MODULES}/.bin/vitest" 2>/dev/null || true
+    fi
+  else
+    echo "[entrypoint] warning: cannot prepare validation fallback node_modules under ${OPENCHAMBER_WORKSPACE_ROOT}" >&2
+  fi
 fi
 
 # Handle UI password environment variable

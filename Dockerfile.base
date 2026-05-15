@@ -108,15 +108,17 @@ ENV NPM_CONFIG_PREFIX=/home/openchamber/.npm-global
 ENV GOPATH=/home/openchamber/go
 ENV CARGO_HOME=/home/openchamber/.cargo
 ENV RUSTUP_HOME=/home/openchamber/.rustup
-ENV PATH=/home/openchamber/node_modules/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/bin:${CARGO_HOME}/bin:${PATH}
+ENV OPENCHAMBER_VALIDATION_NODE_MODULES=/home/openchamber/.openchamber-validation/node_modules
+ENV NODE_PATH=${OPENCHAMBER_VALIDATION_NODE_MODULES}
+ENV PATH=/home/openchamber/node_modules/.bin:${OPENCHAMBER_VALIDATION_NODE_MODULES}/.bin:${NPM_CONFIG_PREFIX}/bin:${GOPATH}/bin:${CARGO_HOME}/bin:${PATH}
 
-RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo /home/openchamber/.rustup && \
+RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchamber/.ssh /home/openchamber/go /home/openchamber/.cargo /home/openchamber/.rustup /home/openchamber/.openchamber-validation && \
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
   rustup component add rust-analyzer && \
   rustc --version && cargo --version && \
   go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
   npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
-  npm install --prefix /home/openchamber --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION} && \
+  npm install --prefix /home/openchamber/.openchamber-validation --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION} && \
   npm install -g opencode-ai pnpm tsx typescript typescript-language-server yarn && \
   rust-analyzer --version && gopls version && tsc --version && typescript-language-server --version && vitest --version && node -e "require.resolve('@types/node/package.json')" && pnpm --version && yarn --version && \
   docker --version && buildctl --version
