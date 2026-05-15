@@ -652,6 +652,43 @@ describe('provider routes', () => {
     });
   });
 
+  it('exposes known provider options before the OpenCode proxy', async () => {
+    const app = express();
+    app.use(express.json());
+
+    registerOpenCodeRoutes(app, createRouteDependencies());
+
+    const response = await request(app)
+      .get('/api/provider')
+      .expect(200);
+
+    expect(response.body.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'anthropic', name: 'Anthropic' }),
+        expect.objectContaining({ id: 'openai', name: 'OpenAI' }),
+        expect.objectContaining({ id: 'google', name: 'Google' }),
+      ]),
+    );
+    expect(response.body.all).toEqual(response.body.providers);
+  });
+
+  it('exposes provider auth methods before parameterized provider routes', async () => {
+    const app = express();
+    app.use(express.json());
+
+    registerOpenCodeRoutes(app, createRouteDependencies());
+
+    const response = await request(app)
+      .get('/api/provider/auth')
+      .expect(200);
+
+    expect(response.body.openai).toEqual([expect.objectContaining({ type: 'api' })]);
+    expect(response.body['github-copilot']).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'oauth' }),
+      expect.objectContaining({ type: 'api' }),
+    ]));
+  });
+
   it('exposes stored provider configuration for editing', async () => {
     const app = express();
     app.use(express.json());

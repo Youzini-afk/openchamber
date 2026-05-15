@@ -3,6 +3,47 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+const PROVIDER_OPTIONS = Object.freeze([
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'google', name: 'Google' },
+  { id: 'github-copilot', name: 'GitHub Copilot' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'deepseek', name: 'DeepSeek' },
+  { id: 'xai', name: 'xAI' },
+  { id: 'mistral', name: 'Mistral' },
+  { id: 'cohere', name: 'Cohere' },
+  { id: 'together', name: 'Together AI' },
+  { id: 'perplexity', name: 'Perplexity' },
+  { id: 'fireworks', name: 'Fireworks' },
+  { id: 'huggingface', name: 'Hugging Face' },
+  { id: 'azure', name: 'Azure OpenAI' },
+  { id: 'amazon-bedrock', name: 'Amazon Bedrock' },
+  { id: 'cloudflare', name: 'Cloudflare Workers AI' },
+]);
+
+const API_KEY_AUTH_METHOD = Object.freeze({
+  type: 'api',
+  name: 'api',
+  label: 'API key',
+});
+
+const OAUTH_AUTH_METHOD = Object.freeze({
+  type: 'oauth',
+  name: 'oauth',
+  label: 'OAuth',
+});
+
+const PROVIDER_AUTH_METHODS = Object.freeze(
+  Object.fromEntries(PROVIDER_OPTIONS.map((provider) => [
+    provider.id,
+    provider.id === 'github-copilot'
+      ? [OAUTH_AUTH_METHOD, API_KEY_AUTH_METHOD]
+      : [API_KEY_AUTH_METHOD],
+  ])),
+);
+
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const {
     crypto,
@@ -82,6 +123,45 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       console.error('[API:PUT /api/config/settings] Failed to save settings:', error);
       console.error('[API:PUT /api/config/settings] Error stack:', error.stack);
       res.status(500).json({ error: 'Failed to save settings' });
+    }
+  });
+
+  app.get('/api/provider', (_req, res) => {
+    return res.json({
+      providers: PROVIDER_OPTIONS,
+      all: PROVIDER_OPTIONS,
+    });
+  });
+
+  app.get('/api/provider/auth', (_req, res) => {
+    return res.json(PROVIDER_AUTH_METHODS);
+  });
+
+  app.put('/api/auth/:providerId', async (req, res) => {
+    try {
+      const { providerId } = req.params;
+      if (!providerId) {
+        return res.status(400).json({ error: 'Provider ID is required' });
+      }
+
+      const key = normalizePendingString(req.body?.key ?? req.body?.apiKey ?? req.body?.token);
+      if (!key) {
+        return res.status(400).json({ error: 'API key is required' });
+      }
+
+      const type = normalizePendingString(req.body?.type) || 'api';
+      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
+      const auth = readAuthFile();
+      auth[providerId] = { type, key };
+      writeAuthFile(auth);
+
+      return res.json({
+        success: true,
+        providerId,
+      });
+    } catch (error) {
+      console.error('Failed to save provider auth:', error);
+      return res.status(500).json({ error: error.message || 'Failed to save provider auth' });
     }
   });
 
