@@ -79,7 +79,7 @@ describe('cloud Docker toolbelt', () => {
     expect(aptInstallPackages.has('golang-go')).toBe(false);
     expect(runtimeBaseDockerfile).toContain('https://sh.rustup.rs');
     expect(runtimeBaseDockerfile).toContain('rustup component add rust-analyzer');
-    expect(runtimeBaseDockerfile).toContain('ARG GO_VERSION=1.26.2');
+    expect(runtimeBaseDockerfile).toContain('ARG GO_VERSION=1.26.3');
     expect(runtimeBaseDockerfile).toContain('ARG GOPLS_VERSION=v0.21.1');
     expect(runtimeBaseDockerfile).toContain('https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz');
     expect(runtimeBaseDockerfile).toContain('rustc --version');
@@ -97,6 +97,14 @@ describe('cloud Docker toolbelt', () => {
     expect(runtimeBaseDockerfile).toContain('https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz');
     expect(runtimeBaseDockerfile).toContain('node --version');
     expect(runtimeBaseDockerfile).toContain('npm --version');
+  });
+
+  it('preinstalls JavaScript validation fallback dependencies for cloud workspaces', () => {
+    expect(runtimeBaseDockerfile).toContain('ARG NODE_TYPES_VERSION=24.12.4');
+    expect(runtimeBaseDockerfile).toContain('ARG VITEST_VERSION=4.1.6');
+    expect(runtimeBaseDockerfile).toContain('npm install --prefix /home/openchamber --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION}');
+    expect(runtimeBaseDockerfile).toContain('vitest --version');
+    expect(runtimeBaseDockerfile).toContain('require.resolve(\'@types/node/package.json\')');
   });
 
   it('provides a daemonless Docker build-only wrapper without host socket access', () => {
