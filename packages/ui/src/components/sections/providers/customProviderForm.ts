@@ -130,6 +130,7 @@ interface CustomProviderModelPayload {
 
 const REASONING_EFFORT_LIST = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 const REASONING_EFFORTS = new Set<string>(REASONING_EFFORT_LIST);
+const DEFAULT_MODEL_OUTPUT_LIMIT = 8192;
 
 const trimString = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
@@ -180,7 +181,7 @@ const buildModelLimit = (context?: number, output?: number): CustomProviderModel
 
   return {
     ...(context ? { context } : {}),
-    ...(output ? { output } : {}),
+    output: output || DEFAULT_MODEL_OUTPUT_LIMIT,
   };
 };
 

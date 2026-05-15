@@ -9,6 +9,7 @@ import {
 const DEFAULT_OPENAI_COMPATIBLE_NPM = '@ai-sdk/openai-compatible';
 const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const DEFAULT_CUSTOM_PROVIDER_TYPE = 'openai-compatible';
+const DEFAULT_MODEL_OUTPUT_LIMIT = 8192;
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const REASONING_EFFORT_LIST = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const REASONING_EFFORTS = new Set(REASONING_EFFORT_LIST);
@@ -65,7 +66,7 @@ function buildModelLimit(context, output) {
 
   return {
     ...(context ? { context } : {}),
-    ...(output ? { output } : {}),
+    output: output || DEFAULT_MODEL_OUTPUT_LIMIT,
   };
 }
 

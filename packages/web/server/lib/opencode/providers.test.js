@@ -213,7 +213,7 @@ describe('provider config helpers', () => {
     });
   });
 
-  it('preserves the context token limit when the output token limit is not configured', async () => {
+  it('defaults the output token limit when only the context token limit is configured', async () => {
     const { upsertProviderConfig } = await loadProvidersModule();
 
     upsertProviderConfig({
@@ -237,6 +237,7 @@ describe('provider config helpers', () => {
       name: 'Context Only Model',
       limit: {
         context: 128000,
+        output: 8192,
       },
     });
   });
@@ -338,6 +339,7 @@ describe('provider config helpers', () => {
         name: 'context-only',
         limit: {
           context: 128000,
+          output: 8192,
         },
       },
       {

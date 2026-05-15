@@ -74,6 +74,7 @@ describe('custom provider form helpers', () => {
         },
         limit: {
           context: 128000,
+          output: 8192,
         },
       },
       { id: 'empty-limits' },
