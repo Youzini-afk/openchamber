@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiArrowLeftLine } from '@remixicon/react';
 import type { Message, Part, Session } from '@opencode-ai/sdk/v2';
 
 import { ChatInput } from './ChatInput';
@@ -18,7 +19,6 @@ import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
-import { Icon } from "@/components/icon/Icon";
 import type { PermissionRequest } from '@/types/permission';
 import type { QuestionRequest } from '@/types/question';
 import { cn } from '@/lib/utils';
@@ -521,7 +521,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 ? t('chat.container.returnToParent.titleNamed', { title: parentSession.title })
                 : t('chat.container.returnToParent.title')}
         >
-            <Icon name="arrow-left" className="h-4 w-4" />
+            <RiArrowLeftLine className="h-4 w-4" />
             {t('chat.container.returnToParent.label')}
         </Button>
     ) : null;
@@ -657,6 +657,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
             window.removeEventListener('keydown', handleChatTurnKeyDown);
         };
     }, [currentSessionId, isDesktopExpandedInput, navigation, scrollRef]);
+
 
     React.useLayoutEffect(() => {
         const container = scrollRef.current;

@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Icon } from "@/components/icon/Icon";
+import { RiInformationLine } from '@remixicon/react';
 import {
   getResponseStylePresetInstructions,
   isResponseStylePreset,
@@ -250,7 +250,7 @@ export const BehaviorPage: React.FC = () => {
               </h3>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                  <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent sideOffset={8} className="max-w-xs">
                   <div className="space-y-1">
@@ -295,7 +295,7 @@ export const BehaviorPage: React.FC = () => {
               </h3>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                  <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent sideOffset={8} className="max-w-xs">
                   {t('settings.behavior.page.responseStyle.tooltip')}

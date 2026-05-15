@@ -1,4 +1,12 @@
 import React from 'react';
+import {
+  RiAddLine,
+  RiArrowDownSLine,
+  RiArrowRightSLine,
+  RiDeleteBinLine,
+  RiInformationLine,
+  RiPlayLine,
+} from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -22,7 +30,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui';
-import { Icon } from "@/components/icon/Icon";
 import { useDesktopSshStore } from '@/stores/useDesktopSshStore';
 import { isDesktopShell } from '@/lib/desktop';
 import {
@@ -194,7 +201,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
           <p className="typography-meta text-muted-foreground">{t('settings.projects.actions.description')}</p>
         </div>
         <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={handleAddAction}>
-          <Icon name="add" className="h-3.5 w-3.5" />
+          <RiAddLine className="h-3.5 w-3.5" />
           {t('settings.projects.actions.actions.add')}
         </Button>
       </div>
@@ -210,7 +217,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
           <div className="space-y-0 max-w-[30rem]">
             {actions.map((action) => {
               const selectedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_MAP) || 'play';
-              const selectedIconName = PROJECT_ACTION_ICON_MAP[selectedIconKey] || 'play';
+              const SelectedIcon = PROJECT_ACTION_ICON_MAP[selectedIconKey] || RiPlayLine;
               const isOpen = expandedActions[action.id] ?? false;
               const title = action.name.trim() || t('settings.projects.actions.state.untitled');
 
@@ -231,11 +238,11 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                   <div className="flex items-start gap-2">
                     <CollapsibleTrigger className="group flex-1 justify-start gap-2 rounded-md px-0 pr-1 py-1 hover:bg-[var(--interactive-hover)] focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
                       {isOpen ? (
-                        <Icon name="arrow-down-s" className="h-4 w-4 text-muted-foreground" />
+                        <RiArrowDownSLine className="h-4 w-4 text-muted-foreground" />
                       ) : (
-                        <Icon name="arrow-right-s" className="h-4 w-4 text-muted-foreground" />
+                        <RiArrowRightSLine className="h-4 w-4 text-muted-foreground" />
                       )}
-                      <Icon name={selectedIconName} className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <SelectedIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="typography-ui-label text-foreground truncate">{title}</span>
@@ -250,7 +257,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                       className="!font-normal h-7 w-7 px-0 text-muted-foreground hover:text-[var(--status-error)]"
                       onClick={() => handleRemoveAction(action.id)}
                     >
-                      <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                      <RiDeleteBinLine className="h-3.5 w-3.5" />
                     </Button>
                   </div>
 
@@ -264,13 +271,13 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--interactive-border)] text-foreground hover:bg-[var(--interactive-hover)]"
                                 aria-label={t('settings.projects.actions.field.selectIconAria')}
                               >
-                                <Icon name={selectedIconName} className="h-4 w-4" />
+                                <SelectedIcon className="h-4 w-4" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-56 p-2">
                               <div className="grid grid-cols-6 gap-1">
                               {PROJECT_ACTION_ICONS.map((entry) => {
-                                const iconName = entry.Icon;
+                                const Icon = entry.Icon;
                                 const selected = (action.icon || 'play') === entry.key;
                                 return (
                                   <button
@@ -283,7 +290,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                                     )}
                                     aria-label={t('settings.projects.actions.field.iconAria', { icon: entry.label })}
                                   >
-                                    <Icon name={iconName} className="h-4 w-4" />
+                                    <Icon className="h-4 w-4" />
                                   </button>
                                 );
                               })}
@@ -357,7 +364,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                               />
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Icon name="information" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 cursor-help" />
+                                  <RiInformationLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 cursor-help" />
                                 </TooltipTrigger>
                                 <TooltipContent sideOffset={8} className="max-w-xs">
                                   {t('settings.projects.actions.field.overrideUrlTooltip')}

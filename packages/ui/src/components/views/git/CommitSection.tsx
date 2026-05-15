@@ -1,9 +1,15 @@
+import {
+  RiGitCommitLine,
+  RiArrowUpLine,
+  RiAiGenerate2,
+  RiLoader4Line,
+  RiEmotionHappyLine,
+} from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { CommitInput } from './CommitInput';
 import { AIHighlightsBox } from './AIHighlightsBox';
 import { useDeviceInfo } from '@/lib/device';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 type CommitAction = 'commit' | 'commitAndPush' | null;
@@ -81,7 +87,7 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
             className="w-fit"
             type="button"
           >
-            <Icon name="emotion-happy" className="size-4" />
+            <RiEmotionHappyLine className="size-4" />
             {t('gitView.commit.addGitmoji')}
           </Button>
         )}
@@ -101,9 +107,9 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
             className="commit-actions__btn"
           >
             {isGeneratingMessage ? (
-              <Icon name="loader-4" className="size-4 animate-spin" />
+              <RiLoader4Line className="size-4 animate-spin" />
             ) : (
-              <Icon name="ai-generate-2" className="size-4 text-primary" />
+              <RiAiGenerate2 className="size-4 text-primary" />
             )}
             <span className="commit-actions__label">{t('gitView.commit.generate')}</span>
           </Button>
@@ -120,12 +126,12 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
           >
             {commitAction === 'commit' ? (
               <>
-                <Icon name="loader-4" className="size-4 animate-spin" />
+                <RiLoader4Line className="size-4 animate-spin" />
                 <span className="commit-actions__label">{t('gitView.commit.committing')}</span>
               </>
             ) : (
               <>
-                <Icon name="git-commit" className="size-4" />
+                <RiGitCommitLine className="size-4" />
                 <span className="commit-actions__label">{t('gitView.commit.commit')}</span>
               </>
             )}
@@ -143,9 +149,9 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
                   aria-label={t('gitView.commit.pushAria')}
                 >
                   {commitAction === 'commitAndPush' ? (
-                    <Icon name="loader-4" className="size-4 animate-spin" />
+                    <RiLoader4Line className="size-4 animate-spin" />
                   ) : (
-                    <Icon name="arrow-up" className="size-3.5" />
+                    <RiArrowUpLine className="size-3.5" />
                   )}
                 </Button>
               </TooltipTrigger>
@@ -164,12 +170,12 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
             >
               {commitAction === 'commitAndPush' ? (
                 <>
-                  <Icon name="loader-4" className="size-4 animate-spin" />
+                  <RiLoader4Line className="size-4 animate-spin" />
                   <span className="commit-actions__label">{t('gitView.commit.pushing')}</span>
                 </>
               ) : (
                 <>
-                  <Icon name="arrow-up" className="size-3.5" />
+                  <RiArrowUpLine className="size-3.5" />
                   <span className="commit-actions__label">{t('gitView.commit.push')}</span>
                 </>
               )}

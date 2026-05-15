@@ -7,11 +7,6 @@ import { createServerUtilsRuntime } from './server-utils-runtime.js';
 const originalPath = process.env.PATH;
 
 afterEach(() => {
-  if (originalPath === undefined) {
-    delete process.env.PATH;
-    return;
-  }
-
   process.env.PATH = originalPath;
 });
 

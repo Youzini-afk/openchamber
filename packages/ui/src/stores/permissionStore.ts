@@ -107,13 +107,14 @@ const normalizeDirectoryCandidate = (value: unknown): string | null => {
     return trimmed.length > 0 ? trimmed : null;
 };
 
-const collectPendingFromSyncStores = (): Array<{ id: string; sessionID: string }> => {
+const collectPendingFromSyncStores = (sessionScope: Set<string>): Array<{ id: string; sessionID: string }> => {
     try {
         const stores = getSyncChildStores();
         const pending: Array<{ id: string; sessionID: string }> = [];
         for (const store of stores.children.values()) {
             const permissionMap = store.getState().permission ?? {};
             for (const [sessionId, entries] of Object.entries(permissionMap)) {
+                if (!sessionScope.has(sessionId)) continue;
                 for (const permission of entries ?? []) {
                     if (!permission?.id) continue;
                     pending.push({ id: permission.id, sessionID: permission.sessionID || sessionId });
@@ -124,68 +125,6 @@ const collectPendingFromSyncStores = (): Array<{ id: string; sessionID: string }
     } catch {
         return [];
     }
-};
-
-const sessionBelongsToScope = async (
-    sessionID: string,
-    rootSessionID: string,
-    knownSessions: Session[],
-    directories: string[],
-): Promise<boolean> => {
-    if (sessionID === rootSessionID) {
-        return true;
-    }
-
-    const knownById = new Map<string, Session>();
-    for (const session of knownSessions) {
-        knownById.set(session.id, session);
-    }
-
-    const fetchedById = new Map<string, Session>();
-    const fetchSession = async (id: string): Promise<Session | null> => {
-        const known = knownById.get(id) ?? fetchedById.get(id);
-        if (known) return known;
-
-        for (const directory of directories) {
-            try {
-                const result = await opencodeClient.getScopedSdkClient(directory).session.get({
-                    sessionID: id,
-                    directory,
-                });
-                if (result.data) {
-                    fetchedById.set(id, result.data);
-                    return result.data;
-                }
-            } catch {
-                // Try the next known project directory.
-            }
-        }
-
-        try {
-            const result = await opencodeClient.getSdkClient().session.get({ sessionID: id });
-            if (result.data) {
-                fetchedById.set(id, result.data);
-                return result.data;
-            }
-        } catch {
-            // Missing session metadata means we cannot safely inherit the parent setting.
-        }
-
-        return null;
-    };
-
-    const seen = new Set<string>();
-    let current: string | undefined = sessionID;
-    while (current && !seen.has(current)) {
-        if (current === rootSessionID) {
-            return true;
-        }
-        seen.add(current);
-        const session = await fetchSession(current);
-        current = session?.parentID ?? undefined;
-    }
-
-    return false;
 };
 
 const autoRespondsPermissionBySession = (
@@ -265,29 +204,19 @@ export const usePermissionStore = create<PermissionStore>()(
                         }
                     }
 
-                    const directoryList = Array.from(directories);
-                    const pendingFromStores = collectPendingFromSyncStores();
+                    const pendingFromStores = collectPendingFromSyncStores(sessionScope);
                     const pendingFromApi = await opencodeClient.listPendingPermissions({ directories: Array.from(directories) });
                     const mergedPending = new Map<string, { id: string; sessionID: string }>();
 
                     for (const permission of pendingFromStores) {
-                        if (sessionScope.has(permission.sessionID)) {
-                            mergedPending.set(permission.id, permission);
-                            continue;
-                        }
-                        if (await sessionBelongsToScope(permission.sessionID, sessionId, sessions, directoryList)) {
-                            mergedPending.set(permission.id, permission);
-                        }
+                        mergedPending.set(permission.id, permission);
                     }
                     for (const permission of pendingFromApi) {
                         if (!permission?.id || !permission?.sessionID) {
                             continue;
                         }
                         if (!sessionScope.has(permission.sessionID)) {
-                            const belongsToScope = await sessionBelongsToScope(permission.sessionID, sessionId, sessions, directoryList);
-                            if (!belongsToScope) {
-                                continue;
-                            }
+                            continue;
                         }
                         mergedPending.set(permission.id, { id: permission.id, sessionID: permission.sessionID });
                     }

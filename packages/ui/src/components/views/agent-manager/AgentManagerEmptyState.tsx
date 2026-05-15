@@ -1,4 +1,15 @@
 import React from 'react';
+import {
+  RiAddCircleLine,
+  RiAddLine,
+  RiArrowDownSLine,
+  RiCloseLine,
+  RiFileImageLine,
+  RiFileLine,
+  RiGitBranchLine,
+  RiHourglassFill,
+  RiSendPlane2Line,
+} from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -11,7 +22,6 @@ import { BranchSelector, useBranchOptions } from '@/components/multirun/BranchSe
 import { AgentSelector } from '@/components/multirun/AgentSelector';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from '@/components/chat/CommandAutocomplete';
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
-import { Icon } from "@/components/icon/Icon";
 import { isIMECompositionEvent } from '@/lib/ime';
 import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -428,7 +438,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
         {/* Branch Selection */}
         <div className="space-y-1.5">
           <label className="typography-ui-label font-medium text-foreground flex items-center gap-1.5">
-            <Icon name="git-branch" className="h-4 w-4 text-muted-foreground" />
+            <RiGitBranchLine className="h-4 w-4 text-muted-foreground" />
             {t('agentManager.empty.baseBranch.label')}
           </label>
           <BranchSelector
@@ -455,7 +465,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                 ) : null;
               })()}
             </p>
-            <Icon name="arrow-down-s" className={cn(
+            <RiArrowDownSLine className={cn(
               'h-4 w-4 text-muted-foreground transition-transform duration-200',
               isSetupCommandsOpen && 'rotate-180'
             )} />
@@ -490,7 +500,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                         className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                         aria-label={t('agentManager.empty.setupCommands.removeCommandAria')}
                       >
-                        <Icon name="close" className="h-4 w-4" />
+                        <RiCloseLine className="h-4 w-4" />
                       </button>
                     </div>
                   ))}
@@ -499,7 +509,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                     onClick={() => setSetupCommands([...setupCommands, ''])}
                     className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <Icon name="add" className="h-3.5 w-3.5" />
+                    <RiAddLine className="h-3.5 w-3.5" />
                     {t('agentManager.empty.setupCommands.addCommand')}
                   </button>
                 </div>
@@ -573,9 +583,9 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                     className="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/30 border border-border/30 rounded-md typography-meta"
                   >
                     {file.mimeType.startsWith('image/') ? (
-                      <Icon name="file-image" className="h-3.5 w-3.5 text-muted-foreground" />
+                      <RiFileImageLine className="h-3.5 w-3.5 text-muted-foreground" />
                     ) : (
-                      <Icon name="file" className="h-3.5 w-3.5 text-muted-foreground" />
+                      <RiFileLine className="h-3.5 w-3.5 text-muted-foreground" />
                     )}
                     <span className="truncate max-w-[120px]" title={file.filename}>
                       {file.filename}
@@ -585,7 +595,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                       onClick={() => handleRemoveFile(file.id)}
                       className="text-muted-foreground hover:text-destructive ml-0.5"
                     >
-                      <Icon name="close" className="h-3.5 w-3.5" />
+                      <RiCloseLine className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 ))}
@@ -610,7 +620,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                   className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors"
                   aria-label={t('agentManager.empty.prompt.addAttachmentAria')}
                 >
-                  <Icon name="add-circle" className="h-[18px] w-[18px]" />
+                  <RiAddCircleLine className="h-[18px] w-[18px]" />
                 </button>
               </div>
               
@@ -635,9 +645,9 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                   aria-label={t('agentManager.empty.actions.startAgentGroupAria')}
                 >
                   {isSubmittingOrCreating ? (
-                    <Icon name="hourglass-fill" className="h-[18px] w-[18px] animate-spin" />
+                    <RiHourglassFill className="h-[18px] w-[18px] animate-spin" />
                   ) : (
-                    <Icon name="send-plane-2" className="h-[18px] w-[18px]" />
+                    <RiSendPlane2Line className="h-[18px] w-[18px]" />
                   )}
                 </button>
               </div>

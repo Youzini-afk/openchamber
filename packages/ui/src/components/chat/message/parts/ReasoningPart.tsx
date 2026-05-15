@@ -1,10 +1,10 @@
 import React from 'react';
+import type { ComponentType } from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
+import { RiArrowDownSLine, RiArrowRightSLine, RiBrainAi3Line, RiChatAi3Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { Icon } from "@/components/icon/Icon";
-import type { IconName } from "@/components/icon/icons";
 import { useUIStore } from '@/stores/useUIStore';
 import { useDurationTickerNow } from './useDurationTicker';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
@@ -14,12 +14,15 @@ type PartWithText = Part & { text?: string; content?: string; time?: { start?: n
 
 export type ReasoningVariant = 'thinking' | 'justification';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IconComponent = ComponentType<any>;
+
 const variantConfig: Record<
     ReasoningVariant,
-    { label: string; Icon: IconName }
+    { label: string; Icon: IconComponent }
 > = {
-    thinking: { label: 'Thinking', Icon: 'brain-ai-3' },
-    justification: { label: 'Justification', Icon: 'chat-ai-3' },
+    thinking: { label: 'Thinking', Icon: RiBrainAi3Line },
+    justification: { label: 'Justification', Icon: RiChatAi3Line },
 };
 
 const cleanReasoningText = (text: string): string => {
@@ -96,7 +99,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     const [isExpanded, setIsExpanded] = React.useState(false);
 
     const summary = React.useMemo(() => getReasoningSummary(text), [text]);
-    const { label, Icon: iconName } = variantConfig[variant];
+    const { label, Icon } = variantConfig[variant];
     const timeStart = typeof time?.start === 'number' && Number.isFinite(time.start) ? time.start : undefined;
     const timeEnd = typeof time?.end === 'number' && Number.isFinite(time.end) ? time.end : undefined;
 
@@ -128,7 +131,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                                 !isExpanded && (alwaysShowActions ? 'opacity-0' : 'group-hover/tool:opacity-0')
                             )}
                         >
-                            <Icon name={iconName} className="h-3.5 w-3.5" />
+                            <Icon className="h-3.5 w-3.5" />
                         </div>
                         <div
                             className={cn(
@@ -137,7 +140,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                                 !isExpanded && (alwaysShowActions ? 'opacity-100' : 'opacity-0 group-hover/tool:opacity-100')
                             )}
                         >
-                            {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
+                            {isExpanded ? <RiArrowDownSLine className="h-3.5 w-3.5" /> : <RiArrowRightSLine className="h-3.5 w-3.5" />}
                         </div>
                     </div>
                     <span className="typography-meta font-medium">{label}</span>

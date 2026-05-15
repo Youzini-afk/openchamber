@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui';
-import { Icon } from "@/components/icon/Icon";
+import { RiAlertLine, RiLoader4Line } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
 
 interface StashDialogProps {
@@ -59,7 +59,7 @@ export const StashDialog: React.FC<StashDialogProps> = ({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <Icon name="alert" className="size-5 text-[var(--status-warning)]" />
+            <RiAlertLine className="size-5 text-[var(--status-warning)]" />
             <DialogTitle>{t('gitView.stash.title')}</DialogTitle>
           </div>
           <DialogDescription>
@@ -115,7 +115,7 @@ export const StashDialog: React.FC<StashDialogProps> = ({
           >
             {isProcessing ? (
               <>
-                <Icon name="loader-4" className="size-4 animate-spin" />
+                <RiLoader4Line className="size-4 animate-spin" />
                 {t('gitView.common.processing')}
               </>
             ) : (

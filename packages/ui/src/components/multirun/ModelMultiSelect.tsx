@@ -1,10 +1,10 @@
 import React from 'react';
+import { RiAddLine, RiBrainAi3Line, RiCloseLine, RiSearchLine, RiStarFill, RiTimeLine } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
-import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { getModelVariantKeys } from '@/lib/modelVariants';
@@ -80,7 +80,7 @@ export const ModelChip: React.FC<{
         onClick={onRemove}
         className="text-muted-foreground hover:text-foreground ml-0.5"
       >
-        <Icon name="close" className="h-3.5 w-3.5" />
+        <RiCloseLine className="h-3.5 w-3.5" />
       </button>
     </div>
   );
@@ -350,7 +350,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
               setIsOpen(!isOpen);
             }}
           >
-            <Icon name="add" className="h-3.5 w-3.5 mr-1" />
+            <RiAddLine className="h-3.5 w-3.5 mr-1" />
             {addButtonLabel ?? t('multirun.modelMultiSelect.actions.addModel')}
           </Button>
 
@@ -427,7 +427,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                 {/* Search input */}
                 <div className="p-2 border-b border-border/40">
                   <div className="relative">
-                    <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <RiSearchLine className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
                       ref={searchInputRef}
                       type="text"
@@ -456,7 +456,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                     {filteredFavorites.length > 0 && (
                       <>
                         <div className="typography-micro font-semibold text-muted-foreground uppercase tracking-wider sticky top-0 z-10 -mx-1 flex items-center gap-2 border-b border-border/30 px-3 py-1.5 [background:linear-gradient(var(--surface-elevated),var(--surface-elevated)),linear-gradient(var(--surface-background),var(--surface-background))]">
-                          <Icon name="star-fill" className="h-4 w-4 text-primary" />
+                          <RiStarFill className="h-4 w-4 text-primary" />
                           {t('multirun.modelMultiSelect.sections.favorites')}
                         </div>
                         {filteredFavorites.map(({ model, providerID, modelID }) => {
@@ -471,7 +471,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                       <>
                         {filteredFavorites.length > 0 && <div className="h-px bg-border/40 my-1" />}
                         <div className="typography-micro font-semibold text-muted-foreground uppercase tracking-wider sticky top-0 z-10 -mx-1 flex items-center gap-2 border-b border-border/30 px-3 py-1.5 [background:linear-gradient(var(--surface-elevated),var(--surface-elevated)),linear-gradient(var(--surface-background),var(--surface-background))]">
-                          <Icon name="time" className="h-4 w-4" />
+                          <RiTimeLine className="h-4 w-4" />
                           {t('multirun.modelMultiSelect.sections.recent')}
                         </div>
                         {filteredRecents.map(({ model, providerID, modelID }) => {
@@ -553,7 +553,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                         size="chip"
                         className="px-2 gap-1.5 rounded-md !border-border/80 !bg-[var(--surface-subtle)] hover:!bg-[var(--interactive-hover)]/70 typography-meta font-medium text-foreground"
                       >
-                        <Icon name="brain-ai-3"
+                        <RiBrainAi3Line
                           className={cn(
                             'h-3.5 w-3.5 flex-shrink-0',
                             variantValue === DEFAULT_VARIANT_VALUE ? 'text-muted-foreground' : 'text-[color:var(--status-info)]'

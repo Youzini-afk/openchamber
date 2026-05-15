@@ -1,7 +1,15 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
+import {
+  RiAddLine,
+  RiArchiveLine,
+  RiArrowDownSLine,
+  RiArrowLeftLongLine,
+  RiArrowRightSLine,
+  RiDeleteBinLine,
+  RiGitBranchLine,
+} from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { sessionEvents } from '@/lib/sessionEvents';
 import type { MainTab } from '@/stores/useUIStore';
@@ -528,7 +536,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                     <TooltipTrigger asChild>
                       <span className="inline-flex shrink-0 items-center gap-1 leading-none align-middle">
                         <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                          <Icon name="git-branch"
+                          <RiGitBranchLine
                             className={cn('h-3.5 w-3.5 shrink-0', alwaysShowActions ? 'hidden' : 'group-hover/gh:hidden')}
                             style={branchIconColor ? { color: branchIconColor } : undefined}
                           />
@@ -536,7 +544,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                             'text-muted-foreground h-3.5 w-3.5 items-center justify-center',
                             alwaysShowActions ? 'inline-flex' : 'hidden group-hover/gh:inline-flex',
                           )}>
-                            {isCollapsed ? <Icon name="arrow-right-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-down-s" className="h-3.5 w-3.5" />}
+                            {isCollapsed ? <RiArrowRightSLine className="h-3.5 w-3.5" /> : <RiArrowDownSLine className="h-3.5 w-3.5" />}
                           </span>
                         </span>
                         {prIndicator.url ? (
@@ -560,7 +568,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                             {baseBranchLabel && headBranchLabel ? (
                               <>
                                 <span>{baseBranchLabel}</span>
-                                <Icon name="arrow-left-long" className="mx-0.5 inline h-3 w-3 align-[-2px]" />
+                                <RiArrowLeftLongLine className="mx-0.5 inline h-3 w-3 align-[-2px]" />
                                 <span>{headBranchLabel}</span>
                               </>
                             ) : (
@@ -585,12 +593,12 @@ export function SessionGroupSection(props: Props): React.ReactNode {
               ) : group.isArchivedBucket ? (
                 <span className="inline-flex min-w-0 max-w-full items-center gap-1">
                   <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                    <Icon name="archive" className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground', alwaysShowActions ? 'hidden' : 'group-hover/gh:hidden')} />
+                    <RiArchiveLine className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground', alwaysShowActions ? 'hidden' : 'group-hover/gh:hidden')} />
                     <span className={cn(
                       'text-muted-foreground h-3.5 w-3.5 items-center justify-center',
                       alwaysShowActions ? 'inline-flex' : 'hidden group-hover/gh:inline-flex',
                     )}>
-                      {isCollapsed ? <Icon name="arrow-right-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-down-s" className="h-3.5 w-3.5" />}
+                      {isCollapsed ? <RiArrowRightSLine className="h-3.5 w-3.5" /> : <RiArrowDownSLine className="h-3.5 w-3.5" />}
                     </span>
                   </span>
                   <span className="min-w-0 flex-1 truncate">{renderHighlightedText(group.label, normalizedSessionSearchQuery)}</span>
@@ -598,7 +606,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
               ) : (!group.isMain || group.worktree) ? (
                 <span className="inline-flex min-w-0 max-w-full items-center gap-1">
                   <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-                    <Icon name="git-branch"
+                    <RiGitBranchLine
                       className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground', alwaysShowActions ? 'hidden' : 'group-hover/gh:hidden')}
                       style={branchIconColor ? { color: branchIconColor } : undefined}
                     />
@@ -606,7 +614,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                       'text-muted-foreground h-3.5 w-3.5 items-center justify-center',
                       alwaysShowActions ? 'inline-flex' : 'hidden group-hover/gh:inline-flex',
                     )}>
-                      {isCollapsed ? <Icon name="arrow-right-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-down-s" className="h-3.5 w-3.5" />}
+                      {isCollapsed ? <RiArrowRightSLine className="h-3.5 w-3.5" /> : <RiArrowDownSLine className="h-3.5 w-3.5" />}
                     </span>
                   </span>
                   <span className="min-w-0 flex-1 truncate">{renderHighlightedText(group.label, normalizedSessionSearchQuery)}</span>
@@ -618,15 +626,16 @@ export function SessionGroupSection(props: Props): React.ReactNode {
             {showBranchSubtitle && statusLine ? (
               <span className="inline-flex min-w-0 items-center gap-1.5 leading-tight">
                 {group.isArchivedBucket ? (
-                  <Icon name="archive" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                  <RiArchiveLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 ) : (!group.isMain || isGitProject) ? (
                   showInlinePrTitle && prIndicator ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
-                          <Icon name="git-branch" className="h-3.5 w-3.5 text-muted-foreground"
-                            
-                            style={branchIconColor ? { color: branchIconColor } : undefined}/>
+                          <RiGitBranchLine
+                            className="h-3.5 w-3.5 text-muted-foreground"
+                            style={branchIconColor ? { color: branchIconColor } : undefined}
+                          />
                         </span>
                       </TooltipTrigger>
                       <TooltipContent side="top" sideOffset={6} align="start" className="max-w-sm">
@@ -636,7 +645,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                               {baseBranchLabel && headBranchLabel ? (
                                 <>
                                   <span>{baseBranchLabel}</span>
-                                  <Icon name="arrow-left-long" className="mx-0.5 inline h-3 w-3 align-[-2px]" />
+                                  <RiArrowLeftLongLine className="mx-0.5 inline h-3 w-3 align-[-2px]" />
                                   <span>{headBranchLabel}</span>
                                 </>
                               ) : (
@@ -657,9 +666,10 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                       </TooltipContent>
                     </Tooltip>
                   ) : (
-                    <Icon name="git-branch" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
-                      
-                      style={branchIconColor ? { color: branchIconColor } : undefined}/>
+                    <RiGitBranchLine
+                      className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+                      style={branchIconColor ? { color: branchIconColor } : undefined}
+                    />
                   )
                 ) : null}
                 <span
@@ -688,7 +698,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                   className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   aria-label={t('sessions.sidebar.group.actions.deleteArchivedInGroupAria', { label: group.label })}
                 >
-                  <Icon name="delete-bin" className="h-4 w-4" />
+                  <RiDeleteBinLine className="h-4 w-4" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.group.actions.deleteArchivedSessions')}</p></TooltipContent>
@@ -712,7 +722,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                   className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   aria-label={t('sessions.sidebar.group.actions.deleteGroupAria', { label: group.label })}
                 >
-                  <Icon name="delete-bin" className="h-4 w-4" />
+                  <RiDeleteBinLine className="h-4 w-4" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.group.actions.deleteWorktree')}</p></TooltipContent>
@@ -735,7 +745,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
                   className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   aria-label={t('sessions.sidebar.group.actions.newDraftInGroupAria', { label: group.label })}
                  >
-                   <Icon name="add" className="h-4 w-4" />
+                   <RiAddLine className="h-4 w-4" />
                  </button>
                </TooltipTrigger>
                <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.project.actions.newDraftSession')}</p></TooltipContent>

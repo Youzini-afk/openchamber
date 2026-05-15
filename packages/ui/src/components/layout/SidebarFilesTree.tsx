@@ -1,4 +1,20 @@
 import React from 'react';
+import {
+  RiCloseLine,
+  RiDeleteBinLine,
+  RiEditLine,
+  RiFileAddLine,
+  RiFileCopyLine,
+  RiFolder3Fill,
+  RiFolderAddLine,
+  RiFolderOpenFill,
+  RiFolderReceivedLine,
+  RiLoader4Line,
+  RiMore2Fill,
+  RiRefreshLine,
+  RiSearchLine,
+  RiDownloadLine,
+} from '@remixicon/react';
 
 import { toast } from '@/components/ui';
 import {
@@ -32,7 +48,6 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { cn, getRevealLabelKey } from '@/lib/utils';
 import { opencodeClient } from '@/lib/opencode/client';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
-import { Icon } from "@/components/icon/Icon";
 import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
 import { useI18n } from '@/lib/i18n';
 
@@ -206,9 +221,9 @@ const FileRow: React.FC<FileRowProps> = ({
       >
         {isDir ? (
           isExpanded ? (
-            <Icon name="folder-open-fill" className="h-4 w-4 flex-shrink-0 text-primary/60" />
+            <RiFolderOpenFill className="h-4 w-4 flex-shrink-0 text-primary/60" />
           ) : (
-            <Icon name="folder-3-fill" className="h-4 w-4 flex-shrink-0 text-primary/60" />
+            <RiFolder3Fill className="h-4 w-4 flex-shrink-0 text-primary/60" />
           )
         ) : (
           getFileIcon(node.path, node.extension)
@@ -237,13 +252,13 @@ const FileRow: React.FC<FileRowProps> = ({
                 className="h-6 w-6"
                 onClick={handleMenuButtonClick}
               >
-                <Icon name="more-2-fill" className="h-4 w-4" />
+                <RiMore2Fill className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="bottom" onCloseAutoFocus={() => setContextMenuPath(null)}>
               {canRename && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpenDialog('rename', node); }}>
-                  <Icon name="edit" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.rename')}
+                  <RiEditLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.rename')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={(e) => {
@@ -256,19 +271,19 @@ const FileRow: React.FC<FileRowProps> = ({
                   toast.error(t('sidebarFilesTree.toast.copyFailed'));
                 });
               }}>
-                <Icon name="file-copy" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.copyPath')}
+                <RiFileCopyLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.copyPath')}
               </DropdownMenuItem>
               {!isDir && downloadFile && (
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   void downloadFile(node.path);
                 }}>
-                  <Icon name="download" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.save')}
+                  <RiDownloadLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.save')}
                 </DropdownMenuItem>
               )}
               {canReveal && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRevealPath(node.path); }}>
-                  <Icon name="folder-received" className="mr-2 h-4 w-4" /> {t(getRevealLabelKey())}
+                  <RiFolderReceivedLine className="mr-2 h-4 w-4" /> {t(getRevealLabelKey())}
                 </DropdownMenuItem>
               )}
               {isDir && (canCreateFile || canCreateFolder) && (
@@ -276,12 +291,12 @@ const FileRow: React.FC<FileRowProps> = ({
                   <DropdownMenuSeparator />
                   {canCreateFile && (
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpenDialog('createFile', node); }}>
-                      <Icon name="file-add" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.newFile')}
+                      <RiFileAddLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.newFile')}
                     </DropdownMenuItem>
                   )}
                   {canCreateFolder && (
                     <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onOpenDialog('createFolder', node); }}>
-                      <Icon name="folder-add" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.newFolder')}
+                      <RiFolderAddLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.newFolder')}
                     </DropdownMenuItem>
                   )}
                 </>
@@ -293,7 +308,7 @@ const FileRow: React.FC<FileRowProps> = ({
                     onClick={(e) => { e.stopPropagation(); onOpenDialog('delete', node); }}
                     className="text-destructive focus:text-destructive"
                   >
-                    <Icon name="delete-bin" className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.delete')}
+                    <RiDeleteBinLine className="mr-2 h-4 w-4" /> {t('sidebarFilesTree.menu.delete')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -802,7 +817,7 @@ export const SidebarFilesTree: React.FC = () => {
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
       <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
         <div className="relative min-w-0 flex-1">
-          <Icon name="search" className="pointer-events-none absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+          <RiSearchLine className="pointer-events-none absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
           <Input
             ref={searchInputRef}
             value={searchQuery}
@@ -820,7 +835,7 @@ export const SidebarFilesTree: React.FC = () => {
                 searchInputRef.current?.focus();
               }}
             >
-              <Icon name="close" className="h-4 w-4" />
+              <RiCloseLine className="h-4 w-4" />
             </button>
           ) : null}
         </div>
@@ -832,7 +847,7 @@ export const SidebarFilesTree: React.FC = () => {
             className="h-8 w-8 p-0 flex-shrink-0"
             title={t('sidebarFilesTree.actions.newFileTitle')}
           >
-            <Icon name="file-add" className="h-4 w-4" />
+            <RiFileAddLine className="h-4 w-4" />
           </Button>
         )}
         {canCreateFolder && (
@@ -843,11 +858,11 @@ export const SidebarFilesTree: React.FC = () => {
             className="h-8 w-8 p-0 flex-shrink-0"
             title={t('sidebarFilesTree.actions.newFolderTitle')}
           >
-            <Icon name="folder-add" className="h-4 w-4" />
+            <RiFolderAddLine className="h-4 w-4" />
           </Button>
         )}
         <Button variant="ghost" size="sm" onClick={() => void refreshRoot()} className="h-8 w-8 p-0 flex-shrink-0" title={t('sidebarFilesTree.actions.refreshTitle')}>
-          <Icon name="refresh" className="h-4 w-4" />
+          <RiRefreshLine className="h-4 w-4" />
         </Button>
       </div>
 
@@ -855,7 +870,7 @@ export const SidebarFilesTree: React.FC = () => {
         <ul className="flex flex-col">
           {searching ? (
             <li className="flex items-center gap-1.5 px-2 py-1 typography-meta text-muted-foreground">
-              <Icon name="loader-4" className="h-4 w-4 animate-spin" />
+              <RiLoader4Line className="h-4 w-4 animate-spin" />
               {t('sidebarFilesTree.state.searching')}
             </li>
           ) : searchResults.length > 0 ? (
@@ -941,7 +956,7 @@ export const SidebarFilesTree: React.FC = () => {
               onClick={() => void handleDialogSubmit()}
               disabled={isDialogSubmitting || (activeDialog !== 'delete' && !dialogInputValue.trim())}
             >
-              {isDialogSubmitting ? <Icon name="loader-4" className="animate-spin" /> : (
+              {isDialogSubmitting ? <RiLoader4Line className="animate-spin" /> : (
                 activeDialog === 'delete' ? t('sidebarFilesTree.dialog.delete.confirm') : t('sidebarFilesTree.dialog.confirm')
               )}
             </Button>

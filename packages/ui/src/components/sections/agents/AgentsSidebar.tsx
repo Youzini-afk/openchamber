@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { RiAddLine, RiAiAgentFill, RiAiAgentLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiRobot2Line, RiRobotLine, RiRestartLine, RiEditLine } from '@remixicon/react';
 import { useAgentsStore, isAgentBuiltIn, isAgentHidden, type AgentScope, type AgentDraft } from '@/stores/useAgentsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -24,7 +25,6 @@ import type { Agent } from '@opencode-ai/sdk/v2';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 interface AgentsSidebarProps {
@@ -228,6 +228,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     });
     setSelectedAgent(newName);
 
+
   };
 
   const handleOpenRenameDialog = (agent: Agent) => {
@@ -292,11 +293,11 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   const getAgentModeIcon = (mode?: string) => {
     switch (mode) {
       case 'primary':
-        return <Icon name="ai-agent" className="h-3 w-3 text-primary" />;
+        return <RiAiAgentLine className="h-3 w-3 text-primary" />;
       case 'all':
-        return <Icon name="ai-agent-fill" className="h-3 w-3 text-primary" />;
+        return <RiAiAgentFill className="h-3 w-3 text-primary" />;
       case 'subagent':
-        return <Icon name="robot" className="h-3 w-3 text-primary" />;
+        return <RiRobotLine className="h-3 w-3 text-primary" />;
       default:
         return null;
     }
@@ -338,7 +339,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
             className="h-7 w-7 px-0 -my-1 text-muted-foreground"
             onClick={handleCreateNew}
           >
-            <Icon name="add" className="h-3.5 w-3.5" />
+            <RiAddLine className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -346,7 +347,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
         {visibleAgents.length === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="robot-2" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+            <RiRobot2Line className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.agents.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.agents.sidebar.empty.description')}</p>
           </div>
@@ -579,7 +580,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
               variant="ghost"
               className="h-6 w-6 px-0 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
             >
-              <Icon name="more-2" className="h-3.5 w-3.5" />
+              <RiMore2Line className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-fit min-w-20">
@@ -590,7 +591,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
                   onRename();
                 }}
               >
-                <Icon name="edit" className="h-4 w-4 mr-px" />
+                <RiEditLine className="h-4 w-4 mr-px" />
                 {t('settings.common.actions.rename')}
               </DropdownMenuItem>
             )}
@@ -601,7 +602,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
                 onDuplicate();
               }}
             >
-              <Icon name="file-copy" className="h-4 w-4 mr-px" />
+              <RiFileCopyLine className="h-4 w-4 mr-px" />
               {t('settings.common.actions.duplicate')}
             </DropdownMenuItem>
 
@@ -612,7 +613,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
                   onReset();
                 }}
               >
-                <Icon name="restart" className="h-4 w-4 mr-px" />
+                <RiRestartLine className="h-4 w-4 mr-px" />
                 {t('settings.common.actions.reset')}
               </DropdownMenuItem>
             )}
@@ -625,7 +626,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
                 }}
                 className="text-destructive focus:text-destructive"
               >
-                <Icon name="delete-bin" className="h-4 w-4 mr-px" />
+                <RiDeleteBinLine className="h-4 w-4 mr-px" />
                 {t('settings.common.actions.delete')}
               </DropdownMenuItem>
             )}

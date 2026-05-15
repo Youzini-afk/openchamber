@@ -3,13 +3,14 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useGitIdentitiesStore } from '@/stores/useGitIdentitiesStore';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
+import { RiGitCommitLine, RiGithubFill, RiInformationLine, RiTerminalBoxLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
 
 type GitHubUser = {
   login: string;
@@ -42,6 +43,7 @@ export const GitHubSettings: React.FC = () => {
   const hasChecked = useGitHubAuthStore((state) => state.hasChecked);
   const refreshStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const setStatus = useGitHubAuthStore((state) => state.setStatus);
+  const loadGlobalIdentity = useGitIdentitiesStore((state) => state.loadGlobalIdentity);
 
   const openExternal = React.useCallback(async (url: string) => {
     await openExternalUrl(url);
@@ -231,6 +233,88 @@ export const GitHubSettings: React.FC = () => {
     }
   }, [runtimeGitHub, setStatus, t]);
 
+  const syncTerminalAuth = React.useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const result = runtimeGitHub?.authSyncTerminal
+        ? await runtimeGitHub.authSyncTerminal()
+        : await (async () => {
+            const response = await fetch('/api/github/auth/terminal', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              },
+              body: JSON.stringify({}),
+            });
+            const body = (await response.json().catch(() => null)) as {
+              success?: boolean;
+              gitCredentialHelperConfigured?: boolean;
+              gitCredentialHelperError?: string;
+              error?: string;
+            } | null;
+            if (!response.ok || !body?.success) {
+              throw new Error(body?.error || response.statusText);
+            }
+            return body;
+          })();
+
+      if (result.gitCredentialHelperConfigured) {
+        toast.success(t('settings.github.page.toast.terminalSyncSuccess'));
+      } else {
+        toast.message(t('settings.github.page.toast.terminalSyncPartial'));
+      }
+    } catch (error) {
+      console.error('Failed to sync GitHub auth to terminal:', error);
+      toast.error(t('settings.github.page.toast.terminalSyncFailed'));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [runtimeGitHub, t]);
+
+  const configureGitAuthor = React.useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const result = runtimeGitHub?.authConfigureGitAuthor
+        ? await runtimeGitHub.authConfigureGitAuthor()
+        : await (async () => {
+            const response = await fetch('/api/github/auth/git-author', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              },
+              body: JSON.stringify({}),
+            });
+            const body = (await response.json().catch(() => null)) as {
+              success?: boolean;
+              userName?: string;
+              userEmail?: string;
+              error?: string;
+            } | null;
+            if (!response.ok || !body?.success || !body.userName || !body.userEmail) {
+              throw new Error(body?.error || response.statusText);
+            }
+            return {
+              success: true,
+              userName: body.userName,
+              userEmail: body.userEmail,
+            };
+          })();
+
+      await loadGlobalIdentity();
+      toast.success(t('settings.github.page.toast.gitAuthorConfigured', {
+        name: result.userName,
+        email: result.userEmail,
+      }));
+    } catch (error) {
+      console.error('Failed to configure Git author from GitHub:', error);
+      toast.error(t('settings.github.page.toast.gitAuthorFailed'));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [loadGlobalIdentity, runtimeGitHub, t]);
+
   if (isLoading) {
     return null;
   }
@@ -246,7 +330,7 @@ export const GitHubSettings: React.FC = () => {
           <h3 className="typography-ui-header font-semibold text-foreground">GitHub</h3>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+              <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
             </TooltipTrigger>
             <TooltipContent sideOffset={8} className="max-w-xs">
               {t('settings.github.page.tooltip.connectAccount')}
@@ -276,7 +360,7 @@ export const GitHubSettings: React.FC = () => {
                   {user?.name?.trim() || user?.login || 'GitHub'}
                 </div>
                 <div className={cn("flex items-center gap-2 typography-meta text-muted-foreground mt-0.5", isMobile ? "flex-wrap" : "truncate")}>
-                  <Icon name="github-fill" className="h-3.5 w-3.5 shrink-0" />
+                  <RiGithubFill className="h-3.5 w-3.5 shrink-0" />
                   <span className="font-mono">{user?.login || t('settings.github.page.label.unknownUser')}</span>
                   {user?.email && <span className="opacity-50">•</span>}
                   {user?.email && <span>{user.email}</span>}
@@ -289,9 +373,19 @@ export const GitHubSettings: React.FC = () => {
               </div>
             </div>
 
-            <Button size="sm" variant="outline" onClick={disconnect} disabled={isBusy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
-              {t('settings.github.page.actions.disconnect')}
-            </Button>
+            <div className={cn("flex gap-2", isMobile ? "w-full flex-col" : "shrink-0 items-center")}>
+              <Button size="sm" variant="outline" onClick={configureGitAuthor} disabled={isBusy} className={cn(isMobile ? "w-full" : undefined)}>
+                <RiGitCommitLine className="h-4 w-4" />
+                {t('settings.github.page.actions.configureGitAuthor')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={syncTerminalAuth} disabled={isBusy} className={cn(isMobile ? "w-full" : undefined)}>
+                <RiTerminalBoxLine className="h-4 w-4" />
+                {t('settings.github.page.actions.syncTerminal')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={disconnect} disabled={isBusy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
+                {t('settings.github.page.actions.disconnect')}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-between gap-4 px-4 py-4">
@@ -329,7 +423,7 @@ export const GitHubSettings: React.FC = () => {
                         />
                       ) : (
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--interactive-border)] bg-[var(--surface-muted)]">
-                          <Icon name="github-fill" className="h-3 w-3 text-muted-foreground" />
+                          <RiGithubFill className="h-3 w-3 text-muted-foreground" />
                         </div>
                       )}
                       <div className="min-w-0 flex flex-col">

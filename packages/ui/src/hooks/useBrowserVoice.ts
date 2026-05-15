@@ -28,7 +28,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
 import { audioStreamService } from '@/lib/voice/audioStreamService';
-import { wasmSttService } from '@/lib/voice/wasmSttService';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { getSyncMessages, getSyncParts } from '@/sync/sync-refs';
@@ -54,8 +53,6 @@ export interface UseBrowserVoiceReturn {
   startVoice: () => void;
   /** Stop voice mode */
   stopVoice: () => void;
-  /** Finish current voice input and process it */
-  finishVoiceInput: () => void;
   /** Whether conversation mode is active */
   conversationMode: boolean;
   /** Toggle conversation mode */
@@ -128,9 +125,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const pendingFinalTranscriptRef = useRef('');
   const finalTranscriptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deviceChangeRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const consecutiveRecoveryRetriesRef = useRef(0);
-  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFinalizingRef = useRef(false);
   
   // Store access
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -161,16 +155,13 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const sttProvider = useConfigStore((state) => state.sttProvider);
   const sttServerUrl = useConfigStore((state) => state.sttServerUrl);
   const sttModel = useConfigStore((state) => state.sttModel);
-  const wasmSttModel = useConfigStore((state) => state.wasmSttModel);
   const sttLanguage = useConfigStore((state) => state.sttLanguage);
   const sttSilenceThresholdDb = useConfigStore((state) => state.sttSilenceThresholdDb);
   const sttSilenceHoldMs = useConfigStore((state) => state.sttSilenceHoldMs);
 
   const isSupported = sttProvider === 'server'
     ? audioStreamService.isSupported()
-    : sttProvider === 'wasm'
-      ? wasmSttService.isSupported()
-      : browserVoiceService.isSupported();
+    : browserVoiceService.isSupported();
 
   // Server TTS for mobile (bypasses Safari audio restrictions)
   const { speak: speakServerTTS, stop: stopServerTTS, isAvailable: isServerTTSAvailable, unlockAudio: unlockServerTTSAudio } = useServerTTS({
@@ -294,20 +285,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const handleSpeechErrorRef = useRef<((errorMsg: string) => void) | null>(null);
   const handleSpeechResultRef = useRef<((text: string, isFinal: boolean) => Promise<void>) | null>(null);
 
-  // Start STT via the currently-selected provider.
-  // Called by auto-recovery, restart-after-TTS, and visibility-resume paths.
-  const startCurrentSTT = useCallback((lang: string) => {
-    if (sttProvider === 'server') {
-      void audioStreamService.startListening(lang, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
-    } else if (sttProvider === 'wasm') {
-      void wasmSttService.startListening(lang, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
-    } else if (isMobile) {
-      browserVoiceService.startListeningSync(lang, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
-    } else {
-      browserVoiceService.startListening(lang, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
-    }
-  }, [sttProvider, isMobile]);
-
   // Handle speech recognition error
   const handleSpeechError = useCallback((errorMsg: string) => {
     // Ignore errors if we've already stopped voice mode
@@ -337,59 +314,26 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       setStatus('idle');
       return;
     }
-
-    // Network / server-unreachable errors: don't retry at all.
-    // The user must fix connectivity and then manually restart voice.
-    const isNetworkError =
-      normalizedError.includes('network') ||
-      normalizedError.includes('connection') ||
-      normalizedError.includes('check connection');
-    
-    if (isNetworkError) {
-      console.error('[useBrowserVoice] Network error — staying in error state:', errorMsg);
-      setError(errorMsg);
-      setStatus('error');
-      consecutiveRecoveryRetriesRef.current = 0;
-      if (recoveryTimerRef.current !== null) {
-        clearTimeout(recoveryTimerRef.current);
-        recoveryTimerRef.current = null;
-      }
-      return;
-    }
     
     console.error('[useBrowserVoice] Recognition error:', errorMsg);
     setError(errorMsg);
     setStatus('error');
     
-    // Auto-recover from transient / non-permission errors with limited retries.
-    // Skip recovery when finalising — the user explicitly stopped voice.
-    if (isPermissionStyleError || isFinalizingRef.current) {
-      consecutiveRecoveryRetriesRef.current = 0;
-      return;
+    // Auto-recover from certain errors
+    if (!errorMsg.includes('permission') && !errorMsg.includes('not allowed')) {
+      setTimeout(() => {
+        if (isActiveRef.current) {
+          setStatus('listening');
+          setError(null);
+          if (sttProvider === 'server') {
+            audioStreamService.startListening(language, handleSpeechResultRef.current!, handleSpeechError).catch(() => {});
+          } else {
+            browserVoiceService.startListening(language, handleSpeechResultRef.current!, handleSpeechError);
+          }
+        }
+      }, 1000);
     }
-
-    const nextRetry = consecutiveRecoveryRetriesRef.current + 1;
-    consecutiveRecoveryRetriesRef.current = nextRetry;
-    const MAX_RECOVERY_RETRIES = 3;
-
-    if (nextRetry <= MAX_RECOVERY_RETRIES) {
-      const delay = Math.min(1000 * Math.pow(2, nextRetry - 1), 8000);
-      console.log(`[useBrowserVoice] Scheduling recovery retry ${nextRetry}/${MAX_RECOVERY_RETRIES} in ${delay}ms`);
-      
-      if (recoveryTimerRef.current !== null) {
-        clearTimeout(recoveryTimerRef.current);
-      }
-      recoveryTimerRef.current = setTimeout(() => {
-        recoveryTimerRef.current = null;
-        if (!isActiveRef.current) return;
-        setStatus('listening');
-        setError(null);
-        startCurrentSTT(language);
-      }, delay);
-    } else {
-      console.log('[useBrowserVoice] Max recovery retries reached — staying in error state');
-    }
-  }, [language, conversationMode, startCurrentSTT]);
+  }, [language, conversationMode, sttProvider]);
 
   // Update the ref when handleSpeechError changes
   useEffect(() => {
@@ -416,7 +360,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
 
     // Non-continuous mode: fill chat input only, do not auto-send.
     if (!conversationMode) {
-      setPendingInputText(finalText.trim(), 'append-inline');
+      setPendingInputText(finalText.trim(), 'replace');
       processingMessageRef.current = false;
       isActiveRef.current = false;
       setStatus('idle');
@@ -500,7 +444,19 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
                   }
 
                   setStatus('listening');
-                  startCurrentSTT(language);
+                  if (sttProvider === 'server') {
+                    audioStreamService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!).catch((err) => {
+                      console.error('[useBrowserVoice] Failed to restart server STT:', err);
+                    });
+                  } else if (isMobile) {
+                    try {
+                      browserVoiceService.startListeningSync(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+                    } catch (err) {
+                      console.error('[useBrowserVoice] Failed to restart listening:', err);
+                    }
+                  } else {
+                    browserVoiceService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+                  }
                 } else {
                   // In non-continuous mode, return to idle after AI responds
                   isActiveRef.current = false;
@@ -589,7 +545,19 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
               // Only restart listening if conversation mode is enabled
               if (conversationMode) {
                 setStatus('listening');
-                startCurrentSTT(language);
+                if (sttProvider === 'server') {
+                  audioStreamService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!).catch((err) => {
+                    console.error('[useBrowserVoice] Failed to restart server STT after speech error:', err);
+                  });
+                } else if (isMobile) {
+                  try {
+                    browserVoiceService.startListeningSync(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+                  } catch (restartErr) {
+                    console.error('[useBrowserVoice] Failed to restart listening after speech error:', restartErr);
+                  }
+                } else {
+                  browserVoiceService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+                }
               } else {
                 // In non-continuous mode, return to idle after error
                 isActiveRef.current = false;
@@ -613,7 +581,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       setStatus('error');
       processingMessageRef.current = false;
     }
-  }, [currentSessionId, currentProviderId, currentModelId, currentAgentName, language, sendMessage, setPendingInputText, createSession, speechRate, speechPitch, speechVolume, isServerTTSAvailable, speakServerTTS, isSayTTSAvailable, speakSayTTS, voiceProvider, sayVoice, browserVoice, openaiVoice, openaiCompatibleVoice, openaiCompatibleUrl, openaiCompatibleTtsModel, summarizeVoiceConversation, summarizeCharacterThreshold, conversationMode, startCurrentSTT]);
+  }, [currentSessionId, currentProviderId, currentModelId, currentAgentName, language, sendMessage, setPendingInputText, createSession, speechRate, speechPitch, speechVolume, isMobile, isServerTTSAvailable, speakServerTTS, isSayTTSAvailable, speakSayTTS, voiceProvider, sayVoice, browserVoice, openaiVoice, openaiCompatibleVoice, openaiCompatibleUrl, openaiCompatibleTtsModel, summarizeVoiceConversation, summarizeCharacterThreshold, conversationMode, sttProvider]);
 
   // Handle speech recognition result
   const handleSpeechResult = useCallback(async (text: string, isFinal: boolean) => {
@@ -621,7 +589,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     const normalized = text.trim();
     if (!isFinal || !normalized) return;
 
-    console.log('[useBrowserVoice] Speech result:', normalized);
     pendingFinalTranscriptRef.current = normalized;
 
     if (finalTranscriptTimerRef.current) {
@@ -657,7 +624,13 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       pendingResumeOnVisibleRef.current = false;
       setStatus('listening');
       try {
-        startCurrentSTT(language);
+        if (sttProvider === 'server') {
+          void audioStreamService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+        } else if (isMobile) {
+          browserVoiceService.startListeningSync(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+        } else {
+          browserVoiceService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+        }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to resume voice';
         setError(errorMsg);
@@ -669,7 +642,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [conversationMode, isMobile, language, sttProvider, startCurrentSTT]);
+  }, [conversationMode, isMobile, language, sttProvider]);
 
   useEffect(() => {
     if (typeof navigator === 'undefined') {
@@ -704,10 +677,17 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         }
 
         try {
-          browserVoiceService.stopListening();
-          audioStreamService.stopListening();
-          wasmSttService.stopListening();
-          startCurrentSTT(language);
+          if (sttProvider === 'server') {
+            audioStreamService.stopListening();
+            void audioStreamService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+          } else {
+            browserVoiceService.stopListening();
+            if (isMobile) {
+              browserVoiceService.startListeningSync(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+            } else {
+              void browserVoiceService.startListening(language, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+            }
+          }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : 'Microphone source changed. Tap mic to continue.';
           setError(errorMsg);
@@ -726,7 +706,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         deviceChangeRestartTimerRef.current = null;
       }
     };
-  }, [isMobile, language, status, sttProvider, startCurrentSTT]);
+  }, [isMobile, language, status, sttProvider]);
 
   // Update the ref when handleSpeechResult changes
   useEffect(() => {
@@ -738,8 +718,8 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     if (!isSupported) {
       return false;
     }
-    if (sttProvider === 'server' || sttProvider === 'wasm') {
-      // Permission is requested on startListening; nothing to pre-prepare
+    if (sttProvider === 'server') {
+      // getUserMedia permission is requested on startListening; nothing to prepare
       return true;
     }
     try {
@@ -768,12 +748,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     
     isActiveRef.current = true;
     lastTranscriptRef.current = '';
-    consecutiveRecoveryRetriesRef.current = 0;
-    isFinalizingRef.current = false;
-    if (recoveryTimerRef.current !== null) {
-      clearTimeout(recoveryTimerRef.current);
-      recoveryTimerRef.current = null;
-    }
     setError(null);
     setStatus('listening');
 
@@ -791,40 +765,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to start voice';
         console.error('[useBrowserVoice] Server STT start error:', errorMsg);
-        setError(errorMsg);
-        setStatus('error');
-        isActiveRef.current = false;
-      }
-      return;
-    }
-
-    if (sttProvider === 'wasm') {
-      // WASM STT: ensure model is loaded then start recording
-      const modelStatus = wasmSttService.getModelStatus();
-      console.log('[useBrowserVoice] WASM model status:', modelStatus.state);
-      if (modelStatus.state !== 'ready') {
-        try {
-          setStatus('processing');
-          await wasmSttService.loadModel(wasmSttModel);
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : 'Failed to load Whisper model';
-          console.error('[useBrowserVoice] WASM model load error:', errorMsg);
-          setError(errorMsg);
-          setStatus('error');
-          isActiveRef.current = false;
-          return;
-        }
-      }
-      wasmSttService.configure({
-        silenceThresholdDb: sttSilenceThresholdDb,
-        silenceHoldMs: sttSilenceHoldMs,
-      });
-      try {
-        await wasmSttService.startListening(language, handleSpeechResult, handleSpeechError);
-        console.log('[useBrowserVoice] WASM listening started');
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to start voice';
-        console.error('[useBrowserVoice] WASM STT start error:', errorMsg);
         setError(errorMsg);
         setStatus('error');
         isActiveRef.current = false;
@@ -870,22 +810,16 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         isActiveRef.current = false;
       }
     }
-  }, [isSupported, currentSessionId, language, handleSpeechResult, handleSpeechError, isMobile, unlockServerTTSAudio, unlockSayTTSAudio, sttProvider, sttServerUrl, sttModel, wasmSttModel, sttLanguage, sttSilenceThresholdDb, sttSilenceHoldMs]);
+  }, [isSupported, currentSessionId, language, handleSpeechResult, handleSpeechError, isMobile, unlockServerTTSAudio, unlockSayTTSAudio, sttProvider, sttServerUrl, sttModel, sttLanguage, sttSilenceThresholdDb, sttSilenceHoldMs]);
 
   // Stop voice mode
   const stopVoice = useCallback(() => {
     isActiveRef.current = false;
     processingMessageRef.current = false;
     pendingResumeOnVisibleRef.current = false;
-    consecutiveRecoveryRetriesRef.current = 0;
-    isFinalizingRef.current = false;
     if (deviceChangeRestartTimerRef.current) {
       clearTimeout(deviceChangeRestartTimerRef.current);
       deviceChangeRestartTimerRef.current = null;
-    }
-    if (recoveryTimerRef.current !== null) {
-      clearTimeout(recoveryTimerRef.current);
-      recoveryTimerRef.current = null;
     }
     pendingFinalTranscriptRef.current = '';
     if (finalTranscriptTimerRef.current) {
@@ -894,85 +828,12 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     }
     browserVoiceService.stopListening();
     audioStreamService.stopListening();
-    wasmSttService.stopListening();
     browserVoiceService.cancelSpeech();
     stopServerTTS(); // Also stop server TTS if playing
     stopSayTTS(); // Also stop Say TTS if playing
     setStatus('idle');
     setError(null);
   }, [stopServerTTS, stopSayTTS]);
-
-  const finishVoiceInput = useCallback(() => {
-    if (!isActiveRef.current) {
-      return;
-    }
-
-    isFinalizingRef.current = true;
-    pendingResumeOnVisibleRef.current = false;
-    if (deviceChangeRestartTimerRef.current) {
-      clearTimeout(deviceChangeRestartTimerRef.current);
-      deviceChangeRestartTimerRef.current = null;
-    }
-    setStatus('processing');
-
-    if (sttProvider === 'server') {
-      void audioStreamService.finishListening().then(() => {
-        window.setTimeout(() => {
-          if (!isActiveRef.current) {
-            return;
-          }
-          if (pendingFinalTranscriptRef.current || finalTranscriptTimerRef.current) {
-            return;
-          }
-          if (processingMessageRef.current) {
-            return;
-          }
-          isActiveRef.current = false;
-          processingMessageRef.current = false;
-          setStatus('idle');
-        }, FINAL_TRANSCRIPT_SETTLE_MS + 200);
-      });
-      return;
-    }
-
-    if (sttProvider === 'wasm') {
-      // Inference runs in a Web Worker — no main-thread freeze.
-      void wasmSttService.finishListening().then(() => {
-        window.setTimeout(() => {
-          if (!isActiveRef.current) {
-            return;
-          }
-          if (pendingFinalTranscriptRef.current || finalTranscriptTimerRef.current) {
-            return;
-          }
-          if (processingMessageRef.current) {
-            return;
-          }
-          isActiveRef.current = false;
-          processingMessageRef.current = false;
-          setStatus('idle');
-          isFinalizingRef.current = false;
-        }, FINAL_TRANSCRIPT_SETTLE_MS + 200);
-      });
-      return;
-    }
-
-    browserVoiceService.stopListening();
-    window.setTimeout(() => {
-      if (!isActiveRef.current) {
-        return;
-      }
-      if (pendingFinalTranscriptRef.current || finalTranscriptTimerRef.current) {
-        return;
-      }
-      if (processingMessageRef.current) {
-        return;
-      }
-      isActiveRef.current = false;
-      processingMessageRef.current = false;
-      setStatus('idle');
-    }, FINAL_TRANSCRIPT_SETTLE_MS + 300);
-  }, [sttProvider]);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -1002,7 +863,6 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     setLanguage,
     startVoice,
     stopVoice,
-    finishVoiceInput,
     conversationMode,
     toggleConversationMode,
     prepareVoice,

@@ -1,6 +1,13 @@
 import React from 'react';
+import {
+  RiGitMergeLine,
+  RiGitBranchLine,
+  RiLoader4Line,
+  RiCheckLine,
+  RiCloseLine,
+  RiSparklingLine,
+} from '@remixicon/react';
 import { Button } from '@/components/ui/button';
-import { Icon } from "@/components/icon/Icon";
 import type { GitMergeInProgress, GitRebaseInProgress } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 
@@ -56,7 +63,7 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
   const isProcessing = processingAction !== null;
 
   const operationLabel = operation === 'merge' ? t('gitView.operation.merge') : t('gitView.operation.rebase');
-  const operationIconName = operation === 'merge' ? 'git-merge' : 'git-branch';
+  const OperationIcon = operation === 'merge' ? RiGitMergeLine : RiGitBranchLine;
 
   // Build description
   let description = '';
@@ -74,7 +81,7 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
     <div className="bg-[var(--status-warning-bg)] border border-[var(--status-warning)] rounded-lg p-3 mx-3 mt-3">
       <div className="flex flex-col gap-3">
         <div className="flex items-start gap-2 min-w-0">
-          <Icon name={operationIconName} className="size-4 text-[var(--status-warning)] shrink-0" />
+          <OperationIcon className="size-4 text-[var(--status-warning)] shrink-0" />
           <div className="min-w-0">
             <p className="typography-label text-[var(--status-warning)]">
               {t('gitView.operation.inProgressTitle', { operation: operationLabel })}
@@ -96,7 +103,7 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
               disabled={isProcessing || isLoading}
               className="gap-1.5"
             >
-              <Icon name="sparkling" className="size-4" />
+              <RiSparklingLine className="size-4" />
               {t('gitView.operation.resolveWithAi')}
             </Button>
           )}
@@ -110,9 +117,9 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
               className="gap-1.5"
             >
               {processingAction === 'abort' ? (
-                <Icon name="loader-4" className="size-4 animate-spin" />
+                <RiLoader4Line className="size-4 animate-spin" />
               ) : (
-                <Icon name="close" className="size-4" />
+                <RiCloseLine className="size-4" />
               )}
               {t('gitView.operation.abort')}
             </Button>
@@ -127,9 +134,9 @@ export const InProgressOperationBanner: React.FC<InProgressOperationBannerProps>
               className="gap-1.5"
             >
               {processingAction === 'continue' ? (
-                <Icon name="loader-4" className="size-4 animate-spin" />
+                <RiLoader4Line className="size-4 animate-spin" />
               ) : (
-                <Icon name="check" className="size-4" />
+                <RiCheckLine className="size-4" />
               )}
               {t('gitView.operation.continue')}
             </Button>

@@ -15,9 +15,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  RiAddLine,
+  RiCheckLine,
+  RiCloudOffLine,
+  RiEarthLine,
+  RiLoader4Line,
+  RiMore2Line,
+  RiPencilLine,
+  RiPlug2Line,
+  RiRefreshLine,
+  RiServerLine,
+  RiSettings3Line,
+  RiShieldKeyholeLine,
+  RiStarFill,
+  RiStarLine,
+  RiDeleteBinLine,
+  RiWindowLine,
+} from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
-import { Icon } from "@/components/icon/Icon";
 import { isTauriShell, isDesktopShell } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
@@ -100,11 +117,11 @@ const statusLabelKey = (status: HostProbeResult['status'] | null):
 };
 
 const statusIcon = (status: HostProbeResult['status'] | null) => {
-  if (status === 'ok') return <Icon name="check" className="h-4 w-4" />;
-  if (status === 'auth') return <Icon name="shield-keyhole" className="h-4 w-4" />;
-  if (status === 'wrong-service') return <Icon name="cloud-off" className="h-4 w-4" />;
-  if (status === 'unreachable') return <Icon name="cloud-off" className="h-4 w-4" />;
-  return <Icon name="earth" className="h-4 w-4" />;
+  if (status === 'ok') return <RiCheckLine className="h-4 w-4" />;
+  if (status === 'auth') return <RiShieldKeyholeLine className="h-4 w-4" />;
+  if (status === 'wrong-service') return <RiCloudOffLine className="h-4 w-4" />;
+  if (status === 'unreachable') return <RiCloudOffLine className="h-4 w-4" />;
+  return <RiEarthLine className="h-4 w-4" />;
 };
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -715,14 +732,14 @@ export function DesktopHostSwitcherDialog({
               disabled={!tauriAvailable || isLoading || isProbing}
               aria-label={t('desktopHostSwitcher.actions.refreshInstancesAria')}
             >
-              <Icon name="refresh" className={cn('h-4 w-4', isProbing && 'animate-spin')} />
+              <RiRefreshLine className={cn('h-4 w-4', isProbing && 'animate-spin')} />
             </button>
           </div>
         </div>
       ) : (
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            <Icon name="server" className="h-5 w-5" />
+            <RiServerLine className="h-5 w-5" />
             {t('desktopHostSwitcher.title')}
           </DialogTitle>
           <DialogDescription>
@@ -747,7 +764,7 @@ export function DesktopHostSwitcherDialog({
               onClick={() => void probeAll(allHosts)}
               disabled={!tauriAvailable || isLoading || isProbing}
             >
-              <Icon name="refresh" className={cn('h-4 w-4', isProbing && 'animate-spin')} />
+              <RiRefreshLine className={cn('h-4 w-4', isProbing && 'animate-spin')} />
               {t('desktopHostSwitcher.actions.refresh')}
             </Button>
           </div>
@@ -758,7 +775,7 @@ export function DesktopHostSwitcherDialog({
           <div className="flex-shrink-0 flex items-center justify-between gap-2 px-2.5 py-1.5">
             <span className="typography-micro text-muted-foreground">{t('desktopHostSwitcher.ssh.needInstancesHint')}</span>
             <Button type="button" variant="ghost" size="sm" onClick={openRemoteInstancesSettings}>
-              <Icon name="settings-3" className="h-4 w-4" />
+              <RiSettings3Line className="h-4 w-4" />
               {t('desktopHostSwitcher.actions.remoteSsh')}
             </Button>
           </div>
@@ -851,7 +868,7 @@ export function DesktopHostSwitcherDialog({
                               disabled={isSaving}
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <Icon name="more-2" className="h-4 w-4" />
+                              <RiMore2Line className="h-4 w-4" />
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-fit min-w-28">
@@ -862,7 +879,7 @@ export function DesktopHostSwitcherDialog({
                               }}
                               disabled={isSaving}
                             >
-                              <Icon name="pencil" className="h-4 w-4 mr-1" />
+                              <RiPencilLine className="h-4 w-4 mr-1" />
                               {t('desktopHostSwitcher.actions.edit')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -873,7 +890,7 @@ export function DesktopHostSwitcherDialog({
                               className="text-destructive focus:text-destructive"
                               disabled={isSaving}
                             >
-                              <Icon name="delete-bin" className="h-4 w-4 mr-1" />
+                              <RiDeleteBinLine className="h-4 w-4 mr-1" />
                               {t('desktopHostSwitcher.actions.delete')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -900,7 +917,7 @@ export function DesktopHostSwitcherDialog({
                               void connectSshHostInPlace(host);
                             }}
                           >
-                            {switchingHostId === host.id ? <Icon name="loader-4" className="h-3.5 w-3.5 animate-spin" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
+                            {switchingHostId === host.id ? <RiLoader4Line className="h-3.5 w-3.5 animate-spin" /> : <RiPlug2Line className="h-3.5 w-3.5" />}
                             {t('desktopHostSwitcher.actions.connect')}
                           </Button>
                         ) : (
@@ -925,7 +942,7 @@ export function DesktopHostSwitcherDialog({
                             aria-label={isDefault ? t('desktopHostSwitcher.actions.defaultInstanceAria') : t('desktopHostSwitcher.actions.setAsDefaultAria')}
                             disabled={isSaving || (!isDefault && (statusKind === 'unreachable' || statusKind === 'wrong-service'))}
                           >
-                            {isDefault ? <Icon name="star-fill" className="h-4 w-4" /> : <Icon name="star" className="h-4 w-4" />}
+                            {isDefault ? <RiStarFill className="h-4 w-4" /> : <RiStarLine className="h-4 w-4" />}
                           </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={6}>
@@ -950,7 +967,7 @@ export function DesktopHostSwitcherDialog({
                             disabled={statusKind === 'unreachable' || statusKind === 'wrong-service'}
                             aria-label={t('desktopHostSwitcher.actions.openInNewWindowAria')}
                           >
-                            <Icon name="window" className="h-4 w-4" />
+                            <RiWindowLine className="h-4 w-4" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={6}>
@@ -976,7 +993,7 @@ export function DesktopHostSwitcherDialog({
                   {t('desktopHostSwitcher.actions.cancel')}
                 </Button>
                 <Button type="button" size="sm" onClick={() => void commitEdit()} disabled={isSaving}>
-                  {isSaving ? <Icon name="loader-4" className="h-4 w-4 animate-spin" /> : null}
+                  {isSaving ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null}
                   {t('desktopHostSwitcher.actions.save')}
                 </Button>
               </div>
@@ -1008,7 +1025,7 @@ export function DesktopHostSwitcherDialog({
               onClick={() => setIsAddFormOpen(true)}
               disabled={!tauriAvailable || isSaving}
             >
-              <Icon name="add" className="h-4 w-4" />
+              <RiAddLine className="h-4 w-4" />
               <span className="typography-ui-label">{t('desktopHostSwitcher.actions.addInstance')}</span>
             </button>
           </div>
@@ -1039,7 +1056,7 @@ export function DesktopHostSwitcherDialog({
                   onClick={() => void addHost()}
                   disabled={!tauriAvailable || isSaving || !newUrl.trim()}
                 >
-                  {isSaving ? <Icon name="loader-4" className="h-4 w-4 animate-spin" /> : null}
+                  {isSaving ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null}
                   {t('desktopHostSwitcher.actions.add')}
                 </Button>
               </div>
@@ -1087,7 +1104,7 @@ export function DesktopHostSwitcherDialog({
       <DialogContent className="w-[min(28rem,calc(100vw-2rem))] max-w-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Icon name="loader-4" className={cn('h-4 w-4', !sshSwitchModal.error && 'animate-spin')} />
+            <RiLoader4Line className={cn('h-4 w-4', !sshSwitchModal.error && 'animate-spin')} />
             {t('desktopHostSwitcher.ssh.connectingTo', { host: sshSwitchModal.hostLabel || t('desktopHostSwitcher.ssh.instanceFallback') })}
           </DialogTitle>
           <DialogDescription>
@@ -1320,7 +1337,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
             data-oc-host-switcher
             className={cn(headerIconButtonClass, 'relative w-auto px-3')}
           >
-            <Icon name="server" className="h-5 w-5" />
+            <RiServerLine className="h-5 w-5" />
             <span className="hidden sm:inline typography-ui-label font-medium text-muted-foreground truncate max-w-[11rem]">
               {safeEffectiveLabel}
             </span>
@@ -1380,7 +1397,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
               onClick={retryStartupSsh}
               disabled={startupSshModal.connecting || !startupSshModal.hostId}
             >
-              {startupSshModal.connecting ? <Icon name="loader-4" className="h-4 w-4 animate-spin" /> : null}
+              {startupSshModal.connecting ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null}
               {t('desktopHostSwitcher.actions.retry')}
             </Button>
           </div>
@@ -1408,7 +1425,7 @@ export function DesktopHostSwitcherInline() {
         className="w-full justify-center"
         onClick={() => setOpen(true)}
       >
-        <Icon name="server" className="h-4 w-4" />
+        <RiServerLine className="h-4 w-4" />
         {t('desktopHostSwitcher.actions.switchInstance')}
       </Button>
       <DesktopHostSwitcherDialog open={open} onOpenChange={setOpen} />

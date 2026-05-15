@@ -17,7 +17,8 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { Icon } from "@/components/icon/Icon";
+
+import { RiGitRepositoryLine } from '@remixicon/react';
 
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -31,17 +32,13 @@ const generateCatalogId = () => `custom:${Date.now()}-${Math.random().toString(1
 
 const guessLabelFromSource = (value: string) => {
   const trimmed = value.trim();
-  const urlFormat = trimmed.startsWith("https://")
-    ? "https"
-    : trimmed.startsWith("git@")
-      ? "ssh"
-      : "shorthand";
-  
-  if (urlFormat === 'ssh') {
-    return `${trimmed.split(":")[1].replace(/\.git$/i, '')}`;
+  const ssh = trimmed.match(/^git@github\.com:([^/\s]+)\/([^\s#]+)$/i);
+  if (ssh) {
+    return `${ssh[1]}/${ssh[2].replace(/\.git$/i, '')}`;
   }
-  if (urlFormat === 'https') {
-    return trimmed.split('/').slice(3).filter(Boolean).join('/').replace(/\.git$/i, '');
+  const https = trimmed.match(/^https?:\/\/github\.com\/([^/\s]+)\/([^\s#]+)$/i);
+  if (https) {
+    return `${https[1]}/${https[2].replace(/\.git$/i, '')}`;
   }
   const shorthand = trimmed.match(/^([^/\s]+)\/([^/\s]+)(?:\/.+)?$/);
   if (shorthand) {
@@ -353,7 +350,7 @@ export const AddCatalogDialog: React.FC<AddCatalogDialogProps> = ({ open, onOpen
             onClick={() => void handleScan()}
             disabled={isScanning || !source.trim()}
           >
-            <Icon name="git-repository" className="h-4 w-4" />
+            <RiGitRepositoryLine className="h-4 w-4" />
             {isScanning ? t('settings.skills.catalog.shared.actions.scanning') : t('settings.skills.catalog.shared.actions.scan')}
           </Button>
           <Button

@@ -11,6 +11,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  RiAddLine,
+  RiArrowDownSLine,
+  RiArrowRightLine,
+  RiComputerLine,
+  RiExternalLinkLine,
+  RiFileCopyLine,
+  RiInformationLine,
+  RiPlug2Line,
+  RiRefreshLine,
+  RiServerLine,
+  RiShuffleLine,
+  RiTerminalWindowLine,
+  RiDeleteBinLine,
+  RiStopLine,
+} from '@remixicon/react';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,7 +39,6 @@ import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLay
 import { useDesktopSshStore } from '@/stores/useDesktopSshStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { toast } from '@/components/ui';
-import { Icon } from "@/components/icon/Icon";
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n, type I18nKey } from '@/lib/i18n';
@@ -137,7 +152,7 @@ const HintLabel: React.FC<{ label: string; hint: React.ReactNode }> = ({ label, 
       <span>{label}</span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+          <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
         </TooltipTrigger>
         <TooltipContent sideOffset={8} className="max-w-xs">
           <div className="typography-meta text-foreground">{hint}</div>
@@ -793,7 +808,7 @@ export const RemoteInstancesPage: React.FC = () => {
               onClick={handlePrimaryConnectionAction}
               disabled={isPrimaryActionPending || isRetryPending}
             >
-              {canDisconnect ? <Icon name="stop" className="h-3.5 w-3.5" /> : <Icon name="plug-2" className="h-3.5 w-3.5" />}
+              {canDisconnect ? <RiStopLine className="h-3.5 w-3.5" /> : <RiPlug2Line className="h-3.5 w-3.5" />}
               {primaryButtonLabel}
             </Button>
             <Button
@@ -804,7 +819,7 @@ export const RemoteInstancesPage: React.FC = () => {
               onClick={handleRetryAction}
               disabled={!canRetry}
             >
-              <Icon name="refresh" className={`h-3.5 w-3.5 ${isConnecting || (isReconnecting && !reconnectAppearsStuck) ? 'animate-spin' : ''}`} />
+              <RiRefreshLine className={`h-3.5 w-3.5 ${isConnecting || (isReconnecting && !reconnectAppearsStuck) ? 'animate-spin' : ''}`} />
               {retryButtonLabel}
             </Button>
             <Button
@@ -816,7 +831,7 @@ export const RemoteInstancesPage: React.FC = () => {
                 void handleOpenLogs();
               }}
             >
-              <Icon name="terminal-window" className="h-3.5 w-3.5" />
+              <RiTerminalWindowLine className="h-3.5 w-3.5" />
               {t('settings.remoteInstances.page.actions.logs')}
             </Button>
             <Button
@@ -839,7 +854,7 @@ export const RemoteInstancesPage: React.FC = () => {
                   });
               }}
             >
-              <Icon name="delete-bin" className="h-3.5 w-3.5" />
+              <RiDeleteBinLine className="h-3.5 w-3.5" />
               {t('settings.remoteInstances.sidebar.actions.remove')}
             </Button>
           </div>
@@ -1133,7 +1148,7 @@ export const RemoteInstancesPage: React.FC = () => {
                   }))
                 }
               >
-                <Icon name="shuffle" className="h-3.5 w-3.5" />
+                <RiShuffleLine className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
@@ -1250,7 +1265,7 @@ export const RemoteInstancesPage: React.FC = () => {
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex items-center gap-2">
                     <CollapsibleTrigger className="flex items-center gap-2 group">
-                      <Icon name="arrow-down-s" className={`h-4 w-4 text-muted-foreground transition-transform ${isForwardOpen ? 'rotate-180' : ''}`} />
+                      <RiArrowDownSLine className={`h-4 w-4 text-muted-foreground transition-transform ${isForwardOpen ? 'rotate-180' : ''}`} />
                       <span className="typography-ui-label text-foreground truncate">{buildForwardLabel(forward)}</span>
                       <span className="typography-micro text-muted-foreground/70 shrink-0">{typeLabel}</span>
                     </CollapsibleTrigger>
@@ -1269,7 +1284,7 @@ export const RemoteInstancesPage: React.FC = () => {
                         }))
                       }
                     >
-                      <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                      <RiDeleteBinLine className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -1391,27 +1406,27 @@ export const RemoteInstancesPage: React.FC = () => {
                       <div className="flex flex-wrap items-center gap-1 typography-micro text-muted-foreground/80">
                         {forward.type === 'dynamic' ? (
                           <>
-                            <Icon name="computer" className="h-3.5 w-3.5" />
+                            <RiComputerLine className="h-3.5 w-3.5" />
                             <span className="font-mono text-foreground">{localEndpoint}</span>
                             <span>{t('settings.remoteInstances.page.preview.localSocks5')}</span>
                           </>
                         ) : forward.type === 'remote' ? (
                           <>
-                            <Icon name="server" className="h-3.5 w-3.5" />
+                            <RiServerLine className="h-3.5 w-3.5" />
                             <span className="font-mono text-foreground">{remoteEndpoint}</span>
                             <span>{t('settings.remoteInstances.page.preview.remote')}</span>
-                            <Icon name="arrow-right" className="h-3.5 w-3.5" />
-                            <Icon name="computer" className="h-3.5 w-3.5" />
+                            <RiArrowRightLine className="h-3.5 w-3.5" />
+                            <RiComputerLine className="h-3.5 w-3.5" />
                             <span className="font-mono text-foreground">{localEndpoint}</span>
                             <span>{t('settings.remoteInstances.page.preview.local')}</span>
                           </>
                         ) : (
                           <>
-                            <Icon name="computer" className="h-3.5 w-3.5" />
+                            <RiComputerLine className="h-3.5 w-3.5" />
                             <span className="font-mono text-foreground">{localEndpoint}</span>
                             <span>{t('settings.remoteInstances.page.preview.local')}</span>
-                            <Icon name="arrow-right" className="h-3.5 w-3.5" />
-                            <Icon name="server" className="h-3.5 w-3.5" />
+                            <RiArrowRightLine className="h-3.5 w-3.5" />
+                            <RiServerLine className="h-3.5 w-3.5" />
                             <span className="font-mono text-foreground">{remoteEndpoint}</span>
                             <span>{t('settings.remoteInstances.page.preview.remote')}</span>
                           </>
@@ -1432,7 +1447,7 @@ export const RemoteInstancesPage: React.FC = () => {
                             });
                           }}
                         >
-                          <Icon name="external-link" className="h-3.5 w-3.5" />
+                          <RiExternalLinkLine className="h-3.5 w-3.5" />
                           {t('settings.remoteInstances.page.actions.openLocal')}
                         </Button>
                       ) : null}
@@ -1460,7 +1475,7 @@ export const RemoteInstancesPage: React.FC = () => {
               }));
             }}
           >
-            <Icon name="add" className="h-3.5 w-3.5" />
+            <RiAddLine className="h-3.5 w-3.5" />
             {t('settings.remoteInstances.page.actions.addForward')}
           </Button>
         </section>
@@ -1525,7 +1540,7 @@ export const RemoteInstancesPage: React.FC = () => {
                   });
                 }}
               >
-                <Icon name="file-copy" className="h-3.5 w-3.5" />
+                <RiFileCopyLine className="h-3.5 w-3.5" />
                 {t('settings.remoteInstances.page.actions.copyLocalUrl')}
               </Button>
               <Button
@@ -1537,7 +1552,7 @@ export const RemoteInstancesPage: React.FC = () => {
                   void handleOpenCurrentInstance();
                 }}
               >
-                <Icon name="external-link" className="h-3.5 w-3.5" />
+                <RiExternalLinkLine className="h-3.5 w-3.5" />
                 {t('settings.remoteInstances.page.actions.open')}
               </Button>
             </>
@@ -1556,11 +1571,11 @@ export const RemoteInstancesPage: React.FC = () => {
           </DialogHeader>
           <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={handleCopyAllLogs} disabled={logDialogLoading || !logLinesText.trim()}>
-              <Icon name="file-copy" className="h-3.5 w-3.5" />
+              <RiFileCopyLine className="h-3.5 w-3.5" />
               {t('settings.common.actions.copyAll')}
             </Button>
             <Button type="button" variant="outline" size="xs" className="!font-normal" onClick={() => void handleClearLogs()} disabled={logDialogLoading}>
-              <Icon name="delete-bin" className="h-3.5 w-3.5" />
+              <RiDeleteBinLine className="h-3.5 w-3.5" />
               {t('settings.common.actions.clear')}
             </Button>
           </div>

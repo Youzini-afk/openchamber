@@ -1,5 +1,20 @@
 import React from 'react';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    RiAddCircleLine,
+    RiAiAgentLine,
+    RiAttachment2,
+    RiCloseLine,
+    RiCommandLine,
+    RiExternalLinkLine,
+    RiFolderLine,
+    RiFullscreenLine,
+    RiGitPullRequestLine,
+    RiShieldCheckLine,
+    RiShieldUserLine,
+    RiGithubLine,
+    RiSendPlane2Line,
+} from '@remixicon/react';
 import { BrowserVoiceButton } from '@/components/voice';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -46,7 +61,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog';
 import { GitHubPrPickerDialog } from '@/components/session/GitHubPrPickerDialog';
-import { Icon } from "@/components/icon/Icon";
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -277,7 +291,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                     title={t('chat.chatInput.actions.commands')}
                     aria-label={t('chat.chatInput.actions.commands')}
                 >
-                    <Icon name="command" className={cn(iconSizeClass)} />
+                    <RiCommandLine className={cn(iconSizeClass)} />
                 </button>
             ) : null}
             <input
@@ -298,7 +312,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                         title={t('chat.chatInput.actions.attachFiles')}
                         aria-label={t('chat.chatInput.actions.attachFiles')}
                     >
-                        <Icon name="attachment-2" className={cn(iconSizeClass, 'text-current')} />
+                        <RiAttachment2 className={cn(iconSizeClass, 'text-current')} />
                     </button>
                 ) : (
                     <DropdownMenu>
@@ -309,7 +323,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                                 title={t('chat.chatInput.actions.addAttachment')}
                                 aria-label={t('chat.chatInput.actions.addAttachment')}
                             >
-                                <Icon name="add-circle" className={cn(iconSizeClass, 'text-current')} />
+                                <RiAddCircleLine className={cn(iconSizeClass, 'text-current')} />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start">
@@ -318,7 +332,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                                     requestAnimationFrame(handlePickLocalFiles);
                                 }}
                             >
-                                <Icon name="attachment-2"/>
+                                <RiAttachment2 />
                                 {t('chat.chatInput.actions.attachFiles')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -326,7 +340,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                                     requestAnimationFrame(openIssuePicker);
                                 }}
                             >
-                                <Icon name="github"/>
+                                <RiGithubLine />
                                 {t('chat.chatInput.actions.linkGithubIssue')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -334,7 +348,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                                     requestAnimationFrame(openPrPicker);
                                 }}
                             >
-                                <Icon name="git-pull-request"/>
+                                <RiGitPullRequestLine />
                                 {t('chat.chatInput.actions.linkGithubPr')}
                             </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -350,7 +364,7 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
                     title={t('chat.chatInput.actions.modelAgentSettings')}
                     aria-label={t('chat.chatInput.actions.modelAgentSettings')}
                 >
-                    <Icon name="ai-agent" className={cn(iconSizeClass, 'text-current')} />
+                    <RiAiAgentLine className={cn(iconSizeClass, 'text-current')} />
                 </button>
             ) : null}
         </div>
@@ -413,9 +427,9 @@ const PermissionAutoAcceptButton = React.memo(function PermissionAutoAcceptButto
             title={ariaLabel}
         >
             {permissionAutoAcceptEnabled ? (
-                <Icon name="shield-check" className={cn(iconSizeClass)} style={{ color: 'var(--status-info)' }} />
+                <RiShieldCheckLine className={cn(iconSizeClass)} style={{ color: 'var(--status-info)' }} />
             ) : (
-                <Icon name="shield-user" className={cn(iconSizeClass)} />
+                <RiShieldUserLine className={cn(iconSizeClass)} />
             )}
         </button>
     );
@@ -466,7 +480,7 @@ const FocusModeButton = React.memo(function FocusModeButton(props: FocusModeButt
                     aria-label={t('chat.chatInput.focusMode.toggleAria')}
                     aria-pressed={isExpandedInput}
                 >
-                    <Icon name="fullscreen" className={cn(iconSizeClass)} />
+                    <RiFullscreenLine className={cn(iconSizeClass)} />
                 </button>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={8}>
@@ -533,7 +547,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             )}
             aria-label={t('chat.chatInput.actions.sendMessageAria')}
         >
-            <Icon name="send-plane-2" className={cn(sendIconSizeClass)} />
+            <RiSendPlane2Line className={cn(sendIconSizeClass)} />
         </button>
     );
 
@@ -560,7 +574,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                     )}
                     aria-label={t('chat.chatInput.actions.queueMessageAria')}
                 >
-                    <Icon name="send-plane-2" className={cn(sendIconSizeClass, '-rotate-90')} />
+                    <RiSendPlane2Line className={cn(sendIconSizeClass, '-rotate-90')} />
                 </button>
             ) : null}
             <button
@@ -3223,7 +3237,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 iconColor: currentTheme.colors.surface.foreground,
             },
         );
-        const projectIconName = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
+        const ProjectIcon = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
         const iconColor = getProjectIconColor(project.color);
 
         return (
@@ -3235,10 +3249,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     >
                         <img src={imageUrl} alt="" className="h-full w-full object-contain" draggable={false} />
                     </span>
-                ) : projectIconName ? (
-                    <Icon name={projectIconName} className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+                ) : ProjectIcon ? (
+                    <ProjectIcon className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
                 ) : (
-                    <Icon name="folder" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"  style={iconColor ? { color: iconColor } : undefined}/>
+                    <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" style={iconColor ? { color: iconColor } : undefined} />
                 )}
                 <span className="truncate">{getProjectDisplayLabel(project)}</span>
             </span>
@@ -3363,7 +3377,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     aria-label={t('chat.chatInput.devServerLogsRemove')}
                                     title={t('chat.chatInput.devServerLogsRemove')}
                                 >
-                                    <Icon name="close" className="h-3 w-3" />
+                                    <RiCloseLine className="h-3 w-3" />
                                 </button>
                             </div>
                         ) : null}
@@ -3384,7 +3398,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     aria-label={t('chat.chatInput.previewContextRemove')}
                                     title={t('chat.chatInput.previewContextRemove')}
                                 >
-                                    <Icon name="close" className="h-3 w-3" />
+                                    <RiCloseLine className="h-3 w-3" />
                                 </button>
                             </div>
                         ) : null}
@@ -3425,7 +3439,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     className="flex items-center justify-center h-6 w-6 hover:bg-[var(--interactive-hover)] rounded-full transition-colors"
                                     aria-label={t('chat.chatInput.linked.issue.openInBrowserAria')}
                                 >
-                                    <Icon name="external-link" className="h-4 w-4 text-muted-foreground" />
+                                    <RiExternalLinkLine className="h-4 w-4 text-muted-foreground" />
                                 </a>
                                 <button
                                     type="button"
@@ -3436,7 +3450,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     aria-label={t('chat.chatInput.linked.issue.removeAria')}
                                     title={t('chat.chatInput.linked.issue.removeAria')}
                                 >
-                                    <Icon name="close" className="h-4 w-4 text-muted-foreground" />
+                                    <RiCloseLine className="h-4 w-4 text-muted-foreground" />
                                 </button>
                             </span>
                         </div>
@@ -3478,7 +3492,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     className="flex items-center justify-center h-6 w-6 hover:bg-[var(--interactive-hover)] rounded-full transition-colors"
                                     aria-label={t('chat.chatInput.linked.pr.openInBrowserAria')}
                                 >
-                                    <Icon name="external-link" className="h-4 w-4 text-muted-foreground" />
+                                    <RiExternalLinkLine className="h-4 w-4 text-muted-foreground" />
                                 </a>
                                 <button
                                     type="button"
@@ -3489,7 +3503,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     aria-label={t('chat.chatInput.linked.pr.removeAria')}
                                     title={t('chat.chatInput.linked.pr.removeAria')}
                                 >
-                                    <Icon name="close" className="h-4 w-4 text-muted-foreground" />
+                                    <RiCloseLine className="h-4 w-4 text-muted-foreground" />
                                 </button>
                             </span>
                         </div>
@@ -3609,7 +3623,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         title={t('chat.chatInput.actions.attachFiles')}
                                         aria-label={t('chat.chatInput.actions.attachFiles')}
                                     >
-                                        <Icon name="attachment-2" className={cn(iconSizeClass, 'text-current')} />
+                                        <RiAttachment2 className={cn(iconSizeClass, 'text-current')} />
                                     </button>
                                 </div>
                                 <p className="mt-2 typography-ui-label text-muted-foreground">

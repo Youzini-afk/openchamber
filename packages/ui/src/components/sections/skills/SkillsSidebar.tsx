@@ -17,13 +17,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine } from '@remixicon/react';
 import { useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 interface SkillsSidebarProps {
@@ -75,6 +75,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     setSelectedSkill(newName);
     onItemSelect?.();
 
+
   };
 
   const handleDeleteSkill = async (skill: DiscoveredSkill) => {
@@ -123,6 +124,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
         instructions: '',
       });
     setSelectedSkill(newName);
+
 
   };
 
@@ -224,7 +226,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             className="h-7 w-7 px-0 -my-1 text-muted-foreground"
             onClick={handleCreateNew}
           >
-            <Icon name="add" className="h-3.5 w-3.5" />
+            <RiAddLine className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -232,7 +234,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
         {skills.length === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">
-            <Icon name="book-open" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+            <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
           </div>
@@ -480,7 +482,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
               variant="ghost"
               className="h-6 w-6 px-0 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
             >
-              <Icon name="more-2" className="h-3.5 w-3.5" />
+              <RiMore2Line className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-fit min-w-20">
@@ -490,7 +492,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
                 onRename();
               }}
             >
-              <Icon name="edit" className="h-4 w-4 mr-px" />
+              <RiEditLine className="h-4 w-4 mr-px" />
               {t('settings.common.actions.rename')}
             </DropdownMenuItem>
 
@@ -500,7 +502,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
                 onDuplicate();
               }}
             >
-              <Icon name="file-copy" className="h-4 w-4 mr-px" />
+              <RiFileCopyLine className="h-4 w-4 mr-px" />
               {t('settings.common.actions.duplicate')}
             </DropdownMenuItem>
 
@@ -511,7 +513,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
               }}
               className="text-destructive focus:text-destructive"
             >
-              <Icon name="delete-bin" className="h-4 w-4 mr-px" />
+              <RiDeleteBinLine className="h-4 w-4 mr-px" />
               {t('settings.common.actions.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>

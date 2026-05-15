@@ -1,7 +1,6 @@
 import React from 'react';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { SessionSidebar } from '@/components/session/SessionSidebar';
-import { SessionDialogs } from '@/components/session/SessionDialogs';
 import { ChatView } from '@/components/views/ChatView';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
@@ -23,7 +22,6 @@ import { useI18n } from '@/lib/i18n';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
-import { Icon } from "@/components/icon/Icon";
 import { formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
@@ -31,6 +29,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { UsageWindow } from '@/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
+import { RiAddLine, RiArrowLeftLine, RiRefreshLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
 
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 
@@ -219,6 +218,7 @@ export const VSCodeLayout: React.FC = () => {
   const handleBackToSessions = React.useCallback(() => {
     setCurrentView('sessions');
   }, []);
+
 
   // Listen for connection status changes
   React.useEffect(() => {
@@ -520,7 +520,6 @@ export const VSCodeLayout: React.FC = () => {
           </div>
         </>
       )}
-      <SessionDialogs />
     </div>
   );
 };
@@ -694,7 +693,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           className="inline-flex h-7 w-7 items-center justify-center text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={t('vscodeLayout.actions.backToSessionsAria')}
         >
-          <Icon name="arrow-left" className="h-5 w-5" />
+          <RiArrowLeftLine className="h-5 w-5" />
         </button>
       )}
       <h1 className="text-sm font-medium truncate flex-1" title={title}>{title}</h1>
@@ -704,7 +703,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           className="inline-flex h-9 w-9 items-center justify-center p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={t('vscodeLayout.actions.newSessionAria')}
         >
-          <Icon name="add" className="h-5 w-5" />
+          <RiAddLine className="h-5 w-5" />
         </button>
       )}
       {onAgentManager && (
@@ -713,7 +712,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           className="inline-flex h-9 w-9 items-center justify-center p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={t('vscodeLayout.actions.openAgentManagerAria')}
         >
-          <Icon name="robot-2" className="h-5 w-5" />
+          <RiRobot2Line className="h-5 w-5" />
         </button>
       )}
       {showMcp && (
@@ -736,7 +735,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
               className="inline-flex h-9 w-9 items-center justify-center p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               disabled={isQuotaLoading}
             >
-              <Icon name="timer" className="h-5 w-5" />
+              <RiTimerLine className="h-5 w-5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -784,7 +783,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
                     disabled={isQuotaLoading}
                     aria-label={t('vscodeLayout.quota.actions.refreshAria')}
                   >
-                    <Icon name="refresh" className="h-4 w-4" />
+                    <RiRefreshLine className="h-4 w-4" />
                   </button>
                 </div>
               </DropdownMenuLabel>
@@ -869,7 +868,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           className="inline-flex h-9 w-9 items-center justify-center p-2 text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           aria-label={t('vscodeLayout.actions.settingsAria')}
         >
-          <Icon name="settings-3" className="h-5 w-5" />
+          <RiSettings3Line className="h-5 w-5" />
         </button>
       )}
       {showContextUsage && stableContextUsage && stableContextUsage.totalTokens > 0 && (

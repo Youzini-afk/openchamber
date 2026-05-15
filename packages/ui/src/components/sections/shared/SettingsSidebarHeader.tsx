@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Icon } from "@/components/icon/Icon";
+import { RiAddLine } from '@remixicon/react';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 
@@ -54,7 +54,7 @@ export const SettingsSidebarHeader: React.FC<SettingsSidebarHeaderProps> = ({
             onClick={onAdd}
             aria-label={addButtonLabel}
           >
-            <Icon name="add" className="size-4" />
+            <RiAddLine className="size-4" />
           </Button>
         )}
       </div>

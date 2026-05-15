@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiAddLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCloseLine, RiCommandLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine, RiTerminalLine } from '@remixicon/react';
 
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useTerminalStore } from '@/stores/useTerminalStore';
@@ -13,7 +14,6 @@ import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import { Button } from '@/components/ui/button';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { Icon } from "@/components/icon/Icon";
 import { useDeviceInfo } from '@/lib/device';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { primeTerminalInputTransport } from '@/lib/terminalApi';
@@ -44,6 +44,7 @@ const MODIFIER_ARROW_SUFFIX: Record<Modifier, string> = {
     ctrl: '5',
     cmd: '3',
 };
+
 
 const STREAM_OPTIONS = {
     retry: {
@@ -141,8 +142,8 @@ export const TerminalView: React.FC = () => {
     const terminalTabItems = React.useMemo(() => {
         return (directoryTerminalState?.tabs ?? []).map((tab) => ({
             icon: (() => {
-                const tabIconName = tab.iconKey ? PROJECT_ACTION_ICON_MAP[tab.iconKey as ProjectActionIconKey] ?? 'terminal' : 'terminal';
-                return <Icon name={tabIconName} className="h-4 w-4" />;
+                const Icon = tab.iconKey ? PROJECT_ACTION_ICON_MAP[tab.iconKey as ProjectActionIconKey] ?? RiTerminalLine : RiTerminalLine;
+                return <Icon className="h-4 w-4" />;
             })(),
             id: tab.id,
             label: tab.label,
@@ -648,6 +649,7 @@ export const TerminalView: React.FC = () => {
         [activeTabId, closeTab, disconnectStream, effectiveDirectory]
     );
 
+
     const handleViewportInput = React.useCallback(
         (data: string) => {
             if (!data || isReconnectPending) {
@@ -956,7 +958,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('tab')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-right" className="h-4 w-4" />
+                <RiArrowRightLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.tabAria')}</span>
             </Button>
             <Button
@@ -980,7 +982,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleModifierToggle('cmd')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="command"/>
+                <RiCommandLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.commandModifierAria')}</span>
             </Button>
             <Button
@@ -991,7 +993,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('arrow-up')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-up"/>
+                <RiArrowUpLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.arrowUpAria')}</span>
             </Button>
             <Button
@@ -1002,7 +1004,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('arrow-left')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-left"/>
+                <RiArrowLeftLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.arrowLeftAria')}</span>
             </Button>
             <Button
@@ -1013,7 +1015,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('arrow-down')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-down"/>
+                <RiArrowDownLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.arrowDownAria')}</span>
             </Button>
             <Button
@@ -1024,7 +1026,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('arrow-right')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-right"/>
+                <RiArrowRightLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.arrowRightAria')}</span>
             </Button>
             <Button
@@ -1035,7 +1037,7 @@ export const TerminalView: React.FC = () => {
                 onClick={() => handleMobileKeyPress('enter')}
                 disabled={quickKeysDisabled}
             >
-                <Icon name="arrow-go-back"/>
+                <RiArrowGoBackLine size={16} />
                 <span className="sr-only">{t('terminalView.quickKeys.enterAria')}</span>
             </Button>
         </>
@@ -1066,7 +1068,7 @@ export const TerminalView: React.FC = () => {
                             onClick={handleCreateTab}
                             title={t('terminalView.tabs.newTabTitle')}
                         >
-                            <Icon name="add" className={`${isTouchTerminal ? 'h-[18px] w-[18px]' : 'h-4 w-4'}`}/>
+                            <RiAddLine size={isTouchTerminal ? 18 : 16} />
                         </Button>
 
                         <div className="flex shrink-0 items-center gap-1 overflow-visible">
@@ -1082,7 +1084,7 @@ export const TerminalView: React.FC = () => {
                                     }}
                                     title={t('terminalView.preview.openTitle')}
                                 >
-                                    <Icon name="global" className="h-3.5 w-3.5 shrink-0" />
+                                    <RiGlobalLine className="h-3.5 w-3.5 shrink-0" />
                                     <span className="whitespace-nowrap">{t('terminalView.preview.open')}</span>
                                 </Button>
                             ) : null}
@@ -1097,7 +1099,7 @@ export const TerminalView: React.FC = () => {
                                         title={isBottomTerminalExpanded ? t('terminalView.bottomDock.restoreTitle') : t('terminalView.bottomDock.expandTitle')}
                                         aria-label={isBottomTerminalExpanded ? t('terminalView.bottomDock.restoreAria') : t('terminalView.bottomDock.expandAria')}
                                     >
-                                        {isBottomTerminalExpanded ? <Icon name="fullscreen-exit" className="h-4 w-4" /> : <Icon name="fullscreen" className="h-4 w-4" />}
+                                        {isBottomTerminalExpanded ? <RiFullscreenExitLine className="h-4 w-4" /> : <RiFullscreenLine className="h-4 w-4" />}
                                     </Button>
                                     <Button
                                         type="button"
@@ -1108,7 +1110,7 @@ export const TerminalView: React.FC = () => {
                                         title={t('terminalView.bottomDock.closeTitle')}
                                         aria-label={t('terminalView.bottomDock.closeAria')}
                                     >
-                                        <Icon name="close" className="h-4 w-4" />
+                                        <RiCloseLine className="h-4 w-4" />
                                     </Button>
                                 </>
                             ) : null}

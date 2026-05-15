@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiInformationLine, RiRestartLine } from '@remixicon/react';
 import { useUIStore } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
@@ -12,7 +13,6 @@ import { NumberInput } from '@/components/ui/number-input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { MobileDevice, MobilePairStartResult } from '@/lib/api/types';
@@ -941,7 +941,7 @@ export const NotificationSettings: React.FC = () => {
                       <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.modelLabel')}</span>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                          <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent sideOffset={8} className="max-w-xs">
                           {t('settings.notifications.page.summary.modelTooltip')}
@@ -994,7 +994,7 @@ export const NotificationSettings: React.FC = () => {
                           aria-label={t('settings.notifications.page.summary.resetThresholdAria')}
                           title={t('settings.common.actions.reset')}
                         >
-                          <Icon name="restart" className="h-3.5 w-3.5" />
+                          <RiRestartLine className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -1021,7 +1021,7 @@ export const NotificationSettings: React.FC = () => {
                           aria-label={t('settings.notifications.page.summary.resetLengthAria')}
                           title={t('settings.common.actions.reset')}
                         >
-                          <Icon name="restart" className="h-3.5 w-3.5" />
+                          <RiRestartLine className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
@@ -1050,7 +1050,7 @@ export const NotificationSettings: React.FC = () => {
                         aria-label={t('settings.notifications.page.summary.resetMaxLengthAria')}
                         title={t('settings.common.actions.reset')}
                       >
-                        <Icon name="restart" className="h-3.5 w-3.5" />
+                        <RiRestartLine className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>

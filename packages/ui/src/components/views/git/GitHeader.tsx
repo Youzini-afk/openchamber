@@ -1,4 +1,17 @@
 import React from 'react';
+import {
+  RiArrowDownSLine,
+  RiCheckLine,
+  RiLoader4Line,
+  RiGitBranchLine,
+  RiBriefcaseLine,
+  RiHomeLine,
+  RiGraduationCapLine,
+  RiCodeLine,
+  RiHeartLine,
+  RiHistoryLine,
+  RiUser3Line,
+} from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { SortableTabsStrip, type SortableTabsStripItem } from '@/components/ui/sortable-tabs-strip';
 import {
@@ -8,8 +21,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
-import type { IconName } from "@/components/icon/icons";
 import { BranchSelector } from './BranchSelector';
 import { WorktreeBranchDisplay } from './WorktreeBranchDisplay';
 import { SyncActions } from './SyncActions';
@@ -43,14 +54,17 @@ interface GitHeaderProps {
   onSelectActionTab?: (tabID: string) => void;
 }
 
-const IDENTITY_ICON_MAP: Record<string, IconName> = {
-  branch: 'git-branch',
-  briefcase: 'briefcase',
-  house: 'home',
-  graduation: 'graduation-cap',
-  code: 'code',
-  heart: 'heart',
-  user: 'user-3',
+const IDENTITY_ICON_MAP: Record<
+  string,
+  React.ComponentType<React.ComponentProps<typeof RiGitBranchLine>>
+> = {
+  branch: RiGitBranchLine,
+  briefcase: RiBriefcaseLine,
+  house: RiHomeLine,
+  graduation: RiGraduationCapLine,
+  code: RiCodeLine,
+  heart: RiHeartLine,
+  user: RiUser3Line,
 };
 
 const IDENTITY_COLOR_MAP: Record<string, string> = {
@@ -78,10 +92,9 @@ interface IdentityIconProps {
 }
 
 const IdentityIcon: React.FC<IdentityIconProps> = ({ icon, className, colorToken }) => {
-  const iconName = IDENTITY_ICON_MAP[icon ?? 'branch'] ?? 'user-3';
+  const IconComponent = IDENTITY_ICON_MAP[icon ?? 'branch'] ?? RiUser3Line;
   return (
-    <Icon
-      name={iconName}
+    <IconComponent
       className={className}
       style={{ color: getIdentityColor(colorToken) }}
     />
@@ -119,7 +132,7 @@ export const IdentityDropdown: React.FC<IdentityDropdownProps> = ({
               disabled={isDisabled}
             >
               {isApplying ? (
-                <Icon name="loader-4" className="size-4 animate-spin" />
+                <RiLoader4Line className="size-4 animate-spin" />
               ) : (
                 <IdentityIcon
                   icon={activeProfile?.icon}
@@ -132,7 +145,7 @@ export const IdentityDropdown: React.FC<IdentityDropdownProps> = ({
                   {activeProfile?.name || t('gitView.header.noIdentity')}
                 </span>
               )}
-              <Icon name="arrow-down-s" className="size-4 opacity-60" />
+              <RiArrowDownSLine className="size-4 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -165,7 +178,7 @@ export const IdentityDropdown: React.FC<IdentityDropdownProps> = ({
                     </span>
                   </span>
                   {isSelected ? (
-                    <Icon name="check" className="ml-auto size-4 text-foreground" />
+                    <RiCheckLine className="ml-auto size-4 text-foreground" />
                   ) : null}
                 </span>
               </DropdownMenuItem>
@@ -217,7 +230,7 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
               className="h-8 w-8 px-0"
               onClick={onOpenHistory}
             >
-              <Icon name="history" className="size-4" />
+              <RiHistoryLine className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent sideOffset={8}>{t('gitView.history.title')}</TooltipContent>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiArrowDownSLine, RiArrowRightSLine, RiEditLine, RiGitCommitLine, RiLoader4Line, RiTextWrap } from '@remixicon/react';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -25,7 +26,6 @@ import type { DiffViewMode } from '@/components/chat/message/types';
 import { PierreDiffViewer } from './PierreDiffViewer';
 import { useDeviceInfo } from '@/lib/device';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
-import { Icon } from "@/components/icon/Icon";
 import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
@@ -232,7 +232,7 @@ const FileSelector = React.memo<FileSelectorProps>(({
                     ) : (
                         <span className="text-muted-foreground">{t('diffView.selector.selectFile')}</span>
                     )}
-                    <Icon name="arrow-down-s" className="size-4 opacity-50" />
+                    <RiArrowDownSLine className="size-4 opacity-50" />
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="max-h-[70vh] min-w-[320px] overflow-y-auto">
@@ -297,7 +297,7 @@ const DiffViewModeSelector = React.memo<DiffViewModeSelectorProps>(({ mode, onMo
                     <span className="min-w-0 truncate typography-meta">
                         {t(currentOption.labelKey)}
                     </span>
-                    <Icon name="arrow-down-s" className="size-4 opacity-50" />
+                    <RiArrowDownSLine className="size-4 opacity-50" />
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="min-w-[140px]">
@@ -788,9 +788,9 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                     <div className="relative flex min-w-0 flex-1 items-center gap-2">
                         <span className="flex size-5 items-center justify-center opacity-70 group-hover/header:opacity-100">
                             {isExpanded ? (
-                                <Icon name="arrow-down-s" className="size-4" />
+                                <RiArrowDownSLine className="size-4" />
                             ) : (
-                                <Icon name="arrow-right-s" className="size-4" />
+                                <RiArrowRightSLine className="size-4" />
                             )}
                         </span>
                         <span
@@ -856,9 +856,9 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                                 disabled={isOpeningInEditor}
                             >
                                 {isOpeningInEditor ? (
-                                    <Icon name="loader-4" className="size-3.5 animate-spin" />
+                                    <RiLoader4Line className="size-3.5 animate-spin" />
                                 ) : (
-                                    <Icon name="edit" className="size-3.5" />
+                                    <RiEditLine className="size-3.5" />
                                 )}
                             </Button>
                         ) : null}
@@ -895,7 +895,7 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                     ) : null}
                     {isLoading && !diffData && !diffLoadError ? (
                         <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
-                            <Icon name="loader-4" className="animate-spin" />
+                            <RiLoader4Line size={16} className="animate-spin" />
                             Loading diff…
                         </div>
                     ) : null}
@@ -986,6 +986,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const pendingScrollTargetRef = React.useRef<string | null>(null);
     const pendingScrollFrameRef = React.useRef<number | null>(null);
     const shouldPinAfterAlignRef = React.useRef(false);
+
 
     React.useEffect(() => {
         if (!pinSelectedFileHeaderToTopOnNavigate || !isStackedView || !pinnedStackedTarget) {
@@ -1629,7 +1630,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         if (isLoadingStatus && !status) {
             return (
                 <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="loader-4" className="animate-spin" />
+                    <RiLoader4Line size={16} className="animate-spin" />
                     {t('diffView.state.loadingRepositoryStatus')}
                 </div>
             );
@@ -1681,7 +1682,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                             </div>
                         ) : (
                             <>
-                                <Icon name="loader-4" className="animate-spin" />
+                                <RiLoader4Line size={16} className="animate-spin" />
                                 {t('diffView.state.loadingDiff')}
                             </>
                         )}
@@ -1696,7 +1697,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             <div className="flex items-center gap-3 px-3 py-2 bg-background">
                 {!isMobile && (
                     <div className="flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground shrink-0">
-                        <Icon name="git-commit" className="h-4 w-4" />
+                        <RiGitCommitLine size={16} />
                         <span className="typography-ui-label font-semibold text-foreground">
                             {isLoadingStatus && !status
                                 ? t('diffView.state.loadingChanges')
@@ -1733,7 +1734,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         )}
                         title={diffWrapLines ? t('diffView.actions.disableLineWrap') : t('diffView.actions.enableLineWrap')}
                     >
-                        <Icon name="text-wrap" className="size-4" />
+                        <RiTextWrap className="size-4" />
                     </Button>
                 )}
                 {showOpenInEditorAction && selectedFileEntry && !isStackedView && (
@@ -1748,9 +1749,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         title={t('diffView.actions.openFileAtFirstChangedLine')}
                     >
                         {isOpeningSelectedInEditor ? (
-                            <Icon name="loader-4" className="size-3.5 animate-spin" />
+                            <RiLoader4Line className="size-3.5 animate-spin" />
                         ) : (
-                            <Icon name="edit" className="size-3.5" />
+                            <RiEditLine className="size-3.5" />
                         )}
                     </Button>
                 )}

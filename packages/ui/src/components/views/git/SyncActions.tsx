@@ -1,4 +1,10 @@
 import React from 'react';
+import {
+  RiArrowDownSLine,
+  RiCloseLine,
+  RiLoader4Line,
+  RiRefreshLine,
+} from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -7,7 +13,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from "@/components/icon/Icon";
 import type { GitRemote } from '@/lib/gitApi';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -85,9 +90,9 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
             aria-label={t('gitView.sync.syncChanges')}
           >
             {syncAction === 'sync' ? (
-              <Icon name="loader-4" className="size-4 animate-spin" />
+              <RiLoader4Line className="size-4 animate-spin" />
             ) : (
-              <Icon name="refresh" className="size-4" />
+              <RiRefreshLine className="size-4" />
             )}
             <span className="whitespace-nowrap tabular-nums">{primaryLabel}</span>
           </button>
@@ -106,7 +111,7 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
             disabled={isDropdownDisabled}
             aria-label={t('gitView.sync.moreActionsAria')}
           >
-            <Icon name="arrow-down-s" className="size-4" />
+            <RiArrowDownSLine className="size-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" alignOffset={-40} className="w-[min(360px,calc(100vw-2rem))] max-h-[320px] overflow-y-auto">
@@ -123,7 +128,7 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
               }}
             >
               <div className="flex w-full items-center gap-2">
-                <Icon name="refresh" className="size-4 text-muted-foreground" />
+                <RiRefreshLine className="size-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-col">
                     <span className="typography-ui-label text-foreground">
@@ -156,9 +161,9 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
                     title={t('gitView.header.removeRemoteTitle', { name: remote.name })}
                   >
                     {removingRemoteName === remote.name ? (
-                      <Icon name="loader-4" className="size-3.5 animate-spin" />
+                      <RiLoader4Line className="size-3.5 animate-spin" />
                     ) : (
-                      <Icon name="close" className="size-3.5" />
+                      <RiCloseLine className="size-3.5" />
                     )}
                   </Button>
                 ) : null}

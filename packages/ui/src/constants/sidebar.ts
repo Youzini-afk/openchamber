@@ -1,8 +1,10 @@
-import type { IconName } from "@/components/icon/icons";
+import { RiBrainAi3Line, RiChatAi3Line, RiCommandLine, RiGitBranchLine, RiSettings3Line, RiStackLine, RiBookLine, RiBarChart2Line, RiPlugLine } from '@remixicon/react';
+import type { ComponentType } from 'react';
 
 export type SidebarSection = 'sessions' | 'agents' | 'commands' | 'skills' | 'mcp' | 'providers' | 'usage' | 'git-identities' | 'settings';
 
-export type IconComponent = IconName;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type IconComponent = ComponentType<any>;
 
 export interface SidebarSectionConfig {
     id: SidebarSection;
@@ -16,55 +18,55 @@ export const SIDEBAR_SECTIONS: SidebarSectionConfig[] = [
         id: 'sessions',
         label: 'Sessions',
         description: 'Browse and manage chat sessions scoped to the current directory.',
-        icon: "chat-ai-3",
+        icon: RiChatAi3Line,
     },
     {
         id: 'agents',
         label: 'Agents',
         description: 'Configure OpenCode agents, prompts, and permissions.',
-        icon: "brain-ai-3",
+        icon: RiBrainAi3Line,
     },
     {
         id: 'commands',
         label: 'Commands',
         description: 'Create and maintain custom slash commands for OpenCode.',
-        icon: "command",
+        icon: RiCommandLine,
     },
     {
         id: 'skills',
         label: 'Skills',
         description: 'Create reusable instruction files for agents to load on-demand.',
-        icon: "book",
+        icon: RiBookLine,
     },
     {
         id: 'mcp',
         label: 'MCP',
         description: 'Manage Model Context Protocol servers and their configurations.',
-        icon: "plug-line",
+        icon: RiPlugLine,
     },
     {
         id: 'providers',
         label: 'Providers',
         description: 'Configure AI model providers and API credentials.',
-        icon: "stack",
+        icon: RiStackLine,
     },
     {
         id: 'usage',
         label: 'Usage',
         description: 'Monitor API quota and usage across providers.',
-        icon: "bar-chart-2",
+        icon: RiBarChart2Line,
     },
     {
         id: 'git-identities',
         label: 'Git Identities',
         description: 'Manage Git profiles with different credentials and SSH keys.',
-        icon: "git-branch",
+        icon: RiGitBranchLine,
     },
     {
         id: 'settings',
         label: 'OpenChamber',
         description: 'OpenChamber app settings: themes, fonts, and preferences.',
-        icon: "settings-3",
+        icon: RiSettings3Line,
     },
 ];
 

@@ -96,8 +96,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       const timer = setTimeout(() => {
         const now = sessionActivityPhases.get(sessionId);
         if (now?.phase === 'cooldown') {
-          setSessionActivityPhase(sessionId, 'idle');
-          return;
+          sessionActivityPhases.set(sessionId, { phase: 'idle', updatedAt: Date.now() });
         }
         sessionActivityCooldowns.delete(sessionId);
       }, SESSION_COOLDOWN_DURATION_MS);
@@ -179,9 +178,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     }
 
     const phase = status === 'busy' || status === 'retry' ? 'busy' : 'idle';
-    if (phase !== 'idle' || sessionActivityPhases.get(sessionId)?.phase !== 'cooldown') {
-      setSessionActivityPhase(sessionId, phase);
-    }
+    setSessionActivityPhase(sessionId, phase);
   };
 
   const getSessionStateSnapshot = () => {

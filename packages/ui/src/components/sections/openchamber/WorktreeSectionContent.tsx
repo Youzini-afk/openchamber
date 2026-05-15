@@ -1,8 +1,8 @@
 import React from 'react';
+import { RiAddLine, RiCloseLine, RiDeleteBinLine, RiInformationLine } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Icon } from "@/components/icon/Icon";
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
@@ -241,6 +241,8 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
     });
   }, [sessions, getWorktreeMetadata]);
 
+
+
   // Refresh worktrees when sessions change (after deletion)
   const sessionsKey = React.useMemo(() => sessions.map(s => s.id).join(','), [sessions]);
   React.useEffect(() => {
@@ -274,7 +276,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
             <h3 className="typography-ui-header font-normal text-foreground">{t('settings.openchamber.worktrees.setup.title')}</h3>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
               </TooltipTrigger>
               <TooltipContent sideOffset={8} className="max-w-xs">
                 {t('settings.openchamber.worktrees.setup.tooltipPrefix')}
@@ -308,7 +310,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                     className="flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                     aria-label={t('settings.openchamber.worktrees.setup.removeCommandAria')}
                   >
-                  <Icon name="close" className="h-4 w-4" />
+                  <RiCloseLine className="h-4 w-4" />
                 </button>
               </div>
             ))}
@@ -319,7 +321,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
               className="!font-normal"
               onClick={handleAddCommand}
             >
-              <Icon name="add" className="h-3.5 w-3.5" />
+              <RiAddLine className="h-3.5 w-3.5" />
               {t('settings.openchamber.worktrees.setup.addCommand')}
             </Button>
           </div>
@@ -333,7 +335,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
             <h3 className="typography-ui-header font-normal text-foreground">{t('settings.openchamber.worktrees.list.title')}</h3>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
               </TooltipTrigger>
               <TooltipContent sideOffset={8} className="max-w-xs">
                 {t('settings.openchamber.worktrees.list.tooltip')}
@@ -377,7 +379,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                     )}
                     aria-label={t('settings.openchamber.worktrees.list.deleteWorktreeAria', { name: worktree.branch || worktree.label || worktree.path })}
                 >
-                  <Icon name="delete-bin" className="h-4 w-4" />
+                  <RiDeleteBinLine className="h-4 w-4" />
                 </button>
               </div>
             ))}

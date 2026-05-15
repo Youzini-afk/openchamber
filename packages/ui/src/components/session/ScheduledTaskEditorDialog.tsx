@@ -9,12 +9,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { toast } from '@/components/ui';
+import { RiAddLine, RiCloseLine, RiCalendarLine, RiArrowLeftSLine, RiArrowRightSLine, RiArrowDownSLine } from '@remixicon/react';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from '@/components/chat/CommandAutocomplete';
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
-import { Icon } from "@/components/icon/Icon";
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
@@ -701,6 +701,7 @@ export function ScheduledTaskEditorDialog(props: {
     };
   }, [isDatePickerOpen]);
 
+
   const variantOptions = React.useMemo(() => {
     const provider = providers.find((item) => item.id === draft.execution.providerID);
     const model = provider?.models?.find((item) => item.id === draft.execution.modelID);
@@ -1066,10 +1067,10 @@ export function ScheduledTaskEditorDialog(props: {
                     onClick={() => setIsDatePickerOpen((prev) => !prev)}
                   >
                     <span className="inline-flex items-center gap-2">
-                      <Icon name="calendar" className="h-4 w-4 text-muted-foreground" />
+                      <RiCalendarLine className="h-4 w-4 text-muted-foreground" />
                       <span className="typography-ui-label text-foreground">{formatDateLabel(draft.schedule.onceDate, t('sessions.scheduledTasks.editor.date.placeholder'), locale)}</span>
                     </span>
-                    <Icon name="arrow-down-s" className="h-4 w-4 text-muted-foreground" />
+                    <RiArrowDownSLine className="h-4 w-4 text-muted-foreground" />
                   </button>
 
                   {isDatePickerOpen ? (
@@ -1082,7 +1083,7 @@ export function ScheduledTaskEditorDialog(props: {
                           aria-label={t('sessions.scheduledTasks.editor.date.previousMonth')}
                           disabled={isAtCurrentMonth}
                         >
-                          <Icon name="arrow-left-s" className="h-4 w-4" />
+                          <RiArrowLeftSLine className="h-4 w-4" />
                         </button>
                         <div className="typography-ui-label text-foreground">
                           {new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(calendarMonth)}
@@ -1093,7 +1094,7 @@ export function ScheduledTaskEditorDialog(props: {
                           onClick={() => setCalendarMonth((prev) => shiftMonth(prev, 1))}
                           aria-label={t('sessions.scheduledTasks.editor.date.nextMonth')}
                         >
-                          <Icon name="arrow-right-s" className="h-4 w-4" />
+                          <RiArrowRightSLine className="h-4 w-4" />
                         </button>
                       </div>
 
@@ -1255,7 +1256,7 @@ export function ScheduledTaskEditorDialog(props: {
                           onClick={() => removeTimeAt(index)}
                           aria-label={t('sessions.scheduledTasks.editor.times.removeAria')}
                         >
-                          <Icon name="close" className="h-4 w-4" />
+                          <RiCloseLine className="h-4 w-4" />
                         </Button>
                       ) : null}
                     </div>
@@ -1263,7 +1264,7 @@ export function ScheduledTaskEditorDialog(props: {
                 </div>
                 <div>
                   <Button type="button" size="sm" variant="outline" onClick={addTime}>
-                    <Icon name="add" className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.editor.times.add')}
+                    <RiAddLine className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.editor.times.add')}
                   </Button>
                 </div>
               </div>

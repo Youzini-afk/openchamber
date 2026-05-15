@@ -59,7 +59,6 @@ class AudioStreamService {
   private silenceSince: number | null = null;
   private onResult: SpeechResultCallback | null = null;
   private onError: ErrorCallback | null = null;
-  private finishResolver: (() => void) | null = null;
   private lang = 'en';
 
   // Configurable parameters
@@ -126,29 +125,16 @@ class AudioStreamService {
 
   /** Stop listening and clean up all resources. */
   stopListening(): void {
+    this.isActive = false;
     this._stopVAD();
     this._stopRecorder();
-    this._cleanupAfterStop(true);
-  }
-
-  async finishListening(): Promise<void> {
-    if (!this.isActive) return;
-
-    this._stopVAD();
+    this._teardownAudioContext();
+    this._releaseStream();
+    this.chunks = [];
     this.isSpeaking = false;
     this.silenceSince = null;
-
-    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
-      this._cleanupAfterStop(true);
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      this.finishResolver = resolve;
-      this._finaliseUtterance(false);
-    });
-
-    this._cleanupAfterStop(true);
+    this.onResult = null;
+    this.onError = null;
   }
 
   /** Whether currently listening. */
@@ -200,18 +186,11 @@ class AudioStreamService {
     this.mediaRecorder.onstop = () => {
       const blobs = this.chunks.splice(0);
       const durationMs = Date.now() - this.recordingStartMs;
-      if (blobs.length === 0 || durationMs < MIN_UTTERANCE_MS) {
-        this.finishResolver?.();
-        this.finishResolver = null;
-        return;
-      }
+      if (blobs.length === 0 || durationMs < MIN_UTTERANCE_MS) return;
 
       const mType = blobs[0].type || mimeType || 'audio/webm';
       const blob = new Blob(blobs, { type: mType });
-      void this._upload(blob, mType).finally(() => {
-        this.finishResolver?.();
-        this.finishResolver = null;
-      });
+      void this._upload(blob, mType);
     };
 
     // Collect data every 250 ms so we don't lose the tail on stop()
@@ -223,8 +202,6 @@ class AudioStreamService {
       try {
         this.mediaRecorder.stop();
       } catch {
-        this.finishResolver?.();
-        this.finishResolver = null;
         // ignore
       }
     }
@@ -267,7 +244,7 @@ class AudioStreamService {
             // End of utterance — stop recorder (triggers onstop → upload)
             this.isSpeaking = false;
             this.silenceSince = null;
-            this._finaliseUtterance(true);
+            this._finaliseUtterance();
           }
         }
       }
@@ -281,31 +258,12 @@ class AudioStreamService {
     }
   }
 
-  private _cleanupAfterStop(clearChunks: boolean): void {
-    const pendingResolver = this.finishResolver;
-    this.isActive = false;
-    this.finishResolver = null;
-    this.mediaRecorder = null;
-    this._teardownAudioContext();
-    this._releaseStream();
-    if (clearChunks) {
-      this.chunks = [];
-    }
-    this.isSpeaking = false;
-    this.silenceSince = null;
-    this.onResult = null;
-    this.onError = null;
-    pendingResolver?.();
-  }
-
-  /** Stop the current recorder to flush the utterance, optionally restarting for the next one. */
-  private _finaliseUtterance(restart: boolean): void {
+  /** Stop the current recorder to flush the utterance, then restart it. */
+  private _finaliseUtterance(): void {
     if (!this.isActive) return;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
       this.mediaRecorder.stop();
     }
-    if (!restart) return;
-
     // Restart recorder for the next utterance after a short delay
     // (MediaRecorder.onstop fires asynchronously; we wait for it to complete)
     setTimeout(() => {

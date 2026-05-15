@@ -104,8 +104,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       removeProviderConfig,
       fetchProviderModels,
       refreshOpenCodeAfterConfigChange,
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
     });
 
     registerOpenAgentRoutes(app, {

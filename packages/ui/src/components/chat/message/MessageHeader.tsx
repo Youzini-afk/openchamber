@@ -1,8 +1,8 @@
 import React from 'react';
+import { RiAiAgentLine, RiBrainAi3Line, RiUser3Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { getAgentColor } from '@/lib/agentColors';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
-import { Icon } from "@/components/icon/Icon";
 
 interface MessageHeaderProps {
     isUser: boolean;
@@ -23,7 +23,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                     <div className="flex-shrink-0">
                         {isUser ? (
                             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-                                <Icon name="user-3" className="h-4 w-4 text-primary" />
+                                <RiUser3Line className="h-4 w-4 text-primary" />
                             </div>
                         ) : (
                             <div className="flex items-center justify-center">
@@ -38,9 +38,10 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                                         onError={handleLogoError}
                                     />
                                 ) : (
-                                    <Icon name="brain-ai-3" className="h-4 w-4"
-                                        
-                                        style={{ color: `var(${getAgentColor(agentName).var})` }}/>
+                                    <RiBrainAi3Line
+                                        className="h-4 w-4"
+                                        style={{ color: `var(${getAgentColor(agentName).var})` }}
+                                    />
                                 )}
                             </div>
                         )}
@@ -63,7 +64,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                                     getAgentColor(agentName).class
                                 )}
                             >
-                                <Icon name="ai-agent" className="h-3 w-3 flex-shrink-0" />
+                                <RiAiAgentLine className="h-3 w-3 flex-shrink-0" />
                                 <span className="font-medium">{agentName}</span>
                             </div>
                         )}
@@ -84,7 +85,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agent
                                         : undefined
                                 }
                             >
-                                <Icon name="brain-ai-3" className="h-3 w-3 flex-shrink-0" />
+                                <RiBrainAi3Line className="h-3 w-3 flex-shrink-0" />
                                 <span className="font-medium">{variant.length > 0 ? variant[0].toLowerCase() + variant.slice(1) : variant}</span>
                             </div>
                         )}

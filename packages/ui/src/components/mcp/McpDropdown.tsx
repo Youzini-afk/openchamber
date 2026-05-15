@@ -1,5 +1,6 @@
 import React from 'react';
 import type { McpStatus } from '@opencode-ai/sdk/v2';
+import { RiRefreshLine } from '@remixicon/react';
 
 import {
   DropdownMenu,
@@ -19,7 +20,6 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
 import { computeMcpHealth, useMcpStore } from '@/stores/useMcpStore';
 import { McpIcon } from '@/components/icons/McpIcon';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 const statusTooltip = (
@@ -132,7 +132,7 @@ export const McpDropdownContent: React.FC<McpDropdownContentProps> = ({ active, 
             onClick={handleRefresh}
             aria-label={t('mcpDropdown.actions.refreshAria')}
           >
-            <Icon name="refresh" className={cn('h-4 w-4', isSpinning && 'animate-spin')} />
+            <RiRefreshLine className={cn('h-4 w-4', isSpinning && 'animate-spin')} />
           </button>
         </div>
       </div>
@@ -402,7 +402,7 @@ export const McpDropdown: React.FC<McpDropdownProps> = ({ headerIconButtonClass 
                   onClick={handleRefresh}
                   aria-label={t('mcpDropdown.actions.refreshAria')}
                 >
-                  <Icon name="refresh" className={cn('h-4 w-4', isSpinning && 'animate-spin')} />
+                  <RiRefreshLine className={cn('h-4 w-4', isSpinning && 'animate-spin')} />
                 </button>
                 {closeButton}
               </div>

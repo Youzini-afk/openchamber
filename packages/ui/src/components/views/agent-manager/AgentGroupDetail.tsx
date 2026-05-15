@@ -1,4 +1,12 @@
 import React from 'react';
+import {
+  RiGitBranchLine,
+  RiArrowDownSLine,
+  RiCheckLine,
+  RiMore2Line,
+  RiFileCopyLine,
+  RiLoader4Line,
+} from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -23,7 +31,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 interface AgentGroupDetailProps {
@@ -156,7 +163,7 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="typography-heading-lg text-foreground truncate">{group.name}</h1>
-              {groupBusy && <Icon name="loader-4" className="h-4 w-4 animate-spin text-amber-500 flex-shrink-0" />}
+              {groupBusy && <RiLoader4Line className="h-4 w-4 animate-spin text-amber-500 flex-shrink-0" />}
             </div>
             <div className="flex items-center gap-2 mt-1 typography-meta text-muted-foreground">
               <span>
@@ -166,7 +173,7 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
               </span>
               <span>·</span>
               <span className="flex items-center gap-1">
-                <Icon name="git-branch" className="h-3.5 w-3.5" />
+                <RiGitBranchLine className="h-3.5 w-3.5" />
                 {selectedSession?.worktreeMetadata?.label || selectedSession?.branch || t('agentManager.detail.header.noBranch')}
               </span>
             </div>
@@ -202,7 +209,7 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
                       </>
                     )}
                   </div>
-                  <Icon name="arrow-down-s" className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                  <RiArrowDownSLine className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-[var(--anchor-width)]">
@@ -230,13 +237,13 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
                       </div>
                       {session.branch && (
                         <div className="flex items-center gap-1 typography-micro text-muted-foreground/60">
-                          <Icon name="git-branch" className="h-3 w-3" />
+                          <RiGitBranchLine className="h-3 w-3" />
                           <span className="truncate">{session.worktreeMetadata?.label || session.branch}</span>
                         </div>
                       )}
                     </div>
                     {selectedSession?.id === session.id && (
-                      <Icon name="check" className="h-4 w-4 text-primary flex-shrink-0" />
+                      <RiCheckLine className="h-4 w-4 text-primary flex-shrink-0" />
                     )}
                   </DropdownMenuItem>
                 ))}
@@ -247,7 +254,7 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="flex-shrink-0" aria-label={t('agentManager.detail.actions.worktreeActionsAria')}>
-                  <Icon name="more-2" className="h-4 w-4" />
+                  <RiMore2Line className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[220px]">
@@ -271,7 +278,7 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
                 }}
                 disabled={!selectedSession?.path}
               >
-                <Icon name="file-copy" className="h-4 w-4 mr-px" />
+                <RiFileCopyLine className="h-4 w-4 mr-px" />
                 {t('agentManager.detail.actions.copyWorktreePath')}
               </DropdownMenuItem>
               </DropdownMenuContent>

@@ -11,7 +11,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { toast } from '@/components/ui';
-import { Icon } from "@/components/icon/Icon";
+import {
+  RiLoader4Line,
+  RiPlayLine,
+  RiEdit2Line,
+  RiDeleteBinLine,
+  RiAddLine,
+  RiFolderLine,
+  RiTimerLine,
+  RiHistoryLine,
+  RiCheckboxCircleLine,
+  RiErrorWarningLine,
+  RiPulseLine,
+} from '@remixicon/react';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -147,14 +159,14 @@ const STATUS_META: Record<
   ScheduledTaskStatus,
   {
     tone: StatusTone;
-    Icon: string;
+    Icon: React.ComponentType<{ className?: string }>;
     spin?: boolean;
   }
 > = {
-  success: { tone: 'success', Icon: 'checkbox-circle' },
-  error: { tone: 'error', Icon: 'error-warning' },
-  running: { tone: 'warning', Icon: 'loader-4', spin: true },
-  idle: { tone: 'muted', Icon: 'pulse' },
+  success: { tone: 'success', Icon: RiCheckboxCircleLine },
+  error: { tone: 'error', Icon: RiErrorWarningLine },
+  running: { tone: 'warning', Icon: RiLoader4Line, spin: true },
+  idle: { tone: 'muted', Icon: RiPulseLine },
 };
 
 const toneStyle = (tone: StatusTone): React.CSSProperties => {
@@ -201,7 +213,7 @@ export function ScheduledTasksDialog() {
         iconColor: currentTheme.colors.surface.foreground,
       },
     );
-    const projectIconName = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
+    const ProjectIcon = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
     const iconColor = project.color ? PROJECT_COLOR_MAP[project.color] : undefined;
 
     return (
@@ -213,10 +225,10 @@ export function ScheduledTasksDialog() {
           >
             <img src={imageUrl} alt="" className="h-full w-full object-contain" draggable={false} />
           </span>
-        ) : projectIconName ? (
-          <Icon name={projectIconName} className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+        ) : ProjectIcon ? (
+          <ProjectIcon className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
         ) : (
-          <Icon name="folder" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"  style={iconColor ? { color: iconColor } : undefined}/>
+          <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" style={iconColor ? { color: iconColor } : undefined} />
         )}
         <span className="truncate">{displayLabel}</span>
       </span>
@@ -411,7 +423,7 @@ export function ScheduledTasksDialog() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {projectSelector}
           <Button onClick={openNewTaskEditor} disabled={!selectedProjectID}>
-            <Icon name="add" className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.newTask')}
+            <RiAddLine className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.newTask')}
           </Button>
         </div>
       ) : (
@@ -421,7 +433,7 @@ export function ScheduledTasksDialog() {
       <div className="min-h-[280px]">
       {loading ? (
         <div className="flex items-center gap-2 typography-meta text-muted-foreground">
-          <Icon name="loader-4" className="h-4 w-4 animate-spin" /> {t('sessions.scheduledTasks.dialog.loading')}
+          <RiLoader4Line className="h-4 w-4 animate-spin" /> {t('sessions.scheduledTasks.dialog.loading')}
         </div>
       ) : tasks.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-4 typography-meta text-muted-foreground">
@@ -462,7 +474,7 @@ export function ScheduledTasksDialog() {
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 typography-micro text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
-                    <Icon name="timer" className="h-3.5 w-3.5" />
+                    <RiTimerLine className="h-3.5 w-3.5" />
                     <span className="font-medium text-foreground">{t('sessions.scheduledTasks.dialog.nextRun.label')}</span>
                     {nextAt ? (
                       <>
@@ -475,14 +487,14 @@ export function ScheduledTasksDialog() {
                     )}
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <Icon name="history" className="h-3.5 w-3.5" />
+                    <RiHistoryLine className="h-3.5 w-3.5" />
                     <span className="font-medium text-foreground">{t('sessions.scheduledTasks.dialog.lastRun.label')}</span>
                     {status === 'running' ? (
                       <span
                         className="inline-flex items-center gap-1"
                         style={{ color: 'var(--status-warning)' }}
                       >
-                        <Icon name="loader-4" className="h-3.5 w-3.5 animate-spin" />
+                        <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
                         {t('sessions.scheduledTasks.dialog.lastRun.runningNow')}
                       </span>
                     ) : lastAt ? (
@@ -492,7 +504,7 @@ export function ScheduledTasksDialog() {
                             className="inline-flex items-center gap-1"
                             style={{ color: `var(--status-${meta.tone})` }}
                           >
-                            <Icon name={meta.Icon} className="h-3.5 w-3.5" />
+                            <meta.Icon className="h-3.5 w-3.5" />
                             {statusLabel}
                           </span>
                         ) : null}
@@ -510,7 +522,7 @@ export function ScheduledTasksDialog() {
                     className="mt-3 flex items-start gap-2 rounded-md border p-2 typography-micro"
                     style={toneStyle('error')}
                   >
-                    <Icon name="error-warning" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <RiErrorWarningLine className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span className="min-w-0 break-words">{task.state.lastError}</span>
                   </div>
                 ) : null}
@@ -541,7 +553,7 @@ export function ScheduledTasksDialog() {
                       onClick={() => void handleRunNow(task)}
                       disabled={isBusy}
                     >
-                      <Icon name="play" className="h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.runNow')}
+                      <RiPlayLine className="h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.runNow')}
                     </Button>
                     <Button
                       variant="outline"
@@ -553,7 +565,7 @@ export function ScheduledTasksDialog() {
                       disabled={isBusy}
                       aria-label={t('sessions.scheduledTasks.dialog.actions.editAria', { taskName: task.name })}
                     >
-                      <Icon name="edit-2" className="h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.edit')}
+                      <RiEdit2Line className="h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.edit')}
                     </Button>
                     <Button
                       variant="destructive"
@@ -562,7 +574,7 @@ export function ScheduledTasksDialog() {
                       disabled={isBusy}
                       aria-label={t('sessions.scheduledTasks.dialog.actions.deleteAria', { taskName: task.name })}
                     >
-                      <Icon name="delete-bin" className="h-4 w-4" />
+                      <RiDeleteBinLine className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -600,7 +612,7 @@ export function ScheduledTasksDialog() {
               onClick={openNewTaskEditor}
               disabled={!selectedProjectID}
             >
-              <Icon name="add" className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.newTask')}
+              <RiAddLine className="mr-1 h-4 w-4" /> {t('sessions.scheduledTasks.dialog.actions.newTask')}
             </Button>
           )}
         >

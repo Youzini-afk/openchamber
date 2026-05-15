@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiAddLine, RiDeleteBinLine, RiSendPlaneLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -9,7 +10,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Icon } from "@/components/icon/Icon";
 import {
   deleteProjectPlanFile,
   getProjectContextData,
@@ -575,7 +575,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
             aria-label={t('rightSidebar.contextNotesTodo.todo.addAria')}
             title={t('rightSidebar.contextNotesTodo.todo.addAria')}
           >
-            <Icon name="add" className="h-4 w-4" />
+            <RiAddLine className="h-4 w-4" />
           </button>
         </div>
 
@@ -623,7 +623,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
                         aria-label={t('rightSidebar.contextNotesTodo.todo.actions.delete', { text: todo.text })}
                         title={t('rightSidebar.contextNotesTodo.todo.actions.delete', { text: todo.text })}
                       >
-                        <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                        <RiDeleteBinLine className="h-3.5 w-3.5" />
                       </button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -634,7 +634,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
                             aria-label={t('rightSidebar.contextNotesTodo.todo.actions.send', { text: todo.text })}
                             title={t('rightSidebar.contextNotesTodo.todo.actions.send', { text: todo.text })}
                           >
-                            <Icon name="send-plane" className="h-3.5 w-3.5" />
+                            <RiSendPlaneLine className="h-3.5 w-3.5" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-56">
@@ -692,7 +692,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
             aria-label={t('rightSidebar.contextNotesTodo.plans.importFromFile')}
             title={t('rightSidebar.contextNotesTodo.plans.importFromFile')}
           >
-            <Icon name="add" className="h-3.5 w-3.5" />
+            <RiAddLine className="h-3.5 w-3.5" />
           </button>
         </div>
 
@@ -723,7 +723,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
                     title={t('rightSidebar.contextNotesTodo.plans.deletePlan')}
                     aria-label={t('rightSidebar.contextNotesTodo.plans.deletePlanWithTitle', { title: plan.title })}
                   >
-                    <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                    <RiDeleteBinLine className="h-3.5 w-3.5" />
                   </button>
                 </li>
               ))}

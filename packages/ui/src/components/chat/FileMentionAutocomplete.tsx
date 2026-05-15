@@ -1,4 +1,5 @@
 import React from 'react';
+import { RiCodeLine, RiFileImageLine, RiFileLine, RiFilePdfLine, RiFolder3Fill, RiRefreshLine } from '@remixicon/react';
 import { cn, truncatePathMiddle } from '@/lib/utils';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -8,7 +9,6 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { Icon } from "@/components/icon/Icon";
 import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
@@ -431,20 +431,20 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
       case 'tsx':
       case 'js':
       case 'jsx':
-        return <Icon name="code" className="h-3.5 w-3.5 text-[var(--status-info)]" />;
+        return <RiCodeLine className="h-3.5 w-3.5 text-[var(--status-info)]" />;
       case 'json':
-        return <Icon name="code" className="h-3.5 w-3.5 text-[var(--status-warning)]" />;
+        return <RiCodeLine className="h-3.5 w-3.5 text-[var(--status-warning)]" />;
       case 'md':
       case 'mdx':
-        return <Icon name="file" className="h-3.5 w-3.5 text-muted-foreground" />;
+        return <RiFileLine className="h-3.5 w-3.5 text-muted-foreground" />;
       case 'png':
       case 'jpg':
       case 'jpeg':
       case 'gif':
       case 'svg':
-        return <Icon name="file-image" className="h-3.5 w-3.5 text-[var(--status-success)]" />;
+        return <RiFileImageLine className="h-3.5 w-3.5 text-[var(--status-success)]" />;
       default:
-        return <Icon name="file-pdf" className="h-3.5 w-3.5 text-muted-foreground" />;
+        return <RiFilePdfLine className="h-3.5 w-3.5 text-muted-foreground" />;
     }
   };
 
@@ -499,7 +499,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         <ScrollableOverlay outerClassName="flex-1 min-h-0" className="px-0">
         {(!scopeResultsToActiveTab || activeTab === 'files') && loading ? (
           <div className="flex items-center justify-center py-4">
-            <Icon name="refresh" className="h-4 w-4 animate-spin text-muted-foreground" />
+            <RiRefreshLine className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <div className="pb-2">
@@ -550,7 +550,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   onClick={() => handleFileSelect(dir)}
                   onMouseEnter={() => setSelectedIndex(rowIndex)}
                 >
-                  <Icon name="folder-3-fill" className="h-3.5 w-3.5 text-primary/60" />
+                  <RiFolder3Fill className="h-3.5 w-3.5 text-primary/60" />
                   <span className="flex-1 min-w-0 truncate" aria-label={relativePath}>
                     {displayPath}
                   </span>

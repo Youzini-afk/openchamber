@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
+import { RiArrowDownSLine, RiArrowRightSLine, RiExternalLinkLine } from '@remixicon/react';
 import { PatchDiff } from '@pierre/diffs/react';
 import { cn } from '@/lib/utils';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
@@ -33,7 +34,6 @@ import {
     tryParseJsonOutput,
 } from '../toolRenderers';
 import { JsonTreeViewer } from '@/components/ui/JsonTreeViewer';
-import { Icon } from "@/components/icon/Icon";
 import { DiffViewToggle, type DiffViewMode } from '../DiffViewToggle';
 import { MinDurationShineText } from './MinDurationShineText';
 import { ToolRevealOnMount } from './ToolRevealOnMount';
@@ -185,32 +185,6 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     const now = useDurationTickerNow(active, 250);
 
     return <>{formatDuration(start, end, now)}</>;
-};
-
-const useDeferredExpandedContent = (isExpanded: boolean) => {
-    const [shouldRender, setShouldRender] = React.useState(false);
-
-    React.useEffect(() => {
-        if (!isExpanded) {
-            setShouldRender(false);
-            return;
-        }
-
-        if (typeof window === 'undefined') {
-            setShouldRender(true);
-            return;
-        }
-
-        const frame = window.requestAnimationFrame(() => {
-            setShouldRender(true);
-        });
-
-        return () => {
-            window.cancelAnimationFrame(frame);
-        };
-    }, [isExpanded]);
-
-    return shouldRender;
 };
 
 const parseDiffStats = (metadata?: Record<string, unknown>): { added: number; removed: number } | null => {
@@ -722,7 +696,7 @@ const ToolScrollableSection: React.FC<ToolScrollableSectionProps> = ({
                 disableHorizontal ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto',
                 className,
             )}
-           
+            size={24}
         >
             <div className="w-full min-w-0">
                 {children}
@@ -1190,7 +1164,7 @@ const TaskToolSummary: React.FC<{
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={handleOpenSession}
                 >
-                    <Icon name="external-link" className="h-3.5 w-3.5 flex-shrink-0" />
+                    <RiExternalLinkLine className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="typography-meta text-primary font-medium">{t('chat.toolPart.openSubtask', { type: agentType.charAt(0).toUpperCase() + agentType.slice(1) })}</span>
                 </button>
             )}
@@ -1208,9 +1182,9 @@ const TaskToolSummary: React.FC<{
                         }}
                     >
                         {isOutputExpanded ? (
-                            <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0" />
+                            <RiArrowDownSLine className="h-3.5 w-3.5 flex-shrink-0" />
                         ) : (
-                            <Icon name="arrow-right-s" className="h-3.5 w-3.5 flex-shrink-0" />
+                            <RiArrowRightSLine className="h-3.5 w-3.5 flex-shrink-0" />
                         )}
                         <span className="typography-meta text-foreground/80 font-medium">{t('chat.toolPart.output')}</span>
                     </button>
@@ -1884,6 +1858,8 @@ const ToolPart: React.FC<ToolPartProps> = ({
         sessionEvents.requestGitRefresh({ directory: currentDirectory });
     }, [currentDirectory, isError, isFinalized, normalizedPartTool, part.id, status]);
 
+
+
     const shouldNotifyStructuralChange = isFinalized || isTaskTool;
 
     const onContentChangeRef = React.useRef(onContentChange);
@@ -2417,6 +2393,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
         taskSessionId,
     ]);
 
+
     const taskSummaryLenRef = React.useRef<number>(taskSummaryEntries.length);
     React.useEffect(() => {
         if (!isTaskTool) {
@@ -2518,7 +2495,6 @@ const ToolPart: React.FC<ToolPartProps> = ({
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
-    const shouldRenderExpandedContent = useDeferredExpandedContent(isExpanded);
 
     if (!shouldTreatAsFinalized && !isActive && !isTaskTool) {
         return null;
@@ -2562,7 +2538,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
                                 !isExpanded && (alwaysShowActions ? 'opacity-100' : 'opacity-0 group-hover/tool:opacity-100')
                             )}
                         >
-                            {isExpanded ? <Icon name="arrow-down-s" className="h-3.5 w-3.5" /> : <Icon name="arrow-right-s" className="h-3.5 w-3.5" />}
+                            {isExpanded ? <RiArrowDownSLine className="h-3.5 w-3.5" /> : <RiArrowRightSLine className="h-3.5 w-3.5" />}
                         </div>
                     </div>
                     {isMultiFileApplyPatch ? (
@@ -2662,7 +2638,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
                 />
             ) : null}
 
-            {!isTaskTool && shouldRenderExpandedContent ? (
+            {!isTaskTool && isExpanded ? (
                 <div className="relative ml-2 pl-3">
                     <span
                         aria-hidden="true"

@@ -6,14 +6,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from "@/components/icon/Icon";
+import { RiMore2Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 
 export interface SettingsSidebarItemAction {
   /** Label shown in dropdown menu */
   label: string;
   /** Icon component to show before label */
-  icon?: string;
+  icon?: React.ComponentType<{ className?: string }>;
   /** Callback when action is clicked */
   onClick: () => void;
   /** If true, uses destructive styling (red text) */
@@ -47,10 +47,10 @@ interface SettingsSidebarItemProps {
  *   metadata={agent.description}
  *   selected={selectedId === agent.id}
  *   onSelect={() => setSelectedId(agent.id)}
- *   icon={<'robot' className="h-4 w-4" />}
+ *   icon={<RiRobotLine className="h-4 w-4" />}
  *   actions={[
- *     { label: 'Duplicate', icon: 'file-copy', onClick: handleDuplicate },
- *     { label: 'Delete', icon: 'delete-bin', onClick: handleDelete, destructive: true },
+ *     { label: 'Duplicate', icon: RiFileCopyLine, onClick: handleDuplicate },
+ *     { label: 'Delete', icon: RiDeleteBinLine, onClick: handleDelete, destructive: true },
  *   ]}
  * />
  */
@@ -103,12 +103,12 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
                 variant="ghost"
                 className="h-6 w-6 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
               >
-                <Icon name="more-2" className="h-3.5 w-3.5" />
+                <RiMore2Line className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-fit min-w-20">
               {actions.map((action) => {
-                const iconName = action.icon;
+                const Icon = action.icon;
                 return (
                   <DropdownMenuItem
                     key={action.label}
@@ -120,7 +120,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
                       action.destructive && 'text-destructive focus:text-destructive'
                     )}
                   >
-                    {iconName && <Icon name={iconName} className="h-4 w-4 mr-px" />}
+                    {Icon && <Icon className="h-4 w-4 mr-px" />}
                     {action.label}
                   </DropdownMenuItem>
                 );

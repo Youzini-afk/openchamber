@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { PROJECT_COLORS, PROJECT_ICONS, PROJECT_COLOR_MAP as COLOR_MAP, getProjectIconImageUrl } from '@/lib/projectMeta';
+import { RiCloseLine } from '@remixicon/react';
 import { WorktreeSectionContent } from '@/components/sections/openchamber/WorktreeSectionContent';
 import { ProjectActionsSection } from '@/components/sections/projects/ProjectActionsSection';
-import { Icon } from "@/components/icon/Icon";
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
 
@@ -298,7 +298,7 @@ export const ProjectsPage: React.FC = () => {
                   )}
                   title={t('settings.projects.page.field.none')}
                 >
-                  <Icon name="close" className="h-4 w-4 text-muted-foreground" />
+                  <RiCloseLine className="h-4 w-4 text-muted-foreground" />
                 </button>
                 {PROJECT_COLORS.map((c) => (
                   <button
@@ -346,10 +346,10 @@ export const ProjectsPage: React.FC = () => {
                   )}
                   title={t('settings.projects.page.field.none')}
                 >
-                  <Icon name="close" className="h-4 w-4 text-muted-foreground" />
+                  <RiCloseLine className="h-4 w-4 text-muted-foreground" />
                 </button>
                 {PROJECT_ICONS.map((i) => {
-                  const iconName = i.Icon;
+                  const IconComponent = i.Icon;
                   return (
                     <button
                       key={i.key}
@@ -363,7 +363,7 @@ export const ProjectsPage: React.FC = () => {
                       )}
                       title={i.label}
                     >
-                      <Icon name={iconName} className="w-4 h-4" style={currentColorVar && icon === i.key ? { color: currentColorVar } : undefined} />
+                      <IconComponent className="w-4 h-4" style={currentColorVar && icon === i.key ? { color: currentColorVar } : undefined} />
                     </button>
                   );
                 })}
@@ -412,7 +412,7 @@ export const ProjectsPage: React.FC = () => {
                     title={t('settings.projects.page.field.clearBackground')}
                     disabled={!iconBackground}
                   >
-                    <Icon name="close" className="h-3.5 w-3.5" />
+                    <RiCloseLine className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               )}

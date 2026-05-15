@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Icon } from "@/components/icon/Icon";
+
+import { RiAddLine, RiDeleteBinLine, RiRefreshLine, RiDownloadLine, RiStarLine, RiSearchLine } from '@remixicon/react';
 
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -224,7 +225,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                 disabled={isLoadingCatalog || isLoadingSource}
                 title={t('settings.skills.catalog.page.actions.refreshTitle')}
               >
-                <Icon name="refresh" className={cn("h-3.5 w-3.5", (isLoadingCatalog || isLoadingSource) && "animate-spin")} />
+                <RiRefreshLine className={cn("h-3.5 w-3.5", (isLoadingCatalog || isLoadingSource) && "animate-spin")} />
               </Button>
 
               {isCustomSource && (
@@ -236,7 +237,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                   disabled={isRemovingCatalog}
                   title={t('settings.skills.catalog.page.actions.removeCatalogTitle')}
                 >
-                  <Icon name="delete-bin" className="h-3.5 w-3.5" />
+                  <RiDeleteBinLine className="h-3.5 w-3.5" />
                 </Button>
               )}
 
@@ -245,13 +246,13 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                 className="!font-normal gap-1"
                 onClick={() => setAddCatalogOpen(true)}
               >
-                <Icon name="add" className="h-3.5 w-3.5" /> {t('settings.skills.catalog.page.actions.addCatalog')}
+                <RiAddLine className="h-3.5 w-3.5" /> {t('settings.skills.catalog.page.actions.addCatalog')}
               </Button>
             </div>
 
             <div className="py-1.5">
               <div className="relative">
-                <Icon name="search" className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <RiSearchLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -286,7 +287,7 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
               </div>
             ) : isLoadingSource ? (
               <div className="py-8 text-center text-muted-foreground">
-                <Icon name="refresh" className="mx-auto mb-3 h-5 w-5 animate-spin opacity-50" />
+                <RiRefreshLine className="mx-auto mb-3 h-5 w-5 animate-spin opacity-50" />
                 <p className="typography-meta">{t('settings.skills.catalog.page.loading.skills')}</p>
               </div>
             ) : (
@@ -325,12 +326,12 @@ export const SkillsCatalogPage: React.FC<SkillsCatalogPageProps> = ({ mode, onMo
                                 <span>{t('settings.skills.catalog.page.byOwnerPrefix')} <span className="font-medium text-foreground/80">{item.clawdhub.owner}</span></span>
                               )}
                               <span className="flex items-center gap-1">
-                                <Icon name="download" className="h-3 w-3" />
+                                <RiDownloadLine className="h-3 w-3" />
                                 {item.clawdhub.downloads?.toLocaleString() ?? 0}
                               </span>
                               {(item.clawdhub.stars ?? 0) > 0 && (
                                 <span className="flex items-center gap-1">
-                                  <Icon name="star" className="h-3 w-3" />
+                                  <RiStarLine className="h-3 w-3" />
                                   {item.clawdhub.stars}
                                 </span>
                               )}

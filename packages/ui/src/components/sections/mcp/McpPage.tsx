@@ -20,6 +20,20 @@ import {
 } from './mcpImport';
 import { useMcpStore } from '@/stores/useMcpStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import {
+  RiAddLine,
+  RiArrowDownSLine,
+  RiArrowRightSLine,
+  RiClipboardLine,
+  RiDeleteBinLine,
+  RiEyeLine,
+  RiEyeOffLine,
+  RiExternalLinkLine,
+  RiFileCodeLine,
+  RiFolderLine,
+  RiPlugLine,
+  RiUser3Line,
+} from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { MCP_OAUTH_CALLBACK_PATH, parseMcpOAuthCallbackContext, parseMcpOAuthCallbackStateKey } from '@/components/sections/mcp/mcpOAuth';
@@ -38,7 +52,6 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 // ─────────────────────────────────────────────────────────────
@@ -162,7 +175,7 @@ const CommandTextarea: React.FC<CommandTextareaProps> = ({
           type="button"
           title={pasteCommandTitle}
         >
-          <Icon name="clipboard" className="h-3 w-3" />
+          <RiClipboardLine className="h-3 w-3" />
           {pasteCommandLabel}
         </Button>
       </div>
@@ -341,7 +354,7 @@ const EnvEditor: React.FC<EnvEditorProps> = ({
           type="button"
           title={pasteTitle}
         >
-          <Icon name="clipboard" className="h-3 w-3" />
+          <RiClipboardLine className="h-3 w-3" />
           {pasteLabel}
         </Button>
       </div>
@@ -382,8 +395,8 @@ const EnvEditor: React.FC<EnvEditorProps> = ({
                 title={revealedKeys.has(idx) ? hideValueTitle : showValueTitle}
               >
                 {revealedKeys.has(idx)
-                  ? <Icon name="eye-off" className="h-3.5 w-3.5" />
-                  : <Icon name="eye" className="h-3.5 w-3.5" />}
+                  ? <RiEyeOffLine className="h-3.5 w-3.5" />
+                  : <RiEyeLine className="h-3.5 w-3.5" />}
               </button>
             </div>
             {/* Remove */}
@@ -393,7 +406,7 @@ const EnvEditor: React.FC<EnvEditorProps> = ({
               onClick={() => removeRow(idx)}
               aria-label={removeVariableAria}
             >
-              <Icon name="delete-bin" className="h-3.5 w-3.5" />
+              <RiDeleteBinLine className="h-3.5 w-3.5" />
             </Button>
           </div>
         ))}
@@ -406,7 +419,7 @@ const EnvEditor: React.FC<EnvEditorProps> = ({
         onClick={addRow}
         type="button"
       >
-        <Icon name="add" className="h-3.5 w-3.5" />
+        <RiAddLine className="h-3.5 w-3.5" />
         {addVariable}
       </Button>
 
@@ -1286,7 +1299,7 @@ export const McpPage: React.FC = () => {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center text-muted-foreground">
-          <Icon name="plug" className="mx-auto mb-3 h-12 w-12 opacity-50" />
+          <RiPlugLine className="mx-auto mb-3 h-12 w-12 opacity-50" />
           <p className="typography-body">{t('settings.mcp.page.empty.selectServer')}</p>
           <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.page.empty.addNewOne')}</p>
         </div>
@@ -1434,11 +1447,11 @@ export const McpPage: React.FC = () => {
                       <div className="break-all typography-micro text-foreground font-mono">{authUrl}</div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button variant="outline" size="xs" className="!font-normal" onClick={() => void openExternalUrl(authUrl)}>
-                          <Icon name="external-link" className="h-3.5 w-3.5" />
+                          <RiExternalLinkLine className="h-3.5 w-3.5" />
                           {t('settings.mcp.page.actions.openInBrowser')}
                         </Button>
                         <Button variant="outline" size="xs" className="!font-normal" onClick={() => void handleCopyAuthUrl()}>
-                          <Icon name="clipboard" className="h-3.5 w-3.5" />
+                          <RiClipboardLine className="h-3.5 w-3.5" />
                           {t('settings.mcp.page.actions.copyLink')}
                         </Button>
                       </div>
@@ -1513,18 +1526,18 @@ export const McpPage: React.FC = () => {
                   />
                   <Select value={draftScope} onValueChange={(value) => setDraftScope(value as McpScope)}>
                     <SelectTrigger className="!h-7 !w-7 !min-w-0 !px-0 !py-0 justify-center [&>svg:last-child]:hidden" title={draftScope === 'user' ? t('settings.common.scope.global') : t('settings.common.scope.project')}>
-                      {draftScope === 'user' ? <Icon name="user-3" className="h-3.5 w-3.5" /> : <Icon name="folder" className="h-3.5 w-3.5" />}
+                      {draftScope === 'user' ? <RiUser3Line className="h-3.5 w-3.5" /> : <RiFolderLine className="h-3.5 w-3.5" />}
                     </SelectTrigger>
                     <SelectContent align="end">
                       <SelectItem value="user">
                         <div className="flex items-center gap-2">
-                          <Icon name="user-3" className="h-3.5 w-3.5" />
+                          <RiUser3Line className="h-3.5 w-3.5" />
                           <span>{t('settings.common.scope.global')}</span>
                         </div>
                       </SelectItem>
                       <SelectItem value="project">
                         <div className="flex items-center gap-2">
-                          <Icon name="folder" className="h-3.5 w-3.5" />
+                          <RiFolderLine className="h-3.5 w-3.5" />
                           <span>{t('settings.common.scope.project')}</span>
                         </div>
                       </SelectItem>
@@ -1545,7 +1558,7 @@ export const McpPage: React.FC = () => {
                   type="button"
                   title={t('settings.mcp.page.server.importJsonTitle')}
                 >
-                  <Icon name="file-code" className="h-3.5 w-3.5" />
+                  <RiFileCodeLine className="h-3.5 w-3.5" />
                   {t('settings.mcp.page.server.importJson')}
                 </Button>
               </div>
@@ -1650,9 +1663,9 @@ export const McpPage: React.FC = () => {
                     </span>
                   </div>
                   {isAdvancedRemoteOptionsOpen ? (
-                    <Icon name="arrow-down-s" className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <RiArrowDownSLine className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                   ) : (
-                    <Icon name="arrow-right-s" className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <RiArrowRightSLine className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                   )}
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-2">
@@ -1805,7 +1818,7 @@ export const McpPage: React.FC = () => {
                 className="!font-normal gap-1.5"
                 onClick={() => setEnvEntries([{ key: '', value: '' }])}
               >
-                <Icon name="add" className="h-3.5 w-3.5" />
+                <RiAddLine className="h-3.5 w-3.5" />
                 {t('settings.mcp.page.env.addEnvironmentVariable')}
               </Button>
             ) : (
@@ -1900,7 +1913,7 @@ export const McpPage: React.FC = () => {
                 onClick={handlePasteImportClipboard}
                 type="button"
               >
-                <Icon name="clipboard" className="h-3.5 w-3.5" />
+                <RiClipboardLine className="h-3.5 w-3.5" />
                 {t('settings.mcp.page.importDialog.pasteFromClipboard')}
               </Button>
             </div>

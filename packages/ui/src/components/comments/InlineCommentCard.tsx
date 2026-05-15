@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { RiMoreLine, RiDeleteBinLine, RiEditLine, RiArrowDownSLine, RiArrowUpSLine } from '@remixicon/react';
 import type { InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import {
@@ -10,7 +11,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 interface InlineCommentCardProps {
@@ -76,12 +76,12 @@ export function InlineCommentCard({
                 >
                   {isOpen ? (
                     <>
-                      <Icon name="arrow-up-s" className="size-3 mr-1" />
+                      <RiArrowUpSLine className="size-3 mr-1" />
                       {t('inlineComment.actions.showLess')}
                     </>
                   ) : (
                     <>
-                      <Icon name="arrow-down-s" className="size-3 mr-1" />
+                      <RiArrowDownSLine className="size-3 mr-1" />
                       {t('inlineComment.actions.showMore')}
                     </>
                   )}
@@ -102,16 +102,16 @@ export function InlineCommentCard({
               size="icon"
               className="h-6 w-6 -mr-1 text-muted-foreground hover:text-foreground"
             >
-              <Icon name="more" className="size-4" />
+              <RiMoreLine className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onEdit}>
-              <Icon name="edit" className="size-4 mr-2" />
+              <RiEditLine className="size-4 mr-2" />
               {t('inlineComment.actions.editComment')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onDelete} className="text-destructive">
-              <Icon name="delete-bin" className="size-4 mr-2" />
+              <RiDeleteBinLine className="size-4 mr-2" />
               {t('inlineComment.actions.deleteComment')}
             </DropdownMenuItem>
           </DropdownMenuContent>

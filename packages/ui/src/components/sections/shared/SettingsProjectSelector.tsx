@@ -6,7 +6,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Icon } from "@/components/icon/Icon";
+import { RiArrowDownSLine, RiFolderLine } from '@remixicon/react';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
@@ -59,9 +59,9 @@ export const SettingsProjectSelector: React.FC<{ className?: string }> = ({ clas
                 'flex items-center gap-1.5 text-left'
               )}
             >
-              <Icon name="folder" className="h-4 w-4 opacity-70" />
+              <RiFolderLine className="h-4 w-4 opacity-70" />
               <span className="min-w-0 flex-1 truncate typography-ui-label font-medium">{label}</span>
-              <Icon name="arrow-down-s" className="size-4 opacity-50" />
+              <RiArrowDownSLine className="size-4 opacity-50" />
             </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-auto">
