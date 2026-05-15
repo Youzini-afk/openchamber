@@ -28,6 +28,7 @@ import {
   RiListUnordered,
   RiNotification3Line,
   RiPaletteLine,
+  RiInformationLine,
   RiRobot2Line,
   RiRestartLine,
   RiServerLine,
@@ -97,6 +98,7 @@ const pageOrder: SettingsPageSlug[] = [
   'appearance',
   'chat',
   'notifications',
+  'about',
   'sessions',
   'shortcuts',
   'git',
@@ -145,6 +147,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiAiGenerate2;
     case 'notifications':
       return RiNotification3Line;
+    case 'about':
+      return RiInformationLine;
     case 'shortcuts':
       return RiCommandLine;
     case 'sessions':
@@ -427,6 +431,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     shortcuts: 'shortcuts',
     sessions: 'sessions',
     notifications: 'notifications',
+    about: 'about',
     voice: 'voice',
     tunnel: 'tunnel',
   }), []);
@@ -471,6 +476,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.magicPrompts.title');
       case 'notifications':
         return t('settings.page.notifications.title');
+      case 'about':
+        return t('settings.page.about.title');
       case 'voice':
         return t('settings.page.voice.title');
       case 'tunnel':
@@ -559,6 +566,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'shortcuts':
       case 'sessions':
       case 'notifications':
+      case 'about':
       case 'voice':
       case 'tunnel': {
         const section = openChamberSectionBySlug[slug] ?? 'visual';

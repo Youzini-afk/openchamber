@@ -7,7 +7,10 @@ import { useDeviceInfo } from '@/lib/device';
 import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useI18n } from '@/lib/i18n';
+import { updateDesktopSettings } from '@/lib/persistence';
+import { useConfigStore } from '@/stores/useConfigStore';
 
 const GITHUB_URL = 'https://github.com/btriapitsyn/openchamber';
 
@@ -17,6 +20,8 @@ export const AboutSettings: React.FC = () => {
   const { t } = useI18n();
   const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
   const [showChecking, setShowChecking] = React.useState(false);
+  const autoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
+  const setAutoUpdateChecksEnabled = useConfigStore((state) => state.setSettingsAutoUpdateChecksEnabled);
   const updateStore = useUpdateStore(useShallow((s) => ({
     info: s.info,
     checking: s.checking,
@@ -33,6 +38,11 @@ export const AboutSettings: React.FC = () => {
   const { isMobile } = useDeviceInfo();
 
   const currentVersion = updateStore.info?.currentVersion || 'unknown';
+
+  const handleAutoUpdateChecksChange = React.useCallback((enabled: boolean) => {
+    setAutoUpdateChecksEnabled(enabled);
+    void updateDesktopSettings({ autoUpdateChecksEnabled: enabled });
+  }, [setAutoUpdateChecksEnabled]);
 
   // Track if we initiated a check to show toast on completion
   const didInitiateCheck = React.useRef(false);
@@ -94,6 +104,28 @@ export const AboutSettings: React.FC = () => {
         {updateStore.error && (
           <p className="typography-micro text-[var(--status-error)] truncate">{updateStore.error}</p>
         )}
+
+        <div
+          className="flex cursor-pointer items-start gap-2 py-1"
+          onClick={(event) => {
+            if (event.target instanceof HTMLElement && event.target.closest('[data-update-notification-checkbox="mobile"]')) {
+              return;
+            }
+            handleAutoUpdateChecksChange(!autoUpdateChecksEnabled);
+          }}
+        >
+          <span data-update-notification-checkbox="mobile" className="mt-0.5">
+          <Checkbox
+            checked={autoUpdateChecksEnabled}
+            onChange={handleAutoUpdateChecksChange}
+            ariaLabel={t('settings.openchamber.about.field.autoUpdateChecksAria')}
+          />
+          </span>
+          <div className="min-w-0 flex-1 text-left">
+            <div className="typography-meta text-foreground">{t('settings.openchamber.about.field.autoUpdateChecks')}</div>
+            <div className="typography-micro text-muted-foreground">{t('settings.openchamber.about.field.autoUpdateChecksHint')}</div>
+          </div>
+        </div>
 
         {/* Links row */}
         <div className="flex items-center gap-3">
@@ -198,6 +230,28 @@ export const AboutSettings: React.FC = () => {
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
           </div>
         )}
+
+        <div
+          className="flex cursor-pointer items-start gap-3 px-4 py-3 border-b border-[var(--surface-subtle)]"
+          onClick={(event) => {
+            if (event.target instanceof HTMLElement && event.target.closest('[data-update-notification-checkbox="desktop"]')) {
+              return;
+            }
+            handleAutoUpdateChecksChange(!autoUpdateChecksEnabled);
+          }}
+        >
+          <span data-update-notification-checkbox="desktop" className="mt-0.5">
+          <Checkbox
+            checked={autoUpdateChecksEnabled}
+            onChange={handleAutoUpdateChecksChange}
+            ariaLabel={t('settings.openchamber.about.field.autoUpdateChecksAria')}
+          />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="typography-ui-label text-foreground">{t('settings.openchamber.about.field.autoUpdateChecks')}</div>
+            <div className="typography-meta text-muted-foreground">{t('settings.openchamber.about.field.autoUpdateChecksHint')}</div>
+          </div>
+        </div>
 
         <div className="flex items-center gap-4 px-4 py-4">
           <a

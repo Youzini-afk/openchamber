@@ -33,6 +33,7 @@ interface OpenChamberDefaults {
     defaultFileViewerPreview?: boolean;
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
+    autoUpdateChecksEnabled?: boolean;
 }
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
@@ -54,6 +55,9 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
                             ? data.messageStreamTransport
                             : undefined;
+                    const autoUpdateChecksEnabled = typeof data?.autoUpdateChecksEnabled === 'boolean'
+                        ? data.autoUpdateChecksEnabled
+                        : undefined;
 
                     return {
                         defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -64,6 +68,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         defaultFileViewerPreview,
                         zenModel: zenModel.length > 0 ? zenModel : undefined,
                         messageStreamTransport,
+                        autoUpdateChecksEnabled,
                     };
                 }
             } catch {
@@ -90,6 +95,9 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             data?.messageStreamTransport === 'ws' || data?.messageStreamTransport === 'sse' || data?.messageStreamTransport === 'auto'
                 ? data.messageStreamTransport
                 : undefined;
+        const autoUpdateChecksEnabled = typeof data?.autoUpdateChecksEnabled === 'boolean'
+            ? data.autoUpdateChecksEnabled
+            : undefined;
 
         return {
             defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -100,6 +108,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             defaultFileViewerPreview,
             zenModel: zenModel.length > 0 ? zenModel : undefined,
             messageStreamTransport,
+            autoUpdateChecksEnabled,
         };
     } catch {
         return {};
@@ -490,6 +499,7 @@ interface ConfigStore {
     settingsDefaultFileViewerPreview: boolean;
     settingsZenModel: string | undefined;
     settingsMessageStreamTransport: 'auto' | 'ws' | 'sse';
+    settingsAutoUpdateChecksEnabled: boolean;
     // Voice provider preference ('browser', 'openai', 'openai-compatible', or 'say' for macOS)
     voiceProvider: 'browser' | 'openai' | 'openai-compatible' | 'say';
     setVoiceProvider: (provider: 'browser' | 'openai' | 'openai-compatible' | 'say') => void;
@@ -561,6 +571,7 @@ interface ConfigStore {
     setSettingsDefaultFileViewerPreview: (enabled: boolean) => void;
     setSettingsZenModel: (model: string | undefined) => void;
     setSettingsMessageStreamTransport: (transport: 'auto' | 'ws' | 'sse') => void;
+    setSettingsAutoUpdateChecksEnabled: (enabled: boolean) => void;
     getResolvedGitGenerationModel: () => { providerId: string; modelId: string } | null;
     saveAgentModelSelection: (agentName: string, providerId: string, modelId: string) => void;
     getAgentModelSelection: (agentName: string) => { providerId: string; modelId: string } | null;
@@ -619,6 +630,7 @@ export const useConfigStore = create<ConfigStore>()(
                 settingsDefaultFileViewerPreview: false,
                 settingsZenModel: undefined,
                 settingsMessageStreamTransport: 'auto',
+                settingsAutoUpdateChecksEnabled: false,
                 // Voice provider preference - load from localStorage or default to 'browser'
                 voiceProvider: (() => {
                     if (typeof window !== 'undefined') {
@@ -867,8 +879,7 @@ export const useConfigStore = create<ConfigStore>()(
                     _providerLoadTokens.set(directoryKey, requestToken);
                     const isStaleRequest = () => _providerLoadTokens.get(directoryKey) !== requestToken;
 
-                    let promise: Promise<void>;
-                    promise = (async () => {
+                    const promise: Promise<void> = (async () => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousProviders = existingSnapshot?.providers ?? (get().activeDirectoryKey === directoryKey ? get().providers : []);
                     const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
@@ -1249,8 +1260,7 @@ export const useConfigStore = create<ConfigStore>()(
                     _agentLoadTokens.set(directoryKey, requestToken);
                     const isStaleRequest = () => _agentLoadTokens.get(directoryKey) !== requestToken;
 
-                    let promise: Promise<boolean>;
-                    promise = (async (): Promise<boolean> => {
+                    const promise: Promise<boolean> = (async (): Promise<boolean> => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
                     let lastError: unknown = null;
@@ -1318,6 +1328,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     settingsDefaultFileViewerPreview: openChamberDefaults.defaultFileViewerPreview ?? false,
                                     settingsZenModel: resolvedZenModel,
                                     settingsMessageStreamTransport: openChamberDefaults.messageStreamTransport ?? state.settingsMessageStreamTransport ?? 'auto',
+                                    settingsAutoUpdateChecksEnabled: openChamberDefaults.autoUpdateChecksEnabled ?? false,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1768,6 +1779,10 @@ export const useConfigStore = create<ConfigStore>()(
                     set({ settingsMessageStreamTransport: transport });
                 },
 
+                setSettingsAutoUpdateChecksEnabled: (enabled: boolean) => {
+                    set({ settingsAutoUpdateChecksEnabled: enabled });
+                },
+
                 getResolvedGitGenerationModel: () => {
                     const state = get();
                     return resolveGitGenerationModelSelection({
@@ -2117,6 +2132,7 @@ export const useConfigStore = create<ConfigStore>()(
                     settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
                     settingsZenModel: state.settingsZenModel,
                     settingsMessageStreamTransport: state.settingsMessageStreamTransport,
+                    settingsAutoUpdateChecksEnabled: state.settingsAutoUpdateChecksEnabled,
                     speechRate: state.speechRate,
                     speechPitch: state.speechPitch,
                     speechVolume: state.speechVolume,

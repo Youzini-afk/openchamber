@@ -19,6 +19,7 @@ import { DrawerProvider } from '@/contexts/DrawerContext';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useDeviceInfo } from '@/lib/device';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
@@ -181,7 +182,12 @@ export const MainLayout: React.FC = () => {
 
     // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
+    const autoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
     React.useEffect(() => {
+        if (!autoUpdateChecksEnabled) {
+            return;
+        }
+
         const initialDelayMs = 3000;
         const defaultIntervalMs = 60 * 60 * 1000;
         const minIntervalMs = 5 * 60 * 1000;
@@ -197,7 +203,7 @@ export const MainLayout: React.FC = () => {
         const scheduleNext = (delayMs: number) => {
             if (disposed) return;
             timer = window.setTimeout(async () => {
-                const suggestedSec = await checkForUpdates();
+                const suggestedSec = await checkForUpdates({ automatic: true });
                 const nextDelay = typeof suggestedSec === 'number' && Number.isFinite(suggestedSec)
                     ? clampIntervalMs(suggestedSec)
                     : defaultIntervalMs;
@@ -213,7 +219,7 @@ export const MainLayout: React.FC = () => {
                 window.clearTimeout(timer);
             }
         };
-    }, [checkForUpdates]);
+    }, [autoUpdateChecksEnabled, checkForUpdates]);
 
     React.useEffect(() => {
         const previous = useUIStore.getState().isMobile;

@@ -60,8 +60,13 @@ export const VSCodeLayout: React.FC = () => {
   const { t } = useI18n();
   const runtimeApis = useRuntimeAPIs();
   const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
+  const autoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
 
   React.useEffect(() => {
+    if (!autoUpdateChecksEnabled) {
+      return;
+    }
+
     const initialDelayMs = 3000;
     const defaultIntervalMs = 60 * 60 * 1000;
     const minIntervalMs = 5 * 60 * 1000;
@@ -77,7 +82,7 @@ export const VSCodeLayout: React.FC = () => {
     const scheduleNext = (delayMs: number) => {
       if (disposed) return;
       timer = window.setTimeout(async () => {
-        const suggestedSec = await checkForUpdates();
+        const suggestedSec = await checkForUpdates({ automatic: true });
         const nextDelay = typeof suggestedSec === 'number' && Number.isFinite(suggestedSec)
           ? clampIntervalMs(suggestedSec)
           : defaultIntervalMs;
@@ -93,7 +98,7 @@ export const VSCodeLayout: React.FC = () => {
         window.clearTimeout(timer);
       }
     };
-  }, [checkForUpdates]);
+  }, [autoUpdateChecksEnabled, checkForUpdates]);
 
   const viewMode = React.useMemo<'sidebar' | 'editor'>(() => {
     const configured =

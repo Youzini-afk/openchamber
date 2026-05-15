@@ -304,6 +304,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.defaultFileViewerPreview === 'boolean') {
       result.defaultFileViewerPreview = candidate.defaultFileViewerPreview;
     }
+    if (typeof candidate.autoUpdateChecksEnabled === 'boolean') {
+      result.autoUpdateChecksEnabled = candidate.autoUpdateChecksEnabled;
+    }
     if (typeof candidate.zenModel === 'string') {
       const trimmed = candidate.zenModel.trim();
       result.zenModel = trimmed.length > 0 ? trimmed : undefined;

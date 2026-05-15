@@ -301,6 +301,10 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
     restChanges.opencodeBinary = restChanges.opencodeBinary.trim();
   }
 
+  if ('autoUpdateChecksEnabled' in restChanges && typeof restChanges.autoUpdateChecksEnabled !== 'boolean') {
+    delete restChanges.autoUpdateChecksEnabled;
+  }
+
   // Persistable state = current persisted (no derived fields) + sanitized changes.
   const persistedCurrent = readPersistedSettings(ctx);
   const persistable: Record<string, unknown> = { ...persistedCurrent, ...restChanges };

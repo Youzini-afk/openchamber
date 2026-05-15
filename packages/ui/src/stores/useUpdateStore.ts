@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
 import { getDeviceInfo } from '@/lib/device';
 import { useUIStore } from './useUIStore';
+import { useConfigStore } from './useConfigStore';
 import {
   checkForDesktopUpdates,
   downloadDesktopUpdate,
@@ -27,7 +28,7 @@ export type UpdateState = {
 };
 
 interface UpdateStore extends UpdateState {
-  checkForUpdates: () => Promise<number | null>;
+  checkForUpdates: (options?: { automatic?: boolean }) => Promise<number | null>;
   downloadUpdate: () => Promise<void>;
   restartToUpdate: () => Promise<void>;
   dismiss: () => void;
@@ -161,7 +162,11 @@ const initialState: UpdateState = {
 export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   ...initialState,
 
-  checkForUpdates: async () => {
+  checkForUpdates: async (options) => {
+    if (options?.automatic === true && !useConfigStore.getState().settingsAutoUpdateChecksEnabled) {
+      return null;
+    }
+
     const runtime = detectRuntimeType();
     if (!runtime) return null;
 

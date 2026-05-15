@@ -16,6 +16,7 @@ import { useSync } from '@/sync/use-sync';
 import { useSessionPrefetch } from './sidebar/hooks/useSessionPrefetch';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
@@ -332,6 +333,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     downloadUpdate: s.downloadUpdate,
     restartToUpdate: s.restartToUpdate,
   })));
+  const autoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
 
   const knownSessionDirectories = React.useMemo(
     () => buildKnownSessionDirectories(projects, availableWorktreesByProject),
@@ -636,6 +638,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [mobileVariant, setSessionSwitcherOpen, setSettingsDialogOpen]);
 
   const showSidebarUpdateButton =
+    autoUpdateChecksEnabled &&
     updateStore.available &&
     (updateStore.runtimeType === 'desktop' || updateStore.runtimeType === 'web');
 

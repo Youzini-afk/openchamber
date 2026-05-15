@@ -87,6 +87,8 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                 return <VoiceSectionContent />;
             case 'tunnel':
                 return <TunnelSectionContent />;
+            case 'about':
+                return <AboutSettings />;
             default:
                 return null;
         }

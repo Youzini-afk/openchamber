@@ -160,6 +160,8 @@ export type DesktopSettings = {
   skillCatalogs?: SkillCatalogConfig[];
   // Opt-in to send anonymous usage reports for update checks (default: true)
   reportUsage?: boolean;
+  // Opt-in to automatic update checks and update notification UI (default: false)
+  autoUpdateChecksEnabled?: boolean;
 
   // Global behavior prompt — synced to ~/.config/opencode/AGENTS.md
   globalBehaviorPrompt?: string;
