@@ -508,9 +508,10 @@ const FileRow: React.FC<FileRowProps> = ({
 
 interface FilesViewProps {
   mode?: 'full' | 'editor-only';
+  showTabs?: boolean;
 }
 
-export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
+export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', showTabs = false }) => {
   const { t } = useI18n();
   const { files, runtime } = useRuntimeAPIs();
   const { currentTheme, availableThemes, lightThemeId, darkThemeId } = useThemeSystem();
@@ -521,7 +522,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const currentDirectory = useEffectiveDirectory() ?? '';
   const root = normalizePath(currentDirectory.trim());
-  const showEditorTabsRow = isMobile || mode !== 'editor-only';
+  const showEditorTabsRow = isMobile || showTabs || mode !== 'editor-only';
   const suppressFileLoadingIndicator = mode === 'editor-only' && !isMobile;
   const searchFiles = useFileSearchStore((state) => state.searchFiles);
   const gitStatus = useGitStatus(currentDirectory);

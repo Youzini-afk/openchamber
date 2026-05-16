@@ -27,6 +27,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
+import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -1407,18 +1408,19 @@ const useFileReferenceInteractions = ({
         return;
       }
 
-      const uiStore = useUIStore.getState();
       if (Number.isFinite(resolved.line ?? Number.NaN)) {
-        uiStore.openContextFileAtLine(
+        openFileInMainEditor(
           contextDirectory,
           resolved.resolvedPath,
-          Math.max(1, Math.trunc(resolved.line as number)),
-          Number.isFinite(resolved.column ?? Number.NaN)
-            ? Math.max(1, Math.trunc(resolved.column as number))
-            : 1,
+          {
+            line: Math.max(1, Math.trunc(resolved.line as number)),
+            column: Number.isFinite(resolved.column ?? Number.NaN)
+              ? Math.max(1, Math.trunc(resolved.column as number))
+              : 1,
+          },
         );
       } else {
-        uiStore.openContextFile(contextDirectory, resolved.resolvedPath);
+        openFileInMainEditor(contextDirectory, resolved.resolvedPath);
       }
     };
 

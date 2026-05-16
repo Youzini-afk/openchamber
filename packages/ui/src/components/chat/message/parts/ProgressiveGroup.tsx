@@ -18,6 +18,7 @@ import { isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUt
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 import ReasoningPart from './ReasoningPart';
 import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
@@ -632,13 +633,12 @@ const StaticToolRowInner: React.FC<{
             return;
         }
 
-        const uiStore = useUIStore.getState();
         const contextDirectory = getContextDirectoryForPath(currentDirectory, absolutePath);
         if (offset && Number.isFinite(offset)) {
-            uiStore.openContextFileAtLine(contextDirectory, absolutePath, Math.max(1, Math.trunc(offset)), 1);
+            openFileInMainEditor(contextDirectory, absolutePath, { line: Math.max(1, Math.trunc(offset)), column: 1 });
             return;
         }
-        uiStore.openContextFile(contextDirectory, absolutePath);
+        openFileInMainEditor(contextDirectory, absolutePath);
     }, [currentDirectory, runtime]);
 
     const normalizedToolName = toolName.toLowerCase();

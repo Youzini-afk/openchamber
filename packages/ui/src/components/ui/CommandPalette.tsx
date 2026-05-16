@@ -21,6 +21,7 @@ import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useGitAllBranches, useGitStore } from '@/stores/useGitStore';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
+import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useDeviceInfo } from '@/lib/device';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -88,7 +89,6 @@ export const CommandPalette: React.FC = () => {
   const toggleRightSidebar = useUIStore((s) => s.toggleRightSidebar);
   const toggleBottomTerminal = useUIStore((s) => s.toggleBottomTerminal);
   const openContextOverview = useUIStore((s) => s.openContextOverview);
-  const openContextFile = useUIStore((s) => s.openContextFile);
   const shortcutOverrides = useUIStore((s) => s.shortcutOverrides);
 
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -99,6 +99,8 @@ export const CommandPalette: React.FC = () => {
   const activeProject = useProjectsStore((s) => s.getActiveProject());
   const effectiveDirectory = useEffectiveDirectory();
   const searchFiles = useFileSearchStore((s) => s.searchFiles);
+  const addOpenPath = useFilesViewTabsStore((s) => s.addOpenPath);
+  const setSelectedPath = useFilesViewTabsStore((s) => s.setSelectedPath);
   const { files: filesApi, git: gitApi } = useRuntimeAPIs();
   const ensureGitStatus = useGitStore((s) => s.ensureStatus);
   const { isMobile } = useDeviceInfo();
@@ -435,10 +437,12 @@ export const CommandPalette: React.FC = () => {
         toast.error(getContextFileOpenFailureMessage(validation.reason));
         return;
       }
-      openContextFile(currentRoot, filePath);
+      setSelectedPath(currentRoot, filePath);
+      addOpenPath(currentRoot, filePath);
+      setActiveMainTab('files');
       close();
     },
-    [currentRoot, filesApi, openContextFile, close],
+    [addOpenPath, close, currentRoot, filesApi, setActiveMainTab, setSelectedPath],
   );
 
   const shortcut = React.useCallback(

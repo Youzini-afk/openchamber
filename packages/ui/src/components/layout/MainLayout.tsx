@@ -73,6 +73,7 @@ export const MainLayout: React.FC = () => {
     const BOTTOM_TERMINAL_AUTO_OPEN_HEIGHT = 700;
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
+    const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
     const isBottomTerminalOpen = useUIStore((state) => state.isBottomTerminalOpen);
     const setRightSidebarOpen = useUIStore((state) => state.setRightSidebarOpen);
     const setBottomTerminalOpen = useUIStore((state) => state.setBottomTerminalOpen);
@@ -366,6 +367,7 @@ export const MainLayout: React.FC = () => {
     }, [isMobile, isTablet, setBottomTerminalOpen, setRightSidebarOpen]);
 
     const secondaryView = React.useMemo(() => {
+        const useCenterFileEditor = isRightSidebarOpen && rightSidebarTab === 'files';
         switch (activeMainTab) {
             case 'plan':
                 return <React.Suspense fallback={null}><PlanView /></React.Suspense>;
@@ -376,11 +378,15 @@ export const MainLayout: React.FC = () => {
             case 'terminal':
                 return <React.Suspense fallback={null}><TerminalView /></React.Suspense>;
             case 'files':
-                return <React.Suspense fallback={null}><FilesView /></React.Suspense>;
+                return (
+                    <React.Suspense fallback={null}>
+                        {useCenterFileEditor ? <FilesView mode="editor-only" showTabs /> : <FilesView />}
+                    </React.Suspense>
+                );
             default:
                 return null;
         }
-    }, [activeMainTab]);
+    }, [activeMainTab, isRightSidebarOpen, rightSidebarTab]);
 
     const isChatActive = activeMainTab === 'chat';
     const visibleSidebarWidth = React.useMemo(() => {

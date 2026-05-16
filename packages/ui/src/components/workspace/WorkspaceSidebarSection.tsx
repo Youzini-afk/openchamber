@@ -43,6 +43,7 @@ import { isWorkspaceArchivePath } from '@/lib/workspaceArchive';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
+import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 
 type WorkspaceSidebarSectionProps = {
@@ -107,6 +108,40 @@ const childPath = (parent: string, name: string): string => {
   return parent ? `${parent}/${trimmedName}` : trimmedName;
 };
 
+const normalizeFilePath = (value: string): string => {
+  if (!value) return '';
+
+  const raw = value.replace(/\\/g, '/');
+  const hadUncPrefix = raw.startsWith('//');
+  let normalized = raw.replace(/\/+/g, '/').replace(/\/+$/g, '');
+
+  if (hadUncPrefix && !normalized.startsWith('//')) {
+    normalized = `/${normalized}`;
+  }
+
+  if (!normalized) {
+    return raw.startsWith('/') ? '/' : '';
+  }
+
+  return normalized;
+};
+
+const getWorkspaceFilePath = (rootPath: string | undefined, entry: WorkspaceEntry): string => {
+  if (entry.path) {
+    return normalizeFilePath(entry.path);
+  }
+
+  const normalizedRoot = normalizeFilePath(rootPath || '/workspace');
+  const relativePath = entry.relativePath.replace(/^\/+|\/+$/g, '');
+  return relativePath ? normalizeFilePath(`${normalizedRoot}/${relativePath}`) : normalizedRoot;
+};
+
+const getProjectPathForFile = (entry: WorkspaceEntry): string => {
+  const relativePath = entry.relativePath.replace(/^\/+|\/+$/g, '');
+  const [firstSegment] = relativePath.split('/');
+  return relativePath.includes('/') ? firstSegment : '';
+};
+
 const getEntryGitLabel = (entry: WorkspaceEntry): string | null => {
   const git = entry.git;
   if (!git) return null;
@@ -127,6 +162,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const root = useWorkspaceStore((state) => state.root);
   const entriesByPath = useWorkspaceStore((state) => state.entriesByPath);
   const expandedPaths = useWorkspaceStore((state) => state.expandedPaths);
+  const selectedPath = useWorkspaceStore((state) => state.selectedPath);
   const loadingRoot = useWorkspaceStore((state) => state.loadingRoot);
   const loadingPaths = useWorkspaceStore((state) => state.loadingPaths);
   const actionPending = useWorkspaceStore((state) => state.actionPending);
@@ -134,6 +170,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const refreshWorkspace = useWorkspaceStore((state) => state.refreshWorkspace);
   const loadDirectory = useWorkspaceStore((state) => state.loadDirectory);
   const toggleExpandedPath = useWorkspaceStore((state) => state.toggleExpandedPath);
+  const setWorkspaceSelectedPath = useWorkspaceStore((state) => state.setSelectedPath);
   const createFolder = useWorkspaceStore((state) => state.createFolder);
   const createFile = useWorkspaceStore((state) => state.createFile);
   const renameEntry = useWorkspaceStore((state) => state.renameEntry);
@@ -145,6 +182,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const openArchiveDialog = useWorkspaceStore((state) => state.openArchiveDialog);
   const refreshGitStatus = useWorkspaceStore((state) => state.refreshGitStatus);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
+  const addFilesViewOpenPath = useFilesViewTabsStore((state) => state.addOpenPath);
+  const setFilesViewSelectedPath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
@@ -272,6 +311,30 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     setSessionSwitcherOpen?.(false);
   }, [openProject, setActiveMainTab, setSessionSwitcherOpen]);
 
+  const handleOpenWorkspaceFile = React.useCallback(async (entry: WorkspaceEntry) => {
+    if (entry.type !== 'file' || isTrashRelativePath(entry.relativePath)) return;
+
+    const projectPath = getProjectPathForFile(entry);
+    const project = await openProject(projectPath);
+    if (!project?.path) return;
+
+    const rootPath = normalizeFilePath(project.path);
+    const filePath = getWorkspaceFilePath(root?.root, entry);
+    setWorkspaceSelectedPath(entry.relativePath);
+    setFilesViewSelectedPath(rootPath, filePath);
+    addFilesViewOpenPath(rootPath, filePath);
+    setActiveMainTab('files');
+    setSessionSwitcherOpen?.(false);
+  }, [
+    addFilesViewOpenPath,
+    openProject,
+    root?.root,
+    setActiveMainTab,
+    setFilesViewSelectedPath,
+    setSessionSwitcherOpen,
+    setWorkspaceSelectedPath,
+  ]);
+
   const handleUploadClick = React.useCallback((target = '') => {
     uploadTargetRef.current = target;
     fileInputRef.current?.click();
@@ -334,6 +397,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     const canUseProjectActions = isDirectory && !isInsideTrash;
     const isArchive = entry.type === 'file' && isWorkspaceArchivePath(entry.relativePath);
     const isExpanded = Boolean(expandedPaths[entry.relativePath]);
+    const isSelected = selectedPath === entry.relativePath;
     const children = entriesByPath[entry.relativePath] ?? [];
     const gitLabel = getEntryGitLabel(entry);
     const menuOpen = contextMenuPath === entry.relativePath;
@@ -341,10 +405,14 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     return (
       <React.Fragment key={entry.relativePath}>
         <div
-          className="group/workspace-row relative flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-interactive-hover"
+          className={cn(
+            'group/workspace-row relative flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-interactive-hover',
+            isSelected && 'bg-interactive-selection/70',
+          )}
           style={entryDepthPadding(depth)}
           onContextMenu={(event) => {
             event.preventDefault();
+            setWorkspaceSelectedPath(entry.relativePath);
             setContextMenuPath(entry.relativePath);
           }}
         >
@@ -353,11 +421,18 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
             type="button"
             className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             onClick={() => {
+              setWorkspaceSelectedPath(entry.relativePath);
               if (!isDirectory) return;
               toggleExpandedPath(entry.relativePath);
               if (!isExpanded) {
                 void loadDirectory(entry.relativePath);
               }
+            }}
+            onDoubleClick={(event) => {
+              if (isDirectory) return;
+              event.preventDefault();
+              event.stopPropagation();
+              void handleOpenWorkspaceFile(entry);
             }}
           >
             {isTrashRoot ? (
@@ -554,6 +629,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleAddToSession,
     handleOpenChat,
     handleOpenFiles,
+    handleOpenWorkspaceFile,
     handleUploadClick,
     loadDirectory,
     loadingPaths,
@@ -564,6 +640,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     openRenameDialog,
     openTerminal,
     refreshGitStatus,
+    selectedPath,
+    setWorkspaceSelectedPath,
     t,
     toggleExpandedPath,
   ]);

@@ -27,6 +27,7 @@ import { PierreDiffViewer } from './PierreDiffViewer';
 import { useDeviceInfo } from '@/lib/device';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
+import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
 import type { I18nKey } from '@/lib/i18n/store';
@@ -975,7 +976,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const setDiffWrapLines = useUIStore((state) => state.setDiffWrapLines);
     const diffViewMode = useUIStore((state) => state.diffViewMode);
     const setDiffViewMode = useUIStore((state) => state.setDiffViewMode);
-    const openContextFileAtLine = useUIStore((state) => state.openContextFileAtLine);
     const diffWrapLines = diffWrapLinesStore;
 
     const isStackedView = diffViewMode === 'stacked';
@@ -1464,16 +1464,15 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 return;
             }
 
-            openContextFileAtLine(
+            openFileInMainEditor(
                 effectiveDirectory,
                 absolutePath,
-                resolvedTargetLine,
-                1,
+                { line: resolvedTargetLine, column: 1 },
             );
         } finally {
             setOpeningEditorFilePath((current) => (current === filePath ? null : current));
         }
-    }, [effectiveDirectory, files, git, openContextFileAtLine, setDiff]);
+    }, [effectiveDirectory, files, git, setDiff]);
 
     const openSelectedFileInEditorAtChange = React.useCallback(async () => {
         if (!selectedFile) {

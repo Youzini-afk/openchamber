@@ -6,6 +6,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useIsGitRepo } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
+import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 import {
     type ChangedFile,
     type ChangedFileEntry,
@@ -70,7 +71,7 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
 
         const store = useUIStore.getState();
         if (!store.isMobile) {
-            store.openContextFile(currentDirectory, absolutePath);
+            openFileInMainEditor(currentDirectory, absolutePath);
             setIsExpanded(false);
             return;
         }
