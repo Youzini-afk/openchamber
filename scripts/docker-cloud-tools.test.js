@@ -79,13 +79,14 @@ describe('cloud Docker toolbelt', () => {
     expect(aptInstallPackages.has('cargo')).toBe(false);
     expect(aptInstallPackages.has('golang-go')).toBe(false);
     expect(runtimeBaseDockerfile).toContain('https://sh.rustup.rs');
-    expect(runtimeBaseDockerfile).toContain('rustup component add rust-analyzer');
+    expect(runtimeBaseDockerfile).toContain('rustup component add rust-analyzer rustfmt');
     expect(runtimeBaseDockerfile).toContain('ARG GO_VERSION=1.26.3');
     expect(runtimeBaseDockerfile).toContain('ARG GOPLS_VERSION=v0.21.1');
     expect(runtimeBaseDockerfile).toContain('https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz');
     expect(runtimeBaseDockerfile).toContain('rustc --version');
     expect(runtimeBaseDockerfile).toContain('cargo --version');
     expect(runtimeBaseDockerfile).toContain('rust-analyzer --version');
+    expect(runtimeBaseDockerfile).toContain('rustfmt --version');
     expect(runtimeBaseDockerfile).toContain('go version');
     expect(runtimeBaseDockerfile).toContain('go install golang.org/x/tools/gopls@${GOPLS_VERSION}');
     expect(runtimeBaseDockerfile).toContain('gopls version');
