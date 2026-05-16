@@ -349,6 +349,7 @@ export const SidebarFilesTree: React.FC = () => {
   const selectedPath = useFilesViewTabsStore((state) => (root ? (state.byRoot[root]?.selectedPath ?? null) : null));
   const setSelectedPath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const addOpenPath = useFilesViewTabsStore((state) => state.addOpenPath);
+  const setActiveRoot = useFilesViewTabsStore((state) => state.setActiveRoot);
   const removeOpenPathsByPrefix = useFilesViewTabsStore((state) => state.removeOpenPathsByPrefix);
   const toggleExpandedPath = useFilesViewTabsStore((state) => state.toggleExpandedPath);
   const openFilePaths = React.useMemo(() => new Set(openPaths.map((path) => normalizePath(path))), [openPaths]);
@@ -615,8 +616,9 @@ export const SidebarFilesTree: React.FC = () => {
 
     setSelectedPath(root, node.path);
     addOpenPath(root, node.path);
+    setActiveRoot(root);
     setActiveMainTab('files');
-  }, [addOpenPath, files, root, setActiveMainTab, setSelectedPath]);
+  }, [addOpenPath, files, root, setActiveMainTab, setActiveRoot, setSelectedPath]);
 
   const toggleDirectory = React.useCallback(async (dirPath: string) => {
     const normalized = normalizePath(dirPath);

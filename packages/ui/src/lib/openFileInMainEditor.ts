@@ -56,6 +56,7 @@ export const openFileInMainEditor = (
   const filesViewTabsStore = useFilesViewTabsStore.getState();
   filesViewTabsStore.setSelectedPath(root, targetPath);
   filesViewTabsStore.addOpenPath(root, targetPath);
+  filesViewTabsStore.setActiveRoot(root);
 
   const uiStore = useUIStore.getState();
   if (Number.isFinite(options.line ?? Number.NaN)) {

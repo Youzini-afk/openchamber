@@ -827,6 +827,7 @@ export const dict: Record<I18nKey, string> = {
   'workspace.sidebar.menu.aria': '工作区菜单',
   'workspace.sidebar.menu.openChat': '打开聊天',
   'workspace.sidebar.menu.openFiles': '打开文件',
+  'workspace.sidebar.menu.openFile': '打开文件',
   'workspace.sidebar.menu.git': 'Git',
   'workspace.sidebar.menu.terminal': '终端',
   'workspace.sidebar.menu.newFolder': '新建文件夹',

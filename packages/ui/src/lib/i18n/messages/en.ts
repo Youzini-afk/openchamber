@@ -861,6 +861,7 @@ export const dict = {
   'workspace.sidebar.menu.aria': 'Workspace menu',
   'workspace.sidebar.menu.openChat': 'Open Chat',
   'workspace.sidebar.menu.openFiles': 'Open Files',
+  'workspace.sidebar.menu.openFile': 'Open File',
   'workspace.sidebar.menu.git': 'Git',
   'workspace.sidebar.menu.terminal': 'Terminal',
   'workspace.sidebar.menu.newFolder': 'New Folder',

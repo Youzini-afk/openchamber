@@ -520,7 +520,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', showTabs = 
   const showHidden = useDirectoryShowHidden();
   const showGitignored = useFilesViewShowGitignored();
 
-  const currentDirectory = useEffectiveDirectory() ?? '';
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const activeRoot = useFilesViewTabsStore((state) => state.activeRoot);
+  const currentDirectory = activeRoot || effectiveDirectory;
   const root = normalizePath(currentDirectory.trim());
   const showEditorTabsRow = isMobile || showTabs || mode !== 'editor-only';
   const suppressFileLoadingIndicator = mode === 'editor-only' && !isMobile;

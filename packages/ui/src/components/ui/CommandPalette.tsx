@@ -101,6 +101,7 @@ export const CommandPalette: React.FC = () => {
   const searchFiles = useFileSearchStore((s) => s.searchFiles);
   const addOpenPath = useFilesViewTabsStore((s) => s.addOpenPath);
   const setSelectedPath = useFilesViewTabsStore((s) => s.setSelectedPath);
+  const setActiveRoot = useFilesViewTabsStore((s) => s.setActiveRoot);
   const { files: filesApi, git: gitApi } = useRuntimeAPIs();
   const ensureGitStatus = useGitStore((s) => s.ensureStatus);
   const { isMobile } = useDeviceInfo();
@@ -439,10 +440,11 @@ export const CommandPalette: React.FC = () => {
       }
       setSelectedPath(currentRoot, filePath);
       addOpenPath(currentRoot, filePath);
+      setActiveRoot(currentRoot);
       setActiveMainTab('files');
       close();
     },
-    [addOpenPath, close, currentRoot, filesApi, setActiveMainTab, setSelectedPath],
+    [addOpenPath, close, currentRoot, filesApi, setActiveMainTab, setActiveRoot, setSelectedPath],
   );
 
   const shortcut = React.useCallback(

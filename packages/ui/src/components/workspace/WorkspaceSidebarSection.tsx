@@ -7,6 +7,7 @@ import {
   RiFileAddLine,
   RiFileCopyLine,
   RiFileLine,
+  RiFileSearchLine,
   RiFileZipLine,
   RiFolderAddLine,
   RiFolderLine,
@@ -43,8 +44,8 @@ import { isWorkspaceArchivePath } from '@/lib/workspaceArchive';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
+import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 
 type WorkspaceSidebarSectionProps = {
   mobileVariant?: boolean;
@@ -154,6 +155,10 @@ const isTrashRelativePath = (path: string): boolean => (
   path === TRASH_PATH || path.startsWith(`${TRASH_PATH}/`)
 );
 
+const isOpenableFileEntry = (entry: WorkspaceEntry): boolean => (
+  entry.type === 'file' || entry.type === 'symlink'
+);
+
 export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = ({
   mobileVariant = false,
   setSessionSwitcherOpen,
@@ -182,8 +187,6 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const openArchiveDialog = useWorkspaceStore((state) => state.openArchiveDialog);
   const refreshGitStatus = useWorkspaceStore((state) => state.refreshGitStatus);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
-  const addFilesViewOpenPath = useFilesViewTabsStore((state) => state.addOpenPath);
-  const setFilesViewSelectedPath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
@@ -312,25 +315,22 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   }, [openProject, setActiveMainTab, setSessionSwitcherOpen]);
 
   const handleOpenWorkspaceFile = React.useCallback(async (entry: WorkspaceEntry) => {
-    if (entry.type !== 'file' || isTrashRelativePath(entry.relativePath)) return;
+    if (!isOpenableFileEntry(entry) || isTrashRelativePath(entry.relativePath)) return;
 
     const projectPath = getProjectPathForFile(entry);
     const project = await openProject(projectPath);
-    if (!project?.path) return;
 
-    const rootPath = normalizeFilePath(project.path);
+    const workspaceRoot = normalizeFilePath(root?.root || '');
+    const rootPath = normalizeFilePath(project?.path || workspaceRoot);
     const filePath = getWorkspaceFilePath(root?.root, entry);
     setWorkspaceSelectedPath(entry.relativePath);
-    setFilesViewSelectedPath(rootPath, filePath);
-    addFilesViewOpenPath(rootPath, filePath);
-    setActiveMainTab('files');
+    const opened = openFileInMainEditor(rootPath, filePath)
+      || (workspaceRoot && workspaceRoot !== rootPath && openFileInMainEditor(workspaceRoot, filePath));
+    if (!opened) return;
     setSessionSwitcherOpen?.(false);
   }, [
-    addFilesViewOpenPath,
     openProject,
     root?.root,
-    setActiveMainTab,
-    setFilesViewSelectedPath,
     setSessionSwitcherOpen,
     setWorkspaceSelectedPath,
   ]);
@@ -392,6 +392,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
 
   const renderEntry = React.useCallback((entry: WorkspaceEntry, depth: number, lineage: TreeLineage = []): React.ReactNode => {
     const isDirectory = entry.type === 'directory';
+    const isOpenableFile = isOpenableFileEntry(entry);
     const isTrashRoot = entry.relativePath === TRASH_PATH;
     const isInsideTrash = isTrashRelativePath(entry.relativePath);
     const canUseProjectActions = isDirectory && !isInsideTrash;
@@ -429,7 +430,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               }
             }}
             onDoubleClick={(event) => {
-              if (isDirectory) return;
+              if (!isOpenableFile) return;
               event.preventDefault();
               event.stopPropagation();
               void handleOpenWorkspaceFile(entry);
@@ -571,6 +572,14 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                       </>
+                    ) : null}
+                    {!isInsideTrash ? (
+                      isOpenableFile ? (
+                        <DropdownMenuItem onClick={() => void handleOpenWorkspaceFile(entry)}>
+                          <RiFileSearchLine className="mr-1.5 h-4 w-4" />
+                          {t('workspace.sidebar.menu.openFile')}
+                        </DropdownMenuItem>
+                      ) : null
                     ) : null}
                     {!isInsideTrash ? (
                       <DropdownMenuItem onClick={() => handleAddToSession(entry)}>

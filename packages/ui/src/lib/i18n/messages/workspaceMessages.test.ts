@@ -14,6 +14,7 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.actions.refresh',
   'workspace.sidebar.menu.openChat',
   'workspace.sidebar.menu.openFiles',
+  'workspace.sidebar.menu.openFile',
   'workspace.sidebar.menu.git',
   'workspace.sidebar.menu.terminal',
   'workspace.sidebar.menu.newFolder',

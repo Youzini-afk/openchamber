@@ -12,9 +12,11 @@ type RootTabsState = {
 
 type FilesViewTabsState = {
   byRoot: Record<string, RootTabsState>;
+  activeRoot: string | null;
 };
 
 type FilesViewTabsActions = {
+  setActiveRoot: (root: string | null) => void;
   addOpenPath: (root: string, path: string) => void;
   removeOpenPath: (root: string, path: string) => void;
   removeOpenPathsByPrefix: (root: string, prefixPath: string) => void;
@@ -162,6 +164,14 @@ export const useFilesViewTabsStore = create<FilesViewTabsStore>()(
     persist(
       (set, get) => ({
         byRoot: {},
+        activeRoot: null,
+
+        setActiveRoot: (root) => {
+          const normalizedRoot = root ? normalizePath(root.trim()) : null;
+          set((state) => (
+            state.activeRoot === normalizedRoot ? state : { activeRoot: normalizedRoot }
+          ));
+        },
 
         addOpenPath: (root, path) => {
           const normalizedRoot = normalizePath((root || '').trim());
@@ -422,6 +432,7 @@ export const useFilesViewTabsStore = create<FilesViewTabsStore>()(
           const rawByRoot = (persistedState as { byRoot?: unknown }).byRoot;
           return {
             byRoot: sanitizeByRoot(rawByRoot),
+            activeRoot: null,
           };
         },
         partialize: (state) => ({ byRoot: state.byRoot }),
