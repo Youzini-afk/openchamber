@@ -663,6 +663,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', showTabs = 
   const [desktopImageSrc, setDesktopImageSrc] = React.useState<string>('');
 
   const [loadedFilePath, setLoadedFilePath] = React.useState<string | null>(null);
+  const previousOpenFilesCountRef = React.useRef(openPaths.length);
 
   const [draftContent, setDraftContent] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
@@ -792,6 +793,31 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', showTabs = 
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    const hadOpenFiles = previousOpenFilesCountRef.current > 0;
+    previousOpenFilesCountRef.current = openPaths.length;
+
+    if (mode !== 'editor-only' || openPaths.length > 0 || !hadOpenFiles) {
+      return;
+    }
+
+    if (root) {
+      setSelectedPath(root, null);
+    }
+    setFileContent('');
+    setFileError(null);
+    setDesktopImageSrc('');
+    setLoadedFilePath(null);
+    setIsFullscreen(false);
+    setShowMobilePageContent(false);
+    useFilesViewTabsStore.getState().setActiveRoot(null);
+
+    const uiStore = useUIStore.getState();
+    if (uiStore.activeMainTab === 'files') {
+      uiStore.setActiveMainTab('chat');
+    }
+  }, [mode, openPaths.length, root, setSelectedPath]);
 
   // Extract selected code
   const extractSelectedCode = React.useCallback((content: string, range: SelectedLineRange): string => {
