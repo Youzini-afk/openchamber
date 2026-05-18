@@ -17,6 +17,7 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { SyncProvider } from '@/sync/sync-context';
@@ -44,6 +45,7 @@ function useVSCodeConfigBootstrap(enabled: boolean) {
         'connecting' | 'connected' | 'error' | 'disconnected' | undefined
       : 'connecting') || 'connecting'
   );
+  const previousConnectionStatusRef = React.useRef(connectionStatus);
 
   React.useEffect(() => {
     if (!enabled || typeof window === 'undefined') {
@@ -69,6 +71,9 @@ function useVSCodeConfigBootstrap(enabled: boolean) {
   }, [enabled]);
 
   React.useEffect(() => {
+    const previousConnectionStatus = previousConnectionStatusRef.current;
+    previousConnectionStatusRef.current = connectionStatus;
+
     if (!enabled || connectionStatus !== 'connected') {
       return;
     }
@@ -77,6 +82,7 @@ function useVSCodeConfigBootstrap(enabled: boolean) {
     let retryTimer: number | null = null;
     let attempts = 0;
     const MAX_ATTEMPTS = 20;
+    const shouldRefreshAfterReconnect = previousConnectionStatus !== 'connected';
 
     const hasCoreConfig = () => {
       const state = useConfigStore.getState();
@@ -94,7 +100,18 @@ function useVSCodeConfigBootstrap(enabled: boolean) {
     };
 
     const run = async () => {
-      if (cancelled || hasCoreConfig()) {
+      if (cancelled) {
+        return;
+      }
+
+      if (hasCoreConfig()) {
+        if (shouldRefreshAfterReconnect) {
+          await refreshAfterOpenCodeRestart({
+            scopes: ['providers', 'agents'],
+            mode: 'active',
+            settleAttempts: 6,
+          });
+        }
         return;
       }
 

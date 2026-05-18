@@ -27,6 +27,7 @@ import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
+import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import type { UsageWindow } from '@/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { RiAddLine, RiArrowLeftLine, RiRefreshLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
@@ -172,6 +173,7 @@ export const VSCodeLayout: React.FC = () => {
   const [hasInitializedOnce, setHasInitializedOnce] = React.useState<boolean>(() => configInitialized);
   const [isInitializing, setIsInitializing] = React.useState<boolean>(false);
   const lastBootstrapAttemptAt = React.useRef<number>(0);
+  const previousConnectionStatusRef = React.useRef(connectionStatus);
 
   // Navigate to chat when a session is selected
   React.useEffect(() => {
@@ -322,6 +324,25 @@ export const VSCodeLayout: React.FC = () => {
     };
     void runBootstrap();
   }, [connectionStatus, configInitialized, hasInitializedOnce, initializeConfig, isInitializing]);
+
+  React.useEffect(() => {
+    const previousConnectionStatus = previousConnectionStatusRef.current;
+    previousConnectionStatusRef.current = connectionStatus;
+
+    if (!hasInitializedOnce || connectionStatus !== 'connected' || previousConnectionStatus === 'connected') {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void refreshAfterOpenCodeRestart({
+        scopes: ['providers', 'agents'],
+        mode: 'active',
+        settleAttempts: 6,
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [connectionStatus, hasInitializedOnce]);
 
   React.useEffect(() => {
     if (viewMode !== 'editor') {
