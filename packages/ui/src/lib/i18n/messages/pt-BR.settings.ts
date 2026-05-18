@@ -1136,6 +1136,8 @@ export const settingsDict = {
   "settings.mcp.page.status.projectScopedTo": "Alcance do projeto: {directory}",
   "settings.mcp.page.status.userScoped": "Configuração no escopo do usuário",
   "settings.mcp.page.status.activeProject": "o projeto ativo",
+  "settings.mcp.page.status.unknownOpenCodeVersion": "unknown",
+  "settings.mcp.page.status.opencodeVersionTooOldForMcp": "VS Code is connected to OpenCode {version}. Some remote MCP servers, including Google Stitch, can fail while reading tool schemas on this version. Update the local OpenCode CLI to {minimum} or newer, then restart the OpenChamber API connection.",
   "settings.mcp.page.actions.connect": "Conectar",
   "settings.mcp.page.actions.disconnect": "Desconectar",
   "settings.mcp.page.actions.authorize": "Autorizar",

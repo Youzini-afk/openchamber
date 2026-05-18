@@ -1136,6 +1136,8 @@ export const settingsDict = {
   'settings.mcp.page.status.projectScopedTo': '{directory} 프로젝트 범위',
   'settings.mcp.page.status.userScoped': '사용자 범위 설정',
   'settings.mcp.page.status.activeProject': '활성 프로젝트',
+  'settings.mcp.page.status.unknownOpenCodeVersion': 'unknown',
+  'settings.mcp.page.status.opencodeVersionTooOldForMcp': 'VS Code is connected to OpenCode {version}. Some remote MCP servers, including Google Stitch, can fail while reading tool schemas on this version. Update the local OpenCode CLI to {minimum} or newer, then restart the OpenChamber API connection.',
   'settings.mcp.page.actions.connect': '연결',
   'settings.mcp.page.actions.disconnect': '연결 해제',
   'settings.mcp.page.actions.authorize': '인증',

@@ -1136,6 +1136,8 @@ export const settingsDict = {
   'settings.mcp.page.status.projectScopedTo': '项目作用域：{directory}',
   'settings.mcp.page.status.userScoped': '用户作用域配置',
   'settings.mcp.page.status.activeProject': '当前项目',
+  'settings.mcp.page.status.unknownOpenCodeVersion': '未知版本',
+  'settings.mcp.page.status.opencodeVersionTooOldForMcp': 'VS Code 当前连接的 OpenCode 是 {version}。Google Stitch 等远程 MCP 在这个版本读取工具 schema 时可能失败。请将本机 OpenCode CLI 升级到 {minimum} 或更新版本，然后重启 OpenChamber API 连接。',
   'settings.mcp.page.actions.connect': '连接',
   'settings.mcp.page.actions.disconnect': '断开连接',
   'settings.mcp.page.actions.authorize': '授权',

@@ -28,6 +28,7 @@ import {
   RiDeleteBinLine,
   RiEyeLine,
   RiEyeOffLine,
+  RiErrorWarningLine,
   RiExternalLinkLine,
   RiFileCodeLine,
   RiFolderLine,
@@ -589,6 +590,72 @@ const buildMcpRuntimeActionKey = (name: string | null, directory?: string | null
   return `${name ?? '__none__'}::${normalizedDirectory}`;
 };
 
+const MINIMUM_MCP_SCHEMA_COMPATIBLE_OPENCODE_VERSION = '1.15.4';
+
+const parseSemverCore = (value: string): [number, number, number] | null => {
+  const match = value.trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!match) {
+    return null;
+  }
+
+  return [
+    Number.parseInt(match[1] ?? '0', 10),
+    Number.parseInt(match[2] ?? '0', 10),
+    Number.parseInt(match[3] ?? '0', 10),
+  ];
+};
+
+const compareSemverCore = (left: string, right: string): number | null => {
+  const parsedLeft = parseSemverCore(left);
+  const parsedRight = parseSemverCore(right);
+  if (!parsedLeft || !parsedRight) {
+    return null;
+  }
+
+  for (let index = 0; index < parsedLeft.length; index += 1) {
+    if (parsedLeft[index] !== parsedRight[index]) {
+      return parsedLeft[index] - parsedRight[index];
+    }
+  }
+
+  return 0;
+};
+
+const isOpenCodeVersionTooOldForMcpSchemas = (version: string | null | undefined): boolean => {
+  if (!version) {
+    return false;
+  }
+
+  const comparison = compareSemverCore(version, MINIMUM_MCP_SCHEMA_COMPATIBLE_OPENCODE_VERSION);
+  return comparison !== null && comparison < 0;
+};
+
+const isMcpToolSchemaFailure = (message: string | null | undefined): boolean =>
+  typeof message === 'string' && /failed to get tools/i.test(message);
+
+const isMcpAuthStartSerializationFailure = (message: string | null | undefined): boolean =>
+  typeof message === 'string' && (
+    /JSON\.stringify cannot serialize cyclic structures/i.test(message) ||
+    /Response status code does not indicate success:\s*500/i.test(message)
+  );
+
+const fetchOpenCodeRuntimeVersion = async (signal?: AbortSignal): Promise<string | null> => {
+  const response = await fetch('/api/global/health', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => null) as { version?: unknown } | null;
+  return typeof payload?.version === 'string' && payload.version.trim()
+    ? payload.version.trim()
+    : null;
+};
+
 // ─────────────────────────────────────────────────────────────
 // McpPage
 // ─────────────────────────────────────────────────────────────
@@ -663,6 +730,7 @@ export const McpPage: React.FC = () => {
   const [authStateKey, setAuthStateKey] = React.useState<string | null>(null);
   const [authCallbackInput, setAuthCallbackInput] = React.useState('');
   const [isAuthPolling, setIsAuthPolling] = React.useState(false);
+  const [openCodeRuntimeVersion, setOpenCodeRuntimeVersion] = React.useState<string | null>(null);
   const authPollAttemptsRef = React.useRef(0);
   const authPollStartsFromNeedsAuthRef = React.useRef(false);
   const [isAdvancedRemoteOptionsOpen, setIsAdvancedRemoteOptionsOpen] = React.useState(false);
@@ -1031,6 +1099,44 @@ export const McpPage: React.FC = () => {
     resetTransientAuthState();
   }, [resetTransientAuthState, runtimeActionKey]);
 
+  React.useEffect(() => {
+    if (!isVSCodeAuthRuntime) {
+      setOpenCodeRuntimeVersion(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
+    void fetchOpenCodeRuntimeVersion(controller.signal)
+      .then((version) => {
+        if (!cancelled) {
+          setOpenCodeRuntimeVersion(version);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOpenCodeRuntimeVersion(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isVSCodeAuthRuntime, runtimeActionKey]);
+
+  const openCodeMcpCompatibilityWarning = React.useMemo(() => {
+    if (!isVSCodeAuthRuntime || !isOpenCodeVersionTooOldForMcpSchemas(openCodeRuntimeVersion)) {
+      return null;
+    }
+
+    return t('settings.mcp.page.status.opencodeVersionTooOldForMcp', {
+      version: openCodeRuntimeVersion ?? t('settings.mcp.page.status.unknownOpenCodeVersion'),
+      minimum: MINIMUM_MCP_SCHEMA_COMPATIBLE_OPENCODE_VERSION,
+    });
+  }, [isVSCodeAuthRuntime, openCodeRuntimeVersion, t]);
+
   const handleStartAuthorization = React.useCallback(async () => {
     if (!selectedMcpName || mcpType !== 'remote' || !requireSavedConfig()) return;
 
@@ -1110,14 +1216,19 @@ export const McpPage: React.FC = () => {
     } catch (err) {
       await clearPendingMcpAuthContext(queuedStateKey);
       if (runtimeActionKeyRef.current === actionKey) {
-        toast.error(normalizeMcpAuthErrorMessage(err, t('settings.mcp.page.toast.authorizationStartFailed'), tUnsafe));
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        toast.error(
+          openCodeMcpCompatibilityWarning && isMcpAuthStartSerializationFailure(rawMessage)
+            ? openCodeMcpCompatibilityWarning
+            : normalizeMcpAuthErrorMessage(err, t('settings.mcp.page.toast.authorizationStartFailed'), tUnsafe)
+        );
       }
     } finally {
       if (runtimeActionKeyRef.current === actionKey) {
         setIsAuthorizing(false);
       }
     }
-  }, [currentDirectory, isVSCodeAuthRuntime, mcpType, oauthClientId, oauthClientSecret, oauthEnabled, oauthRedirectUri, oauthScope, requireSavedConfig, runtimeActionKey, selectedMcpName, startAuthMcp, t, tUnsafe, updateMcp]);
+  }, [currentDirectory, isVSCodeAuthRuntime, mcpType, oauthClientId, oauthClientSecret, oauthEnabled, oauthRedirectUri, oauthScope, openCodeMcpCompatibilityWarning, requireSavedConfig, runtimeActionKey, selectedMcpName, startAuthMcp, t, tUnsafe, updateMcp]);
 
   const handleClearAuthorization = React.useCallback(async () => {
     if (!selectedMcpName || !requireSavedConfig()) return;
@@ -1228,7 +1339,12 @@ export const McpPage: React.FC = () => {
       } else if (nextStatus === 'needs_client_registration') {
         toast.message(t('settings.mcp.page.toast.connectionNeedsClientRegistration'));
       } else if (nextStatus === 'failed') {
-        toast.error(result.status?.error || result.error || t('settings.mcp.page.toast.connectionTestFailed'));
+        const errorMessage = result.status?.error || result.error || null;
+        toast.error(
+          openCodeMcpCompatibilityWarning && isMcpToolSchemaFailure(errorMessage)
+            ? openCodeMcpCompatibilityWarning
+            : errorMessage || t('settings.mcp.page.toast.connectionTestFailed')
+        );
       } else if (result.error) {
         toast.error(result.error);
       } else {
@@ -1239,7 +1355,7 @@ export const McpPage: React.FC = () => {
     } finally {
       setIsTestingConnection(false);
     }
-  }, [currentDirectory, enabled, requireSavedConfig, selectedMcpName, t, testConnectionMcp]);
+  }, [currentDirectory, enabled, openCodeMcpCompatibilityWarning, requireSavedConfig, selectedMcpName, t, testConnectionMcp]);
 
   React.useEffect(() => {
     if (!isAuthPolling || !selectedMcpName) {
@@ -1419,6 +1535,12 @@ export const McpPage: React.FC = () => {
                     <StatusBadge status={effectiveRuntimeStatus?.status} enabled={enabled} getStatusLabel={getStatusLabel} />
                   </div>
                   <p className="typography-meta text-muted-foreground">{runtimeDescription}</p>
+                  {openCodeMcpCompatibilityWarning && isMcpToolSchemaFailure(effectiveRuntimeStatus && 'error' in effectiveRuntimeStatus ? effectiveRuntimeStatus.error : undefined) && (
+                    <div className="mt-2 flex gap-2 rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-amber-900 dark:text-amber-100">
+                      <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p className="typography-micro leading-relaxed">{openCodeMcpCompatibilityWarning}</p>
+                    </div>
+                  )}
                   <p className="typography-micro text-muted-foreground/80">
                     {draftScope === 'project'
                       ? t('settings.mcp.page.status.projectScopedTo', { directory: currentDirectory ?? t('settings.mcp.page.status.activeProject') })
