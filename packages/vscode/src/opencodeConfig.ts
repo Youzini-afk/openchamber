@@ -504,10 +504,19 @@ export type McpRemoteConfig = {
   url?: string;
   environment?: Record<string, string>;
   headers?: Record<string, string>;
+  oauth?: McpOAuthConfig | false;
+  timeout?: number;
   enabled?: boolean;
 };
 
 export type McpConfigPayload = McpLocalConfig | McpRemoteConfig;
+
+export type McpOAuthConfig = {
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  redirectUri?: string;
+};
 
 export type McpConfigEntry = {
   name: string;
@@ -517,6 +526,8 @@ export type McpConfigEntry = {
   url?: string;
   environment?: Record<string, string>;
   headers?: Record<string, string>;
+  oauth?: McpOAuthConfig | false;
+  timeout?: number;
   enabled: boolean;
 };
 
@@ -567,6 +578,37 @@ const buildMcpEntry = (data: Record<string, unknown>): Omit<McpConfigEntry, 'nam
       if (Object.keys(cleanedHeaders).length > 0) {
         entry.headers = cleanedHeaders;
       }
+    }
+
+    if (data.oauth === false) {
+      entry.oauth = false;
+    } else if (isPlainObject(data.oauth)) {
+      const oauth: McpOAuthConfig = {};
+      const source = data.oauth as Record<string, unknown>;
+      if (typeof source.clientId === 'string' && source.clientId.trim()) {
+        oauth.clientId = source.clientId.trim();
+      }
+      if (typeof source.clientSecret === 'string' && source.clientSecret.trim()) {
+        oauth.clientSecret = source.clientSecret.trim();
+      }
+      if (typeof source.scope === 'string' && source.scope.trim()) {
+        oauth.scope = source.scope.trim();
+      }
+      if (typeof source.redirectUri === 'string' && source.redirectUri.trim()) {
+        oauth.redirectUri = source.redirectUri.trim();
+      }
+      if (Object.keys(oauth).length > 0) {
+        entry.oauth = oauth;
+      }
+    }
+
+    const timeout = typeof data.timeout === 'number'
+      ? data.timeout
+      : typeof data.timeout === 'string' && data.timeout.trim()
+        ? Number(data.timeout)
+        : null;
+    if (typeof timeout === 'number' && Number.isFinite(timeout) && timeout > 0) {
+      entry.timeout = timeout;
     }
   }
 

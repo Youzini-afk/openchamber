@@ -47,6 +47,15 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   const panelType = typeof window !== 'undefined'
     ? window.__OPENCHAMBER_PANEL_TYPE__
     : 'chat';
+  const vscodeWorkspaceFolder = React.useMemo(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    const configured = (window as unknown as { __VSCODE_CONFIG__?: { workspaceFolder?: unknown } })
+      .__VSCODE_CONFIG__?.workspaceFolder;
+    return typeof configured === 'string' ? configured : '';
+  }, []);
+  const syncDirectory = currentDirectory || vscodeWorkspaceFolder || '';
   const initialSettingsPage = React.useMemo(() => {
     if (typeof window === 'undefined') {
       return null;
@@ -118,7 +127,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   if (panelType === 'agentManager') {
     return (
       <ErrorBoundary>
-        <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
+        <SyncProvider sdk={opencodeClient.getSdkClient()} directory={syncDirectory}>
           <RuntimeAPIProvider apis={apis}>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
@@ -136,7 +145,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   if (panelType === 'settings') {
     return (
       <ErrorBoundary>
-        <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
+        <SyncProvider sdk={opencodeClient.getSdkClient()} directory={syncDirectory}>
           <RuntimeAPIProvider apis={apis}>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>
               <div className="h-full text-foreground bg-background">
@@ -160,7 +169,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
 
   return (
     <ErrorBoundary>
-      <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
+      <SyncProvider sdk={opencodeClient.getSdkClient()} directory={syncDirectory}>
         <RuntimeAPIProvider apis={apis}>
           <FireworksProvider>
             <TooltipProvider delayDuration={300} skipDelayDuration={150}>

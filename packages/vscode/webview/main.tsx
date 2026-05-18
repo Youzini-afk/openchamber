@@ -164,12 +164,18 @@ const recordBootstrapFetch = (pathname: string, ok: boolean) => {
 
 const maybeHideLoadingOverlay = () => {
   const connectionStatus = window.__OPENCHAMBER_CONNECTION__?.status ?? 'connecting';
+  const panelType = window.__VSCODE_CONFIG__?.panelType || 'chat';
 
   if (!uiMounted) {
     return;
   }
 
   if (connectionStatus === 'connected') {
+    if (panelType !== 'chat') {
+      fadeOutLoadingScreen();
+      return;
+    }
+
     if (bootstrapFailed) {
       setLoadingStatusText('OpenCode connected, but initial data load failed.', 'error');
       fadeOutLoadingScreen();
@@ -371,6 +377,60 @@ const bridgePayloadStatus = (data: unknown): number => {
   return typeof status === 'number' && status >= 100 && status <= 599 ? status : 200;
 };
 
+type PendingMcpAuthContext = {
+  name: string;
+  directory: string | null;
+  expiresAt: number;
+};
+
+const MCP_PENDING_AUTH_STORAGE_KEY = 'openchamber.vscode.pendingMcpAuth.v1';
+const MCP_PENDING_AUTH_TTL_MS = 30 * 60 * 1000;
+
+const readPendingMcpAuthContexts = (): Record<string, PendingMcpAuthContext> => {
+  try {
+    const raw = window.localStorage.getItem(MCP_PENDING_AUTH_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, PendingMcpAuthContext>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    const now = Date.now();
+    const next: Record<string, PendingMcpAuthContext> = {};
+    for (const [state, entry] of Object.entries(parsed)) {
+      if (
+        typeof state !== 'string' ||
+        !state ||
+        !entry ||
+        typeof entry !== 'object' ||
+        typeof entry.name !== 'string' ||
+        !entry.name.trim() ||
+        typeof entry.expiresAt !== 'number' ||
+        entry.expiresAt <= now
+      ) {
+        continue;
+      }
+      next[state] = {
+        name: entry.name.trim(),
+        directory: typeof entry.directory === 'string' && entry.directory.trim() ? entry.directory.trim() : null,
+        expiresAt: entry.expiresAt,
+      };
+    }
+    if (Object.keys(next).length !== Object.keys(parsed).length) {
+      window.localStorage.setItem(MCP_PENDING_AUTH_STORAGE_KEY, JSON.stringify(next));
+    }
+    return next;
+  } catch {
+    return {};
+  }
+};
+
+const writePendingMcpAuthContexts = (contexts: Record<string, PendingMcpAuthContext>) => {
+  try {
+    window.localStorage.setItem(MCP_PENDING_AUTH_STORAGE_KEY, JSON.stringify(contexts));
+  } catch {
+    // Ignore storage failures; callers still get an API-shaped error where needed.
+  }
+};
+
 const encodeBase64 = (bytes: Uint8Array): string => {
   const CHUNK = 0x8000;
   let binary = '';
@@ -492,6 +552,53 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+
+  if (normalizedPathname === '/api/mcp/auth/pending') {
+    const state = url.searchParams.get('state')?.trim() || '';
+
+    if (method === 'POST') {
+      const body = await readJsonBody(init);
+      const nextState = typeof body.state === 'string' ? body.state.trim() : '';
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!nextState) {
+        return jsonResponse({ error: 'OAuth state is required' }, 400);
+      }
+      if (!name) {
+        return jsonResponse({ error: 'MCP server name is required' }, 400);
+      }
+
+      const contexts = readPendingMcpAuthContexts();
+      contexts[nextState] = {
+        name,
+        directory: typeof body.directory === 'string' && body.directory.trim() ? body.directory.trim() : null,
+        expiresAt: Date.now() + MCP_PENDING_AUTH_TTL_MS,
+      };
+      writePendingMcpAuthContexts(contexts);
+      return jsonResponse({ success: true });
+    }
+
+    if (method === 'GET') {
+      if (!state) {
+        return jsonResponse({ error: 'OAuth state is required' }, 400);
+      }
+      const context = readPendingMcpAuthContexts()[state];
+      if (!context) {
+        return jsonResponse({ error: 'No pending MCP auth context' }, 404);
+      }
+      return jsonResponse({ name: context.name, directory: context.directory });
+    }
+
+    if (method === 'DELETE') {
+      if (state) {
+        const contexts = readPendingMcpAuthContexts();
+        delete contexts[state];
+        writePendingMcpAuthContexts(contexts);
+      }
+      return jsonResponse({ success: true });
+    }
+
+    return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
   if (normalizedPathname === '/api/sessions/status' && method === 'GET') {
