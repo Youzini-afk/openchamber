@@ -83,6 +83,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return trimmed || null;
   };
 
+  const readProviderAuthKey = (body) => (
+    normalizePendingString(body?.key) ||
+    normalizePendingString(body?.apiKey) ||
+    normalizePendingString(body?.token)
+  );
+
   const pruneExpiredPendingMcpAuthContexts = () => {
     const now = Date.now();
     for (const [state, entry] of pendingMcpAuthContextByState.entries()) {
@@ -144,20 +150,21 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Provider ID is required' });
       }
 
-      const key = normalizePendingString(req.body?.key ?? req.body?.apiKey ?? req.body?.token);
+      const key = readProviderAuthKey(req.body);
       if (!key) {
         return res.status(400).json({ error: 'API key is required' });
       }
 
       const type = normalizePendingString(req.body?.type) || 'api';
-      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
-      const auth = readAuthFile();
-      auth[providerId] = { type, key };
-      writeAuthFile(auth);
+      const { saveProviderAuth } = await getAuthLibrary();
+      saveProviderAuth(providerId, { type, key });
+      await refreshOpenCodeAfterConfigChange(`provider ${providerId} auth saved`);
 
       return res.json({
         success: true,
         providerId,
+        requiresReload: true,
+        reloadDelayMs: clientReloadDelayMs,
       });
     } catch (error) {
       console.error('Failed to save provider auth:', error);
@@ -324,6 +331,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       const resolvedScope = requestedCustomScope ? 'custom' : requestedProjectScope ? 'project' : 'user';
       const result = upsertProviderConfig(req.body ?? {}, directory, resolvedScope);
+
+      const apiKey = readProviderAuthKey(req.body);
+      if (apiKey) {
+        const { saveProviderAuth } = await getAuthLibrary();
+        saveProviderAuth(result.providerId, { type: 'api', key: apiKey });
+      }
+
       await refreshOpenCodeAfterConfigChange(`custom provider ${result.providerId} saved (${result.scope})`);
 
       return res.json({

@@ -43,6 +43,32 @@ const writeAuthFile = (auth: AuthFile): void => {
   }
 };
 
+export const saveProviderAuth = (providerId: string, entry: { type?: unknown; key?: unknown; apiKey?: unknown; token?: unknown }): AuthEntry => {
+  if (!providerId || typeof providerId !== 'string') {
+    throw new Error('Provider ID is required');
+  }
+
+  const rawKey = typeof entry.key === 'string'
+    ? entry.key
+    : typeof entry.apiKey === 'string'
+      ? entry.apiKey
+      : typeof entry.token === 'string'
+        ? entry.token
+        : '';
+  const key = rawKey.trim();
+  if (!key) {
+    throw new Error('API key is required');
+  }
+
+  const type = typeof entry.type === 'string' && entry.type.trim().length > 0
+    ? entry.type.trim()
+    : 'api';
+  const auth = readAuthFile();
+  auth[providerId] = { type, key };
+  writeAuthFile(auth);
+  return auth[providerId];
+};
+
 export const removeProviderAuth = (providerId: string): boolean => {
   if (!providerId || typeof providerId !== 'string') {
     throw new Error('Provider ID is required');

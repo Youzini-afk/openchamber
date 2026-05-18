@@ -42,6 +42,24 @@ function writeAuthFile(auth) {
   }
 }
 
+function saveProviderAuth(providerId, entry = {}) {
+  if (!providerId || typeof providerId !== 'string') {
+    throw new Error('Provider ID is required');
+  }
+
+  const key = typeof entry.key === 'string' ? entry.key.trim() : '';
+  if (!key) {
+    throw new Error('API key is required');
+  }
+
+  const type = typeof entry.type === 'string' && entry.type.trim() ? entry.type.trim() : 'api';
+  const auth = readAuthFile();
+  auth[providerId] = { type, key };
+  writeAuthFile(auth);
+  console.log(`Saved provider auth: ${providerId}`);
+  return auth[providerId];
+}
+
 function removeProviderAuth(providerId) {
   if (!providerId || typeof providerId !== 'string') {
     throw new Error('Provider ID is required');
@@ -73,6 +91,7 @@ function listProviderAuths() {
 export {
   readAuthFile,
   writeAuthFile,
+  saveProviderAuth,
   removeProviderAuth,
   getProviderAuth,
   listProviderAuths,

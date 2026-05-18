@@ -3,8 +3,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { randomUUID } from 'crypto';
-import { removeProviderConfig, getProviderSources } from './opencodeConfig';
-import { getProviderAuth, removeProviderAuth } from './opencodeAuth';
+import {
+  fetchProviderModels,
+  getProviderConfig,
+  getProviderSources,
+  removeProviderConfig,
+  upsertProviderConfig,
+} from './opencodeConfig';
+import { getProviderAuth, removeProviderAuth, saveProviderAuth } from './opencodeAuth';
 import { fetchQuotaForProvider, listConfiguredQuotaProviders } from './quotaProviders';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import type { BridgeContext, BridgeResponse } from './bridge';
@@ -30,6 +36,21 @@ type NotificationBridgePayload = {
 
 type NotificationsNotifyRequestPayload = {
   payload?: NotificationBridgePayload;
+};
+
+const normalizeBridgeString = (value: unknown): string => (
+  typeof value === 'string' ? value.trim() : ''
+);
+
+const readProviderAuthKey = (value: unknown): string => {
+  if (!value || typeof value !== 'object') {
+    return '';
+  }
+
+  const body = value as { key?: unknown; apiKey?: unknown; token?: unknown };
+  return normalizeBridgeString(body.key) ||
+    normalizeBridgeString(body.apiKey) ||
+    normalizeBridgeString(body.token);
 };
 
 const ZEN_MODELS_URL = 'https://opencode.ai/zen/v1/models';
@@ -466,6 +487,118 @@ export async function handleSystemBridgeMessage(
               ? `Provider ${providerId} disconnected successfully. Reloading interface…`
               : `Provider ${providerId} was not configured.`,
             reloadDelayMs: removed ? deps.clientReloadDelayMs : undefined,
+          },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/auth:save': {
+      const { providerId } = (payload || {}) as { providerId?: string };
+      if (!providerId) {
+        return { id, type, success: false, error: 'Provider ID is required' };
+      }
+
+      const key = readProviderAuthKey(payload);
+      if (!key) {
+        return { id, type, success: false, error: 'API key is required' };
+      }
+
+      const authType = normalizeBridgeString((payload as { authType?: unknown; type?: unknown } | undefined)?.authType) ||
+        normalizeBridgeString((payload as { type?: unknown } | undefined)?.type) ||
+        'api';
+
+      try {
+        saveProviderAuth(providerId, { type: authType, key });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            providerId,
+            requiresReload: true,
+            reloadDelayMs: deps.clientReloadDelayMs,
+          },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/config:get': {
+      const { providerId, directory } = (payload || {}) as { providerId?: string; directory?: string };
+      if (!providerId) {
+        return { id, type, success: false, error: 'Provider ID is required' };
+      }
+
+      try {
+        const workingDirectory = typeof directory === 'string' && directory.trim().length > 0
+          ? directory.trim()
+          : ctx?.manager?.getWorkingDirectory();
+        const config = getProviderConfig(providerId, workingDirectory);
+        if (!config) {
+          return { id, type, success: false, error: 'Provider configuration not found' };
+        }
+        return { id, type, success: true, data: { providerId, config } };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/custom:save': {
+      const body = payload && typeof payload === 'object' && 'body' in payload
+        ? (payload as { body?: unknown }).body
+        : payload;
+      const requestedScope = normalizeBridgeString((body as { scope?: unknown } | undefined)?.scope);
+      const scope = requestedScope === 'project' || requestedScope === 'custom' ? requestedScope : 'user';
+      const directory = normalizeBridgeString((payload as { directory?: unknown } | undefined)?.directory);
+      const workingDirectory = directory || ctx?.manager?.getWorkingDirectory();
+
+      try {
+        const result = upsertProviderConfig(body, workingDirectory, scope);
+        const apiKey = readProviderAuthKey(body);
+        if (apiKey) {
+          saveProviderAuth(result.providerId, { type: 'api', key: apiKey });
+        }
+
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            providerId: result.providerId,
+            scope: result.scope,
+            path: result.path,
+            requiresReload: true,
+            reloadDelayMs: deps.clientReloadDelayMs,
+          },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/custom/models:fetch': {
+      try {
+        const result = await fetchProviderModels(payload);
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            type: result.type,
+            baseURL: result.baseURL,
+            models: result.models,
           },
         };
       } catch (error) {

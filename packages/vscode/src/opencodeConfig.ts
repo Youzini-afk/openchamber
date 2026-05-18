@@ -1197,6 +1197,629 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
   }
 };
 
+const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+const DEFAULT_OPENAI_COMPATIBLE_NPM = '@ai-sdk/openai-compatible';
+const DEFAULT_CUSTOM_PROVIDER_TYPE = 'openai-compatible';
+const DEFAULT_MODEL_OUTPUT_LIMIT = 8192;
+const ANTHROPIC_API_VERSION = '2023-06-01';
+const REASONING_EFFORT_LIST = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const REASONING_EFFORTS = new Set<string>(REASONING_EFFORT_LIST);
+const MODEL_MODALITIES = new Set<string>(['text', 'audio', 'image', 'video', 'pdf']);
+
+const CUSTOM_PROVIDER_TYPES = {
+  'openai-compatible': {
+    npm: DEFAULT_OPENAI_COMPATIBLE_NPM,
+    defaultBaseURL: '',
+  },
+  'openai-responses': {
+    npm: '@ai-sdk/openai',
+    defaultBaseURL: 'https://api.openai.com/v1',
+  },
+  anthropic: {
+    npm: '@ai-sdk/anthropic',
+    defaultBaseURL: 'https://api.anthropic.com/v1',
+  },
+  google: {
+    npm: '@ai-sdk/google',
+    defaultBaseURL: 'https://generativelanguage.googleapis.com/v1beta',
+  },
+} as const;
+
+const CUSTOM_PROVIDER_TYPE_BY_NPM = Object.fromEntries(
+  Object.entries(CUSTOM_PROVIDER_TYPES).map(([type, config]) => [config.npm, type]),
+) as Record<string, CustomProviderType>;
+
+type CustomProviderType = keyof typeof CUSTOM_PROVIDER_TYPES;
+type ProviderScope = 'user' | 'project' | 'custom';
+type FetchResponseLike = {
+  ok: boolean;
+  status?: number;
+  json: () => Promise<unknown>;
+};
+type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string> }) => Promise<FetchResponseLike>;
+
+const normalizeNonEmptyString = (value: unknown): string => (
+  typeof value === 'string' ? value.trim() : ''
+);
+
+const normalizeProviderId = (value: unknown): string => {
+  const id = normalizeNonEmptyString(value);
+  if (!id) {
+    throw new Error('Provider ID is required');
+  }
+  if (!PROVIDER_ID_PATTERN.test(id)) {
+    throw new Error('Provider ID can only contain letters, numbers, dots, underscores, and hyphens');
+  }
+  return id;
+};
+
+const isCustomProviderType = (value: string): value is CustomProviderType => (
+  Object.prototype.hasOwnProperty.call(CUSTOM_PROVIDER_TYPES, value)
+);
+
+const normalizeProviderType = (input: Record<string, unknown>): CustomProviderType => {
+  const type = normalizeNonEmptyString(input.type ?? input.apiType ?? input.providerType ?? input.format) || DEFAULT_CUSTOM_PROVIDER_TYPE;
+  if (!isCustomProviderType(type)) {
+    throw new Error(`Unsupported custom provider API type: ${type}`);
+  }
+  return type;
+};
+
+const normalizePositiveInteger = (value: unknown): number | undefined => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+  }
+
+  const normalized = normalizeNonEmptyString(value).replace(/,/g, '');
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+};
+
+const firstPositiveInteger = (...values: unknown[]): number | undefined => {
+  for (const value of values) {
+    const normalized = normalizePositiveInteger(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+};
+
+const readContextLimit = (entry: Record<string, unknown>): number | undefined => {
+  const limit = isPlainObject(entry.limit) ? entry.limit : {};
+  return firstPositiveInteger(
+    limit.context,
+    limit.contextLimit,
+    limit.context_limit,
+    limit.contextWindow,
+    limit.context_window,
+    limit.contextLength,
+    limit.context_length,
+    limit.maxContext,
+    limit.max_context,
+    limit.maxContextLength,
+    limit.max_context_length,
+    limit.inputTokenLimit,
+    limit.input_token_limit,
+    entry.context,
+    entry.contextLimit,
+    entry.context_limit,
+    entry.contextWindow,
+    entry.context_window,
+    entry.contextLength,
+    entry.context_length,
+    entry.maxContext,
+    entry.max_context,
+    entry.maxContextLength,
+    entry.max_context_length,
+    entry.inputTokenLimit,
+    entry.input_token_limit,
+  );
+};
+
+const readOutputLimit = (entry: Record<string, unknown>): number | undefined => {
+  const limit = isPlainObject(entry.limit) ? entry.limit : {};
+  return firstPositiveInteger(
+    limit.output,
+    limit.outputLimit,
+    limit.output_limit,
+    limit.outputTokenLimit,
+    limit.output_token_limit,
+    limit.maxOutput,
+    limit.max_output,
+    limit.maxOutputTokens,
+    limit.max_output_tokens,
+    entry.output,
+    entry.outputLimit,
+    entry.output_limit,
+    entry.outputTokenLimit,
+    entry.output_token_limit,
+    entry.maxOutput,
+    entry.max_output,
+    entry.maxOutputTokens,
+    entry.max_output_tokens,
+  );
+};
+
+const buildModelLimit = (context?: number, output?: number): Record<string, number> | undefined => {
+  if (!context && !output) {
+    return undefined;
+  }
+
+  return {
+    ...(context ? { context } : {}),
+    output: output || DEFAULT_MODEL_OUTPUT_LIMIT,
+  };
+};
+
+const normalizeReasoningEffort = (value: unknown): string => {
+  const normalized = normalizeNonEmptyString(value).toLowerCase();
+  return REASONING_EFFORTS.has(normalized) ? normalized : '';
+};
+
+const normalizeModelOptions = (entry: Record<string, unknown>): Record<string, unknown> | undefined => {
+  const options = isPlainObject(entry.options) ? { ...entry.options } : {};
+  const reasoningEffort = normalizeReasoningEffort(
+    options.reasoningEffort ?? options.reasoning_effort ?? entry.reasoningEffort ?? entry.reasoning_effort,
+  );
+
+  delete options.reasoning_effort;
+  if (reasoningEffort) {
+    options.reasoningEffort = reasoningEffort;
+  } else {
+    delete options.reasoningEffort;
+  }
+
+  return Object.keys(options).length > 0 ? options : undefined;
+};
+
+const normalizeModelCapability = (entry: Record<string, unknown>, key: string): boolean => {
+  if (key === 'tool_call') {
+    return entry.tool_call === true || entry.toolCall === true;
+  }
+  return entry[key] === true;
+};
+
+const normalizeModalityList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result: string[] = [];
+  for (const item of value) {
+    const normalized = normalizeNonEmptyString(item).toLowerCase();
+    if (!MODEL_MODALITIES.has(normalized) || result.includes(normalized)) {
+      continue;
+    }
+    result.push(normalized);
+  }
+  return result;
+};
+
+const supportsImageInput = (entry: Record<string, unknown>): boolean => {
+  const modalities = isPlainObject(entry.modalities) ? entry.modalities : {};
+  return normalizeModalityList(modalities.input).includes('image');
+};
+
+const buildModelModalities = (attachment: boolean): Record<string, string[]> | undefined => (
+  attachment ? { input: ['text', 'image'], output: ['text'] } : undefined
+);
+
+const normalizeModelVariants = (value: unknown): Record<string, Record<string, unknown>> | undefined => {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const variants: Record<string, Record<string, unknown>> = {};
+  for (const [key, variant] of Object.entries(value)) {
+    const variantKey = normalizeNonEmptyString(key);
+    if (!variantKey) {
+      continue;
+    }
+    variants[variantKey] = isPlainObject(variant) ? { ...variant } : {};
+  }
+
+  return Object.keys(variants).length > 0 ? variants : undefined;
+};
+
+const hasReasoningVariantConfig = (variants: Record<string, Record<string, unknown>> | undefined): boolean => {
+  if (!variants) {
+    return false;
+  }
+
+  return Object.entries(variants).some(([key, variant]) => (
+    REASONING_EFFORTS.has(normalizeNonEmptyString(key).toLowerCase()) ||
+    normalizeReasoningEffort(variant.reasoningEffort ?? variant.reasoning_effort).length > 0
+  ));
+};
+
+const buildModelVariants = (
+  entry: Record<string, unknown>,
+  options: Record<string, unknown> | undefined,
+  reasoning: boolean,
+): Record<string, Record<string, unknown>> | undefined => {
+  const variants = normalizeModelVariants(entry.variants) || {};
+  const reasoningEffort = normalizeReasoningEffort(
+    options?.reasoningEffort ?? options?.reasoning_effort ?? entry.reasoningEffort ?? entry.reasoning_effort,
+  );
+  const shouldExposeReasoningVariants = reasoning || Boolean(reasoningEffort) || hasReasoningVariantConfig(variants);
+
+  if (!shouldExposeReasoningVariants) {
+    return Object.keys(variants).length > 0 ? variants : undefined;
+  }
+
+  for (const effort of REASONING_EFFORT_LIST) {
+    const existing = isPlainObject(variants[effort]) ? variants[effort] : {};
+    variants[effort] = Object.prototype.hasOwnProperty.call(existing, 'reasoningEffort') ||
+      Object.prototype.hasOwnProperty.call(existing, 'reasoning_effort')
+      ? existing
+      : { ...existing, reasoningEffort: effort };
+  }
+
+  return variants;
+};
+
+const normalizeModels = (models: unknown): Record<string, Record<string, unknown>> => {
+  if (!Array.isArray(models)) {
+    throw new Error('At least one model is required');
+  }
+
+  const normalized: Record<string, Record<string, unknown>> = {};
+  for (const item of models) {
+    const modelEntry = isPlainObject(item) ? item : {};
+    const modelId = isPlainObject(item)
+      ? normalizeNonEmptyString(item.id)
+      : normalizeNonEmptyString(item);
+
+    if (!modelId) {
+      continue;
+    }
+
+    const modelName = normalizeNonEmptyString(modelEntry.name);
+    const context = readContextLimit(modelEntry);
+    const output = readOutputLimit(modelEntry);
+    const limit = buildModelLimit(context, output);
+    const options = normalizeModelOptions(modelEntry);
+    const attachment = normalizeModelCapability(modelEntry, 'attachment') || supportsImageInput(modelEntry);
+    const reasoning = normalizeModelCapability(modelEntry, 'reasoning');
+    const variants = buildModelVariants(modelEntry, options, reasoning);
+
+    normalized[modelId] = {
+      ...(modelName ? { name: modelName } : {}),
+      ...(limit ? { limit } : {}),
+      ...(attachment ? { attachment: true, modalities: buildModelModalities(attachment) } : {}),
+      ...(normalizeModelCapability(modelEntry, 'tool_call') ? { tool_call: true } : {}),
+      ...(reasoning ? { reasoning: true } : {}),
+      ...(options ? { options } : {}),
+      ...(variants ? { variants } : {}),
+    };
+  }
+
+  if (Object.keys(normalized).length === 0) {
+    throw new Error('At least one model is required');
+  }
+
+  return normalized;
+};
+
+const buildProviderEntry = (input: unknown): { providerId: string; entry: Record<string, unknown> } => {
+  if (!isPlainObject(input)) {
+    throw new Error('Provider configuration is required');
+  }
+
+  const providerId = normalizeProviderId(input.id ?? input.providerId ?? input.providerID);
+  const providerType = normalizeProviderType(input);
+  const name = normalizeNonEmptyString(input.name) || providerId;
+  const npm = normalizeNonEmptyString(input.npm) || CUSTOM_PROVIDER_TYPES[providerType].npm;
+  const baseURL = normalizeNonEmptyString(input.baseURL ?? input.baseUrl);
+  if (!baseURL) {
+    throw new Error('Base URL is required');
+  }
+
+  return {
+    providerId,
+    entry: {
+      npm,
+      name,
+      options: { baseURL },
+      models: normalizeModels(input.models),
+    },
+  };
+};
+
+const inferProviderType = (entry: Record<string, unknown>): CustomProviderType => {
+  const explicitType = normalizeNonEmptyString(entry.type ?? entry.apiType ?? entry.providerType ?? entry.format);
+  if (isCustomProviderType(explicitType)) {
+    return explicitType;
+  }
+
+  const npm = normalizeNonEmptyString(entry.npm);
+  return CUSTOM_PROVIDER_TYPE_BY_NPM[npm] || DEFAULT_CUSTOM_PROVIDER_TYPE;
+};
+
+const getProviderConfigEntry = (config: Record<string, unknown>, providerId: string): Record<string, unknown> | null => {
+  const providerConfig = isPlainObject(config.provider) ? config.provider : {};
+  if (Object.prototype.hasOwnProperty.call(providerConfig, providerId) && isPlainObject(providerConfig[providerId])) {
+    return providerConfig[providerId];
+  }
+
+  const providersConfig = isPlainObject(config.providers) ? config.providers : {};
+  if (Object.prototype.hasOwnProperty.call(providersConfig, providerId) && isPlainObject(providersConfig[providerId])) {
+    return providersConfig[providerId];
+  }
+
+  return null;
+};
+
+const normalizeProviderConfigModels = (models: unknown): Array<Record<string, unknown>> => {
+  const entries = Array.isArray(models)
+    ? models.map((entry) => [isPlainObject(entry) ? normalizeNonEmptyString(entry.id) : normalizeNonEmptyString(entry), entry] as const)
+    : isPlainObject(models)
+      ? Object.entries(models)
+      : [];
+
+  const result: Array<Record<string, unknown>> = [];
+  for (const [modelId, rawEntry] of entries) {
+    const id = normalizeNonEmptyString(modelId);
+    if (!id) {
+      continue;
+    }
+
+    const entry = isPlainObject(rawEntry) ? rawEntry : {};
+    const context = readContextLimit(entry);
+    const output = readOutputLimit(entry);
+    const options = normalizeModelOptions(entry);
+    const editableOptions = options ? { ...options } : undefined;
+    const reasoningEffort = normalizeReasoningEffort(
+      editableOptions?.reasoningEffort ?? entry.reasoningEffort ?? entry.reasoning_effort,
+    );
+    if (editableOptions) {
+      delete editableOptions.reasoningEffort;
+    }
+
+    result.push({
+      id,
+      name: normalizeNonEmptyString(entry.name),
+      ...(context ? { context } : {}),
+      ...(output ? { output } : {}),
+      ...(normalizeModelCapability(entry, 'attachment') || supportsImageInput(entry) ? { attachment: true } : {}),
+      ...(normalizeModelCapability(entry, 'tool_call') ? { tool_call: true } : {}),
+      ...(normalizeModelCapability(entry, 'reasoning') ? { reasoning: true } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(normalizeModelVariants(entry.variants) ? { variants: normalizeModelVariants(entry.variants) } : {}),
+      ...(editableOptions && Object.keys(editableOptions).length > 0 ? { options: editableOptions } : {}),
+    });
+  }
+
+  return result;
+};
+
+const buildEditableProviderConfig = (
+  providerId: string,
+  entry: Record<string, unknown>,
+  scope: ProviderScope,
+  sourcePath?: string | null,
+): Record<string, unknown> => {
+  const options = isPlainObject(entry.options) ? entry.options : {};
+  const baseURL = normalizeNonEmptyString(options.baseURL ?? options.baseUrl ?? entry.baseURL ?? entry.baseUrl);
+
+  return {
+    providerId,
+    type: inferProviderType(entry),
+    name: normalizeNonEmptyString(entry.name),
+    baseURL,
+    scope,
+    path: sourcePath || null,
+    models: normalizeProviderConfigModels(entry.models),
+  };
+};
+
+export const getProviderConfig = (providerId: string, workingDirectory?: string): Record<string, unknown> | null => {
+  if (!providerId) {
+    throw new Error('Provider ID is required');
+  }
+
+  const layers = readConfigLayers(workingDirectory);
+  const candidates: Array<{ scope: ProviderScope; path?: string | null; config: Record<string, unknown> }> = [
+    { scope: 'custom', path: layers.paths.customPath, config: layers.customConfig },
+    { scope: 'project', path: layers.paths.projectPath, config: layers.projectConfig },
+    { scope: 'user', path: layers.paths.userPath, config: layers.userConfig },
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.path && candidate.scope !== 'user') {
+      continue;
+    }
+
+    const entry = getProviderConfigEntry(candidate.config, providerId);
+    if (entry) {
+      return buildEditableProviderConfig(providerId, entry, candidate.scope, candidate.path);
+    }
+  }
+
+  return null;
+};
+
+export const upsertProviderConfig = (
+  input: unknown,
+  workingDirectory?: string,
+  scope: ProviderScope = 'user',
+): { providerId: string; scope: ProviderScope; path: string } => {
+  const { providerId, entry } = buildProviderEntry(input);
+  const layers = readConfigLayers(workingDirectory);
+  let targetPath: string | null | undefined = layers.paths.userPath;
+  let resolvedScope: ProviderScope = 'user';
+
+  if (scope === 'project') {
+    if (!workingDirectory) {
+      throw new Error('Working directory is required for project scope');
+    }
+    targetPath = layers.paths.projectPath || targetPath;
+    resolvedScope = 'project';
+  } else if (scope === 'custom') {
+    if (!layers.paths.customPath) {
+      throw new Error('Custom config path is not configured');
+    }
+    targetPath = layers.paths.customPath;
+    resolvedScope = 'custom';
+  } else if (scope !== 'user') {
+    throw new Error('Invalid scope');
+  }
+
+  const targetConfig = getConfigForPath(layers, targetPath);
+  const providerConfig = isPlainObject(targetConfig.provider) ? { ...targetConfig.provider } : {};
+  providerConfig[providerId] = entry;
+  targetConfig.provider = providerConfig;
+  writeConfig(targetConfig, targetPath || CONFIG_FILE);
+
+  return {
+    providerId,
+    scope: resolvedScope,
+    path: targetPath || CONFIG_FILE,
+  };
+};
+
+const normalizeFetchBaseURL = (value: unknown, providerType: CustomProviderType): string => {
+  const baseURL = normalizeNonEmptyString(value) || CUSTOM_PROVIDER_TYPES[providerType].defaultBaseURL;
+  if (!baseURL) {
+    throw new Error('Base URL is required');
+  }
+
+  try {
+    return new URL(baseURL).toString().replace(/\/+$/, '');
+  } catch {
+    throw new Error('Base URL must be a valid URL');
+  }
+};
+
+const buildModelListRequest = (
+  providerType: CustomProviderType,
+  baseURL: string,
+  apiKey: string,
+): { url: string; requestOptions: { method: string; headers: Record<string, string> } } => {
+  if (providerType === 'google') {
+    const url = new URL(`${baseURL}/models`);
+    url.searchParams.set('key', apiKey);
+    return { url: url.toString(), requestOptions: { method: 'GET', headers: {} } };
+  }
+
+  if (providerType === 'anthropic') {
+    return {
+      url: `${baseURL}/models`,
+      requestOptions: {
+        method: 'GET',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+        },
+      },
+    };
+  }
+
+  return {
+    url: `${baseURL}/models`,
+    requestOptions: {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    },
+  };
+};
+
+const readJSONResponse = async (response: FetchResponseLike): Promise<unknown> => {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const getProviderErrorMessage = (payload: unknown): string => {
+  if (!isPlainObject(payload)) {
+    return '';
+  }
+
+  if (typeof payload.error === 'string') {
+    return payload.error;
+  }
+
+  if (isPlainObject(payload.error) && typeof payload.error.message === 'string') {
+    return payload.error.message;
+  }
+
+  if (typeof payload.message === 'string') {
+    return payload.message;
+  }
+
+  return '';
+};
+
+const normalizeFetchedModels = (providerType: CustomProviderType, payload: unknown): Array<Record<string, string>> => {
+  const source = providerType === 'google' && isPlainObject(payload) && Array.isArray(payload.models)
+    ? payload.models
+    : isPlainObject(payload) && Array.isArray(payload.data)
+      ? payload.data
+      : Array.isArray(payload)
+        ? payload
+        : [];
+
+  return source
+    .map((entry): Record<string, string> | null => {
+      if (!isPlainObject(entry)) {
+        return null;
+      }
+
+      const rawId = normalizeNonEmptyString(entry.id ?? entry.name);
+      const id = providerType === 'google' ? rawId.replace(/^models\//, '') : rawId;
+      if (!id) {
+        return null;
+      }
+
+      const name = normalizeNonEmptyString(entry.display_name ?? entry.displayName ?? entry.name) || id;
+      return { id, name };
+    })
+    .filter((entry): entry is Record<string, string> => Boolean(entry));
+};
+
+export const fetchProviderModels = async (
+  input: unknown,
+  fetchImpl: FetchLike = globalThis.fetch as FetchLike,
+): Promise<{ type: CustomProviderType; baseURL: string; models: Array<Record<string, string>> }> => {
+  if (!isPlainObject(input)) {
+    throw new Error('Provider model fetch configuration is required');
+  }
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('Fetch is not available');
+  }
+
+  const providerType = normalizeProviderType(input);
+  const apiKey = normalizeNonEmptyString(input.apiKey ?? input.key ?? input.token);
+  if (!apiKey) {
+    throw new Error('API key is required to fetch models');
+  }
+
+  const baseURL = normalizeFetchBaseURL(input.baseURL ?? input.baseUrl, providerType);
+  const request = buildModelListRequest(providerType, baseURL, apiKey);
+  const response = await fetchImpl(request.url, request.requestOptions);
+  const payload = await readJSONResponse(response);
+
+  if (!response.ok) {
+    const status = typeof response.status === 'number' ? response.status : 'unknown';
+    throw new Error(getProviderErrorMessage(payload) || `Failed to fetch models (${status})`);
+  }
+
+  return {
+    type: providerType,
+    baseURL,
+    models: normalizeFetchedModels(providerType, payload),
+  };
+};
+
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
   const layers = readConfigLayers(workingDirectory);
   const customProviders = isPlainObject((layers.customConfig as Record<string, unknown>)?.provider)

@@ -15,6 +15,47 @@ type PanelType = 'chat' | 'agentManager' | 'settings';
 
 declare const __OPENCHAMBER_WEBVIEW_BUILD_TIME__: string;
 
+const PROVIDER_OPTIONS = Object.freeze([
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'google', name: 'Google' },
+  { id: 'github-copilot', name: 'GitHub Copilot' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'deepseek', name: 'DeepSeek' },
+  { id: 'xai', name: 'xAI' },
+  { id: 'mistral', name: 'Mistral' },
+  { id: 'cohere', name: 'Cohere' },
+  { id: 'together', name: 'Together AI' },
+  { id: 'perplexity', name: 'Perplexity' },
+  { id: 'fireworks', name: 'Fireworks' },
+  { id: 'huggingface', name: 'Hugging Face' },
+  { id: 'azure', name: 'Azure OpenAI' },
+  { id: 'amazon-bedrock', name: 'Amazon Bedrock' },
+  { id: 'cloudflare', name: 'Cloudflare Workers AI' },
+]);
+
+const API_KEY_AUTH_METHOD = Object.freeze({
+  type: 'api',
+  name: 'api',
+  label: 'API key',
+});
+
+const OAUTH_AUTH_METHOD = Object.freeze({
+  type: 'oauth',
+  name: 'oauth',
+  label: 'OAuth',
+});
+
+const PROVIDER_AUTH_METHODS = Object.freeze(
+  Object.fromEntries(PROVIDER_OPTIONS.map((provider) => [
+    provider.id,
+    provider.id === 'github-copilot'
+      ? [OAUTH_AUTH_METHOD, API_KEY_AUTH_METHOD]
+      : [API_KEY_AUTH_METHOD],
+  ])),
+);
+
 declare global {
   interface Window {
     __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
@@ -500,6 +541,56 @@ const extractBodyText = async (input: RequestInfo | URL, init: RequestInit | und
 
 const isSseApiPath = (pathname: string) => pathname === '/api/event' || pathname === '/api/global/event';
 const isSessionMessageApiPath = (pathname: string) => /^\/api\/session\/[^/]+\/message$/.test(pathname);
+
+const parseJsonRequestBody = async (init?: RequestInit): Promise<Record<string, unknown>> => {
+  const body = init?.body;
+  if (!body) return {};
+
+  let text = '';
+  if (typeof body === 'string') {
+    text = body;
+  } else if (body instanceof URLSearchParams) {
+    text = body.toString();
+  } else if (body instanceof Blob) {
+    text = await body.text();
+  }
+
+  if (!text.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const readRequestDirectory = (url: URL, init?: RequestInit): string | undefined => {
+  const queryDirectory = url.searchParams.get('directory') || undefined;
+  if (queryDirectory) {
+    return queryDirectory;
+  }
+
+  const headers = init?.headers;
+  if (!headers) return undefined;
+  if (headers instanceof Headers) {
+    return headers.get('x-opencode-directory') || undefined;
+  }
+  if (Array.isArray(headers)) {
+    const found = headers.find(([key]) => key.toLowerCase() === 'x-opencode-directory');
+    return found?.[1] || undefined;
+  }
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'x-opencode-directory' && typeof value === 'string') {
+      return value;
+    }
+  }
+  return undefined;
+};
 
 const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
   const pathname = url.pathname;
@@ -1241,6 +1332,79 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider' && method === 'GET') {
+    return new Response(JSON.stringify({ providers: PROVIDER_OPTIONS, all: PROVIDER_OPTIONS }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (pathname === '/api/provider/auth' && method === 'GET') {
+    return new Response(JSON.stringify(PROVIDER_AUTH_METHODS), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const providerAuthSaveMatch = pathname.match(/^\/api\/auth\/([^/]+)$/);
+  if (providerAuthSaveMatch && method === 'PUT') {
+    const providerId = decodeURIComponent(providerAuthSaveMatch[1]);
+    const body = await parseJsonRequestBody(init);
+    try {
+      const data = await sendBridgeMessage('api:provider/auth:save', {
+        providerId,
+        type: body.type,
+        key: body.key,
+        apiKey: body.apiKey,
+        token: body.token,
+      });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider/custom' && method === 'POST') {
+    const body = await parseJsonRequestBody(init);
+    try {
+      const data = await sendBridgeMessage('api:provider/custom:save', {
+        body,
+        directory: readRequestDirectory(url, init),
+      });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider/custom/models' && method === 'POST') {
+    const body = await parseJsonRequestBody(init);
+    try {
+      const data = await sendBridgeMessage('api:provider/custom/models:fetch', body);
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message, models: [] }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  const providerConfigMatch = pathname.match(/^\/api\/provider\/([^/]+)\/config$/);
+  if (providerConfigMatch && method === 'GET') {
+    const providerId = decodeURIComponent(providerConfigMatch[1]);
+    try {
+      const data = await sendBridgeMessage('api:provider/config:get', {
+        providerId,
+        directory: readRequestDirectory(url, init),
+      });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 404, headers: { 'Content-Type': 'application/json' } });
     }
   }
 

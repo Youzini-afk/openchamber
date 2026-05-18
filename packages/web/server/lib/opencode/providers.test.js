@@ -759,4 +759,51 @@ describe('provider routes', () => {
       path: '/tmp/custom-opencode.json',
     });
   });
+
+  it('saves custom provider API key in the same request', async () => {
+    const routeTempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-provider-auth-route-test-'));
+    const previousHome = process.env.HOME;
+    const previousUserProfile = process.env.USERPROFILE;
+    process.env.HOME = routeTempHome;
+    process.env.USERPROFILE = routeTempHome;
+
+    const app = express();
+    app.use(express.json());
+    const upsertProviderConfig = vi.fn(() => ({
+      providerId: 'api-key-provider',
+      scope: 'user',
+      path: '/tmp/config.json',
+    }));
+
+    try {
+      registerOpenCodeRoutes(app, createRouteDependencies({ upsertProviderConfig }));
+
+      await request(app)
+        .post('/api/provider/custom')
+        .send({
+          id: 'api-key-provider',
+          name: 'API Key Provider',
+          baseURL: 'https://api.example.com/v1',
+          apiKey: 'sk-test',
+          models: [{ id: 'model-1' }],
+        })
+        .expect(200);
+
+      const authPath = path.join(routeTempHome, '.local', 'share', 'opencode', 'auth.json');
+      const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+      expect(auth['api-key-provider']).toEqual({ type: 'api', key: 'sk-test' });
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      if (previousUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = previousUserProfile;
+      }
+      fs.rmSync(routeTempHome, { recursive: true, force: true });
+    }
+  });
 });

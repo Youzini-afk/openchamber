@@ -563,6 +563,12 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
+      const reloadDelayMs = isRecord(payload) && typeof payload.reloadDelayMs === 'number'
+        ? payload.reloadDelayMs
+        : 0;
+      if (reloadDelayMs > 0) {
+        await wait(reloadDelayMs);
+      }
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
       setSelectedProvider(providerId);
     } catch (error) {
@@ -993,6 +999,7 @@ export const ProvidersPage: React.FC = () => {
           name: customProviderForm.name.trim(),
           baseURL,
           models,
+          ...(apiKey ? { apiKey } : {}),
           scope: customProviderForm.scope,
         }),
       });
@@ -1009,17 +1016,6 @@ export const ProvidersPage: React.FC = () => {
         ? payload.reloadDelayMs
         : 800;
       await wait(reloadDelayMs);
-
-      if (apiKey) {
-        const authResponse = await fetch(`/api/auth/${encodeURIComponent(providerId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'api', key: apiKey }),
-        });
-        if (!authResponse.ok) {
-          throw new Error(t('settings.providers.page.toast.apiKeySaveFailed'));
-        }
-      }
 
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
       const savedProviderVisible = useConfigStore.getState().providers.some((provider) => provider.id === providerId);

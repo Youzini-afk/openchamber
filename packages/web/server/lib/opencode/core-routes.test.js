@@ -49,4 +49,28 @@ describe('core-routes', () => {
       },
     });
   });
+
+  it('parses JSON bodies for provider auth routes', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+
+    app.put('/api/auth/my-provider', (req, res) => {
+      res.json({ body: req.body ?? null });
+    });
+
+    const response = await request(app)
+      .put('/api/auth/my-provider')
+      .send({
+        type: 'api',
+        key: 'sk-test',
+      })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      body: {
+        type: 'api',
+        key: 'sk-test',
+      },
+    });
+  });
 });
