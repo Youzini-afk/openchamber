@@ -5,6 +5,7 @@ import { ensureGlobalSessionsLoaded, useGlobalSessionsStore, resolveGlobalSessio
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useUIStore } from '@/stores/useUIStore';
+import { cleanupSessionCheckpointsIfAvailable } from '@/sync/session-actions';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTO_DELETE_KEEP_RECENT = 5;
@@ -159,6 +160,7 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
               await scopedSdk.session.update({ sessionID: id, directory, time: { archived: Date.now() } });
             } else {
               await scopedSdk.session.delete({ sessionID: id, directory });
+              await cleanupSessionCheckpointsIfAvailable(id);
             }
             completedIds.push(id);
           } catch {

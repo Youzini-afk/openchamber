@@ -679,8 +679,10 @@ const updateRoutingIndexFromEvent = (
     }
 
     case "session.deleted": {
-      const deletedSessionID = (payload.properties as { sessionID?: string }).sessionID
+      const props = payload.properties as { sessionID?: string; info?: Session }
+      const deletedSessionID = props.sessionID || props.info?.id
       if (deletedSessionID) {
+        void sessionActions.cleanupSessionCheckpointsIfAvailable(deletedSessionID)
         removeIndexedSession(routingIndex, deletedSessionID)
       }
       return

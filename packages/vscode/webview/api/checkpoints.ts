@@ -1,7 +1,9 @@
 import type {
+  CheckpointCleanupResult,
   CheckpointRecord,
   CheckpointRestoreResult,
   CheckpointRestoreReviewResult,
+  CheckpointStorageStats,
   CheckpointsAPI,
 } from '@openchamber/ui/lib/api/types';
 import { sendBridgeMessage, sendBridgeMessageWithOptions } from './bridge';
@@ -74,5 +76,35 @@ export const createVSCodeCheckpointsAPI = (): CheckpointsAPI => ({
       skipped: typeof data?.skipped === 'number' ? data.skipped : 0,
       safetyCheckpoint: data?.safetyCheckpoint,
     };
+  },
+
+  async stats(): Promise<CheckpointStorageStats> {
+    const data = await sendBridgeMessage<CheckpointStorageStats>('api:checkpoint/stats');
+    return {
+      sessionCount: typeof data?.sessionCount === 'number' ? data.sessionCount : 0,
+      checkpointCount: typeof data?.checkpointCount === 'number' ? data.checkpointCount : 0,
+      totalBytes: typeof data?.totalBytes === 'number' ? data.totalBytes : 0,
+      retentionLimit: typeof data?.retentionLimit === 'number' ? data.retentionLimit : 200,
+    };
+  },
+
+  async cleanupSession(sessionId): Promise<CheckpointCleanupResult> {
+    return sendBridgeMessage<CheckpointCleanupResult>('api:checkpoint/cleanup-session', { sessionId });
+  },
+
+  async cleanupRetention(limit): Promise<CheckpointCleanupResult> {
+    return sendBridgeMessageWithOptions<CheckpointCleanupResult>(
+      'api:checkpoint/cleanup-retention',
+      { limit },
+      { timeoutMs: 300000 },
+    );
+  },
+
+  async cleanupAll(): Promise<CheckpointCleanupResult> {
+    return sendBridgeMessageWithOptions<CheckpointCleanupResult>(
+      'api:checkpoint/cleanup-all',
+      undefined,
+      { timeoutMs: 300000 },
+    );
   },
 });

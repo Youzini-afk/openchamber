@@ -9,6 +9,20 @@ import { loadAppearancePreferences, applyAppearancePreferences } from '@/lib/app
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
+const DEFAULT_CHECKPOINT_RETENTION_LIMIT = 200;
+const MIN_CHECKPOINT_RETENTION_LIMIT = 1;
+const MAX_CHECKPOINT_RETENTION_LIMIT = 5000;
+
+const normalizeCheckpointRetentionLimit = (value: unknown): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(
+    MAX_CHECKPOINT_RETENTION_LIMIT,
+    Math.max(MIN_CHECKPOINT_RETENTION_LIMIT, Math.round(value)),
+  );
+};
+
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
     return;
@@ -604,6 +618,8 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
     result.sessionRetentionAction = candidate.sessionRetentionAction;
   }
+  const checkpointRetentionLimit = normalizeCheckpointRetentionLimit(candidate.checkpointRetentionLimit);
+  result.checkpointRetentionLimit = checkpointRetentionLimit ?? DEFAULT_CHECKPOINT_RETENTION_LIMIT;
   if (typeof candidate.tunnelProvider === 'string') {
     const provider = candidate.tunnelProvider.trim().toLowerCase();
     if (provider.length > 0) {

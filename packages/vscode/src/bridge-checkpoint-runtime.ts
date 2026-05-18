@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { execGit } from './bridge-git-process-runtime';
+import { readSettings } from './bridge-settings-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -49,11 +50,28 @@ type ChangedFileSummary = {
   type: 'added' | 'modified' | 'deleted';
 };
 
+type CheckpointCleanupResult = {
+  deletedCheckpoints: number;
+  deletedSessions: number;
+  deletedBytes: number;
+  remainingCheckpoints: number;
+};
+
+type CheckpointStorageStats = {
+  sessionCount: number;
+  checkpointCount: number;
+  totalBytes: number;
+  retentionLimit: number;
+};
+
 const METADATA_VERSION = 1 as const;
 const STORAGE_DIR_NAME = 'checkpoints-v1';
 const METADATA_FILE = 'metadata.json';
 const VIRTUAL_DIFF_SCHEME = 'openchamber-checkpoint';
 const FORCED_IGNORED_SEGMENTS = new Set(['.git', 'node_modules']);
+const DEFAULT_CHECKPOINT_RETENTION_LIMIT = 200;
+const MIN_CHECKPOINT_RETENTION_LIMIT = 1;
+const MAX_CHECKPOINT_RETENTION_LIMIT = 5000;
 
 const virtualDiffContents = new Map<string, string>();
 let virtualDiffProviderRegistered = false;
@@ -115,6 +133,21 @@ const normalizeComparableFsPath = (value: string): string => {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 };
 
+const normalizeRetentionLimit = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_CHECKPOINT_RETENTION_LIMIT;
+  }
+  return Math.min(
+    MAX_CHECKPOINT_RETENTION_LIMIT,
+    Math.max(MIN_CHECKPOINT_RETENTION_LIMIT, Math.round(value)),
+  );
+};
+
+const getCheckpointRetentionLimit = (ctx?: BridgeContext): number => {
+  const settings = readSettings(ctx) as { checkpointRetentionLimit?: unknown };
+  return normalizeRetentionLimit(settings.checkpointRetentionLimit);
+};
+
 const withSessionLock = async <T>(sessionId: string, operation: () => Promise<T>): Promise<T> => {
   const previous = sessionLocks.get(sessionId) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(operation);
@@ -140,12 +173,24 @@ const resolveCheckpointStorageRoot = async (ctx?: BridgeContext): Promise<string
   return root;
 };
 
+const getCheckpointStorageRootPath = (ctx?: BridgeContext): string => {
+  const base = ctx?.context?.globalStorageUri?.fsPath;
+  if (!base) {
+    throw new Error('VS Code extension context is not available');
+  }
+  return path.join(base, STORAGE_DIR_NAME);
+};
+
 const resolveSessionStorageDir = async (ctx: BridgeContext | undefined, sessionId: string): Promise<string> => {
   const root = await resolveCheckpointStorageRoot(ctx);
   const dir = path.join(root, safeDirectoryName(sessionId));
   await fs.promises.mkdir(dir, { recursive: true });
   return dir;
 };
+
+const getSessionStorageDirPath = (ctx: BridgeContext | undefined, sessionId: string): string => (
+  path.join(getCheckpointStorageRootPath(ctx), safeDirectoryName(sessionId))
+);
 
 const metadataPathForSession = async (ctx: BridgeContext | undefined, sessionId: string): Promise<string> => (
   path.join(await resolveSessionStorageDir(ctx, sessionId), METADATA_FILE)
@@ -417,6 +462,12 @@ const createCheckpointInternal = async (
 
   metadata.records.push(record);
   await saveMetadata(ctx, input.sessionId, metadata);
+  await cleanupSessionMetadata(ctx, input.sessionId, {
+    directory: root,
+    limit: getCheckpointRetentionLimit(ctx),
+  }).catch((error) => {
+    console.warn('[Checkpoint] Failed to prune old checkpoints after create', error);
+  });
 
   console.log(
     `[Checkpoint] Created ${type} checkpoint ${checkpointId}: files=${record.fileCount}, copied=${copiedCount}, bytes=${totalBytes}`,
@@ -467,6 +518,282 @@ const findFileInChain = async (
     }
   }
   return null;
+};
+
+const getDirectorySize = async (directoryPath: string): Promise<number> => {
+  let total = 0;
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    const child = path.join(directoryPath, entry.name);
+    try {
+      if (entry.isDirectory()) {
+        total += await getDirectorySize(child);
+      } else if (entry.isFile()) {
+        total += (await fs.promises.stat(child)).size;
+      }
+    } catch {
+      // Ignore transient stat failures.
+    }
+  }
+  return total;
+};
+
+const deleteBackupDirectory = async (sessionDir: string, backupDir: string): Promise<number> => {
+  const backupRoot = path.resolve(sessionDir, backupDir);
+  if (!isInsideDirectory(sessionDir, backupRoot) || backupRoot === path.resolve(sessionDir)) {
+    return 0;
+  }
+  const deletedBytes = await getDirectorySize(backupRoot);
+  await fs.promises.rm(backupRoot, { recursive: true, force: true }).catch(() => undefined);
+  return deletedBytes;
+};
+
+const materializeCheckpointAsFull = async (
+  ctx: BridgeContext | undefined,
+  sessionId: string,
+  metadata: CheckpointMetadata,
+  checkpoint: CheckpointRecord,
+): Promise<CheckpointRecord> => {
+  if (checkpoint.type !== 'incremental') {
+    return checkpoint;
+  }
+
+  const chain = getIncrementalChain(metadata.records, checkpoint);
+  if (chain.length === 0 || chain[0].type === 'incremental') {
+    throw new Error('Cannot materialize checkpoint: chain is incomplete');
+  }
+
+  const sessionDir = await resolveSessionStorageDir(ctx, sessionId);
+  const backupDirName = `${checkpoint.id}_full_${Date.now().toString(36)}`;
+  const backupRoot = path.join(sessionDir, backupDirName);
+  await fs.promises.mkdir(backupRoot, { recursive: true });
+
+  try {
+    for (const relativePath of Object.keys(checkpoint.fileHashes)) {
+      const sourcePath = await findFileInChain(sessionDir, chain, relativePath);
+      if (!sourcePath) {
+        throw new Error(`Cannot materialize checkpoint: missing ${relativePath}`);
+      }
+
+      const sourceHash = crypto.createHash('sha256').update(await fs.promises.readFile(sourcePath)).digest('hex');
+      if (sourceHash !== checkpoint.fileHashes[relativePath]) {
+        throw new Error(`Cannot materialize checkpoint: hash mismatch for ${relativePath}`);
+      }
+
+      const resolvedTarget = path.resolve(backupRoot, normalizeRelativePath(relativePath));
+      if (!isInsideDirectory(backupRoot, resolvedTarget)) {
+        throw new Error(`Cannot materialize checkpoint: unsafe path ${relativePath}`);
+      }
+
+      await fs.promises.mkdir(path.dirname(resolvedTarget), { recursive: true });
+      await fs.promises.copyFile(sourcePath, resolvedTarget);
+    }
+  } catch (error) {
+    await fs.promises.rm(backupRoot, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    ...checkpoint,
+    backupDir: backupDirName,
+    type: 'full',
+    baseCheckpointId: undefined,
+    changes: undefined,
+  };
+};
+
+const cleanupSessionMetadata = async (
+  ctx: BridgeContext | undefined,
+  sessionId: string,
+  options: { directory?: string; limit?: number },
+): Promise<CheckpointCleanupResult> => {
+  const metadata = await loadMetadata(ctx, sessionId);
+  const limit = normalizeRetentionLimit(options.limit);
+  const sessionDir = await resolveSessionStorageDir(ctx, sessionId);
+  const targetDirectory = options.directory ? normalizeFsPath(path.resolve(options.directory)) : null;
+
+  const groups = new Map<string, CheckpointRecord[]>();
+  for (const record of metadata.records) {
+    const key = normalizeFsPath(path.resolve(record.directory));
+    if (targetDirectory && key !== targetDirectory) {
+      continue;
+    }
+    groups.set(key, [...(groups.get(key) ?? []), record]);
+  }
+
+  const recordUpdates = new Map<string, CheckpointRecord>();
+  const recordsToDelete = new Set<string>();
+  let deletedBytes = 0;
+
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.createdAt - b.createdAt);
+    if (sorted.length <= limit) {
+      continue;
+    }
+
+    const deleteCount = sorted.length - limit;
+    const keep = sorted.slice(deleteCount);
+    const firstKept = keep[0];
+    if (!firstKept) {
+      continue;
+    }
+
+    if (firstKept.type === 'incremental') {
+      const materialized = await materializeCheckpointAsFull(ctx, sessionId, metadata, firstKept);
+      recordUpdates.set(firstKept.id, materialized);
+      deletedBytes += await deleteBackupDirectory(sessionDir, firstKept.backupDir);
+    }
+
+    for (const record of sorted.slice(0, deleteCount)) {
+      recordsToDelete.add(record.id);
+      deletedBytes += await deleteBackupDirectory(sessionDir, record.backupDir);
+    }
+  }
+
+  if (recordsToDelete.size === 0 && recordUpdates.size === 0) {
+    return {
+      deletedCheckpoints: 0,
+      deletedSessions: 0,
+      deletedBytes: 0,
+      remainingCheckpoints: metadata.records.length,
+    };
+  }
+
+  const nextRecords = metadata.records
+    .filter((record) => !recordsToDelete.has(record.id))
+    .map((record) => recordUpdates.get(record.id) ?? record);
+
+  await saveMetadata(ctx, sessionId, { version: METADATA_VERSION, records: nextRecords });
+
+  return {
+    deletedCheckpoints: recordsToDelete.size,
+    deletedSessions: 0,
+    deletedBytes,
+    remainingCheckpoints: nextRecords.length,
+  };
+};
+
+const cleanupSessionStorage = async (
+  ctx: BridgeContext | undefined,
+  sessionId: string,
+): Promise<CheckpointCleanupResult> => {
+  const sessionDir = getSessionStorageDirPath(ctx, sessionId);
+  const deletedBytes = await getDirectorySize(sessionDir);
+  let checkpointCount = 0;
+  try {
+    const raw = await fs.promises.readFile(path.join(sessionDir, METADATA_FILE), 'utf8');
+    const parsed = JSON.parse(raw) as Partial<CheckpointMetadata>;
+    checkpointCount = Array.isArray(parsed.records) ? parsed.records.length : 0;
+  } catch {
+    checkpointCount = 0;
+  }
+  await fs.promises.rm(sessionDir, { recursive: true, force: true }).catch(() => undefined);
+  return {
+    deletedCheckpoints: checkpointCount,
+    deletedSessions: 1,
+    deletedBytes,
+    remainingCheckpoints: 0,
+  };
+};
+
+const listCheckpointSessionDirs = async (ctx: BridgeContext | undefined): Promise<string[]> => {
+  const root = await resolveCheckpointStorageRoot(ctx);
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name));
+};
+
+const getCheckpointStorageStats = async (ctx: BridgeContext | undefined): Promise<CheckpointStorageStats> => {
+  const sessionDirs = await listCheckpointSessionDirs(ctx);
+  let checkpointCount = 0;
+  let totalBytes = 0;
+
+  for (const sessionDir of sessionDirs) {
+    totalBytes += await getDirectorySize(sessionDir);
+    try {
+      const raw = await fs.promises.readFile(path.join(sessionDir, METADATA_FILE), 'utf8');
+      const parsed = JSON.parse(raw) as Partial<CheckpointMetadata>;
+      if (Array.isArray(parsed.records)) {
+        checkpointCount += parsed.records.length;
+      }
+    } catch {
+      // Ignore malformed metadata while still counting disk usage.
+    }
+  }
+
+  return {
+    sessionCount: sessionDirs.length,
+    checkpointCount,
+    totalBytes,
+    retentionLimit: getCheckpointRetentionLimit(ctx),
+  };
+};
+
+const cleanupAllCheckpointStorage = async (ctx: BridgeContext | undefined): Promise<CheckpointCleanupResult> => {
+  const root = await resolveCheckpointStorageRoot(ctx);
+  const stats = await getCheckpointStorageStats(ctx);
+  await fs.promises.rm(root, { recursive: true, force: true }).catch(() => undefined);
+  await fs.promises.mkdir(root, { recursive: true });
+  return {
+    deletedCheckpoints: stats.checkpointCount,
+    deletedSessions: stats.sessionCount,
+    deletedBytes: stats.totalBytes,
+    remainingCheckpoints: 0,
+  };
+};
+
+const cleanupAllSessionsByRetention = async (
+  ctx: BridgeContext | undefined,
+  limit: number,
+): Promise<CheckpointCleanupResult> => {
+  const sessionDirs = await listCheckpointSessionDirs(ctx);
+  let result: CheckpointCleanupResult = {
+    deletedCheckpoints: 0,
+    deletedSessions: 0,
+    deletedBytes: 0,
+    remainingCheckpoints: 0,
+  };
+
+  for (const sessionDir of sessionDirs) {
+    let metadata: CheckpointMetadata | null = null;
+    try {
+      const raw = await fs.promises.readFile(path.join(sessionDir, METADATA_FILE), 'utf8');
+      const parsed = JSON.parse(raw) as Partial<CheckpointMetadata>;
+      if (parsed.version === METADATA_VERSION && Array.isArray(parsed.records)) {
+        metadata = { version: METADATA_VERSION, records: parsed.records as CheckpointRecord[] };
+      }
+    } catch {
+      metadata = null;
+    }
+
+    const sessionId = metadata?.records.find((record) => typeof record.sessionId === 'string')?.sessionId;
+    if (!sessionId) {
+      continue;
+    }
+
+    const cleanup = await withSessionLock(sessionId, () => cleanupSessionMetadata(ctx, sessionId, { limit }));
+    result = {
+      deletedCheckpoints: result.deletedCheckpoints + cleanup.deletedCheckpoints,
+      deletedSessions: result.deletedSessions + cleanup.deletedSessions,
+      deletedBytes: result.deletedBytes + cleanup.deletedBytes,
+      remainingCheckpoints: result.remainingCheckpoints + cleanup.remainingCheckpoints,
+    };
+  }
+
+  const stats = await getCheckpointStorageStats(ctx);
+  return { ...result, remainingCheckpoints: stats.checkpointCount };
 };
 
 const removeEmptyParents = async (root: string, startDirectory: string): Promise<void> => {
@@ -903,6 +1230,34 @@ export async function handleCheckpointBridgeMessage(
       }
       const metadata = await loadMetadata(ctx, body.sessionId);
       return { id, type, success: true, data: { checkpoints: metadata.records.map(toPublicRecord) } };
+    }
+
+    case 'api:checkpoint/stats': {
+      const stats = await getCheckpointStorageStats(ctx);
+      return { id, type, success: true, data: stats };
+    }
+
+    case 'api:checkpoint/cleanup-session': {
+      const body = (payload || {}) as { sessionId?: string };
+      if (!body.sessionId) {
+        return { id, type, success: false, error: 'sessionId is required' };
+      }
+      const result = await withSessionLock(body.sessionId, () => cleanupSessionStorage(ctx, body.sessionId!));
+      return { id, type, success: true, data: result };
+    }
+
+    case 'api:checkpoint/cleanup-retention': {
+      const body = (payload || {}) as { limit?: unknown };
+      const result = await cleanupAllSessionsByRetention(
+        ctx,
+        normalizeRetentionLimit(body.limit ?? getCheckpointRetentionLimit(ctx)),
+      );
+      return { id, type, success: true, data: result };
+    }
+
+    case 'api:checkpoint/cleanup-all': {
+      const result = await cleanupAllCheckpointStorage(ctx);
+      return { id, type, success: true, data: result };
     }
 
     case 'api:checkpoint/diff': {

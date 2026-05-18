@@ -125,6 +125,18 @@ export async function createMessageCheckpointIfAvailable(sessionId: string, mess
   }
 }
 
+export async function cleanupSessionCheckpointsIfAvailable(sessionId: string): Promise<void> {
+  const runtime = getRegisteredRuntimeAPIs()
+  const checkpoints = runtime?.checkpoints
+  if (!runtime?.runtime.isVSCode || !checkpoints?.cleanupSession) return
+
+  try {
+    await checkpoints.cleanupSession(sessionId)
+  } catch (error) {
+    console.warn("[session-actions] failed to cleanup session checkpoints", error)
+  }
+}
+
 async function findRevertCheckpoint(
   sessionId: string,
   messageId: string,
@@ -401,6 +413,7 @@ export async function deleteSession(sessionId: string, _options?: Record<string,
   }
   try {
     await sdk().session.delete({ sessionID: sessionId, directory: sessionDirectory })
+    await cleanupSessionCheckpointsIfAvailable(sessionId)
     useGlobalSessionsStore.getState().removeSessions([sessionId])
     return true
   } catch (error) {
@@ -433,6 +446,7 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
   if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
   try {
     await sdk().session.delete({ sessionID: sessionId, directory })
+    await cleanupSessionCheckpointsIfAvailable(sessionId)
     useGlobalSessionsStore.getState().removeSessions([sessionId])
     return true
   } catch (error) {

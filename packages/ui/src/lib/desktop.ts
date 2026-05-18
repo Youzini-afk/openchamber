@@ -97,6 +97,7 @@ export type DesktopSettings = {
   autoDeleteEnabled?: boolean;
   autoDeleteAfterDays?: number;
   sessionRetentionAction?: 'archive' | 'delete';
+  checkpointRetentionLimit?: number;
   tunnelProvider?: string;
   tunnelMode?: 'quick' | 'managed-remote' | 'managed-local';
   tunnelBootstrapTtlMs?: number | null;

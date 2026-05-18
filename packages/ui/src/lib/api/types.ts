@@ -754,6 +754,20 @@ export interface CheckpointRestoreReviewResult {
   openedDiff?: boolean;
 }
 
+export interface CheckpointCleanupResult {
+  deletedCheckpoints: number;
+  deletedSessions: number;
+  deletedBytes: number;
+  remainingCheckpoints: number;
+}
+
+export interface CheckpointStorageStats {
+  sessionCount: number;
+  checkpointCount: number;
+  totalBytes: number;
+  retentionLimit: number;
+}
+
 export interface CheckpointsAPI {
   create(input: {
     sessionId: string;
@@ -776,6 +790,10 @@ export interface CheckpointsAPI {
     checkpointId: string;
     createSafetyCheckpoint?: boolean;
   }): Promise<CheckpointRestoreResult>;
+  stats?(): Promise<CheckpointStorageStats>;
+  cleanupSession?(sessionId: string): Promise<CheckpointCleanupResult>;
+  cleanupRetention?(limit?: number): Promise<CheckpointCleanupResult>;
+  cleanupAll?(): Promise<CheckpointCleanupResult>;
 }
 
 export interface ProjectEntry {
@@ -816,6 +834,7 @@ export interface SettingsPayload {
   autoDeleteEnabled?: boolean;
   autoDeleteAfterDays?: number;
   sessionRetentionAction?: 'archive' | 'delete';
+  checkpointRetentionLimit?: number;
   queueModeEnabled?: boolean;
   gitmojiEnabled?: boolean;
   inputSpellcheckEnabled?: boolean;

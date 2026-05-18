@@ -11,7 +11,19 @@ const OPENCHAMBER_MAGIC_PROMPTS_PATH = path.join(os.homedir(), '.config', 'openc
 const MAGIC_PROMPTS_FILE_VERSION = 1;
 const MAGIC_PROMPT_ID_PATTERN = /^[a-z0-9._-]{1,160}$/;
 const MAGIC_PROMPT_TEXT_MAX_LENGTH = 200_000;
+const MIN_CHECKPOINT_RETENTION_LIMIT = 1;
+const MAX_CHECKPOINT_RETENTION_LIMIT = 5000;
 const isVisiblePromptId = (id: string): boolean => id.endsWith('.visible');
+
+const normalizeCheckpointRetentionLimit = (value: unknown): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.min(
+    MAX_CHECKPOINT_RETENTION_LIMIT,
+    Math.max(MIN_CHECKPOINT_RETENTION_LIMIT, Math.round(value)),
+  );
+};
 
 const isPathInside = (candidatePath: string, parentPath: string): boolean => {
   const relative = path.relative(parentPath, candidatePath);
@@ -264,9 +276,11 @@ export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
     vscode.window.activeColorTheme.kind === vscode.ColorThemeKind.HighContrastLight
       ? 'light'
       : 'dark';
+  const checkpointRetentionLimit = normalizeCheckpointRetentionLimit(persisted.checkpointRetentionLimit);
 
   return {
     ...persisted,
+    checkpointRetentionLimit,
     themeVariant,
     lastDirectory: workspaceFolder,
     opencodeBinary: persistedOpencodeBinary || undefined,
@@ -301,6 +315,15 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
     restChanges.opencodeBinary = restChanges.opencodeBinary.trim();
   }
 
+  if ('checkpointRetentionLimit' in restChanges) {
+    const normalizedCheckpointLimit = normalizeCheckpointRetentionLimit(restChanges.checkpointRetentionLimit);
+    if (normalizedCheckpointLimit === undefined) {
+      delete restChanges.checkpointRetentionLimit;
+    } else {
+      restChanges.checkpointRetentionLimit = normalizedCheckpointLimit;
+    }
+  }
+
   if ('autoUpdateChecksEnabled' in restChanges && typeof restChanges.autoUpdateChecksEnabled !== 'boolean') {
     delete restChanges.autoUpdateChecksEnabled;
   }
@@ -308,6 +331,14 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // Persistable state = current persisted (no derived fields) + sanitized changes.
   const persistedCurrent = readPersistedSettings(ctx);
   const persistable: Record<string, unknown> = { ...persistedCurrent, ...restChanges };
+  if ('checkpointRetentionLimit' in persistable) {
+    const normalizedCheckpointLimit = normalizeCheckpointRetentionLimit(persistable.checkpointRetentionLimit);
+    if (normalizedCheckpointLimit === undefined) {
+      delete persistable.checkpointRetentionLimit;
+    } else {
+      persistable.checkpointRetentionLimit = normalizedCheckpointLimit;
+    }
+  }
   for (const key of keysToClear) {
     delete persistable[key];
   }
