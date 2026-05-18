@@ -934,6 +934,7 @@ export interface EditorAPI {
 export interface VSCodeAPI {
   executeCommand(command: string, ...args: unknown[]): Promise<unknown>;
   openAgentManager(): Promise<void>;
+  openSettings(settingsPage?: string): Promise<void>;
   openExternalUrl(url: string): Promise<void>;
 }
 

@@ -11,7 +11,7 @@ import {
 import type { VSCodeActiveEditorFile } from '@/sync/input-store';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
-type PanelType = 'chat' | 'agentManager';
+type PanelType = 'chat' | 'agentManager' | 'settings';
 
 declare const __OPENCHAMBER_WEBVIEW_BUILD_TIME__: string;
 
@@ -30,6 +30,7 @@ declare global {
       panelType?: PanelType;
       viewMode?: 'sidebar' | 'editor';
       initialSessionId?: string | null;
+      initialSettingsPage?: string | null;
     };
     __OPENCHAMBER_VSCODE_THEME__?: VSCodeThemePayload['theme'];
     __OPENCHAMBER_VSCODE_SHIKI_THEMES__?: { light?: Record<string, unknown>; dark?: Record<string, unknown> } | null;
@@ -1382,6 +1383,21 @@ onCommand('newSession', () => {
 onCommand('showSettings', () => {
   // Dispatch event to navigate to settings view in VSCodeLayout
   window.dispatchEvent(new CustomEvent('openchamber:navigate', { detail: { view: 'settings' } }));
+});
+
+onCommand('showSettingsPage', (payload) => {
+  const page = typeof payload === 'string'
+    ? payload
+    : payload && typeof payload === 'object' && typeof (payload as { page?: unknown }).page === 'string'
+      ? (payload as { page: string }).page
+      : '';
+  if (!page.trim()) {
+    return;
+  }
+
+  import('@/stores/useUIStore').then(({ useUIStore }) => {
+    useUIStore.getState().setSettingsPage(page.trim());
+  });
 });
 
 // Listen for settings sync command from extension (broadcast to all VS Code webviews)

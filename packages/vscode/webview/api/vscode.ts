@@ -11,6 +11,14 @@ export const createVSCodeActionsAPI = (): VSCodeAPI => ({
     await executeVSCodeCommand('openchamber.openAgentManager');
   },
 
+  async openSettings(settingsPage?: string): Promise<void> {
+    if (settingsPage && settingsPage.trim().length > 0) {
+      await executeVSCodeCommand('openchamber.showSettings', [settingsPage.trim()]);
+      return;
+    }
+    await executeVSCodeCommand('openchamber.showSettings');
+  },
+
   async openExternalUrl(url: string): Promise<void> {
     await openVSCodeExternalUrl(url);
   },

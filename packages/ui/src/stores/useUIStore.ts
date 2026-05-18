@@ -102,6 +102,28 @@ const CONTEXT_PANEL_MAX_LABEL_LENGTH = 120;
 const LEFT_SIDEBAR_MIN_WIDTH = 300;
 const RIGHT_SIDEBAR_MIN_WIDTH = 400;
 
+type VSCodeSettingsRuntime = {
+  openSettings?: (settingsPage?: string) => Promise<void>;
+  executeCommand?: (command: string, ...args: unknown[]) => Promise<unknown>;
+};
+
+const getVSCodeSettingsRuntime = (): VSCodeSettingsRuntime | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const win = window as typeof window & {
+    __VSCODE_CONFIG__?: unknown;
+    __OPENCHAMBER_RUNTIME_APIS__?: { vscode?: VSCodeSettingsRuntime };
+  };
+
+  if (!win.__VSCODE_CONFIG__) {
+    return null;
+  }
+
+  return win.__OPENCHAMBER_RUNTIME_APIS__?.vscode ?? null;
+};
+
 const normalizeDirectoryPath = (value: string): string => {
   if (!value) return '';
 
@@ -1323,6 +1345,19 @@ export const useUIStore = create<UIStore>()(
         },
 
         setSettingsDialogOpen: (open) => {
+          if (open) {
+            const vscodeApi = getVSCodeSettingsRuntime();
+            if (vscodeApi) {
+              const page = get().settingsPage;
+              if (typeof vscodeApi.openSettings === 'function') {
+                void vscodeApi.openSettings(page);
+              } else if (typeof vscodeApi.executeCommand === 'function') {
+                void vscodeApi.executeCommand('openchamber.showSettings', page);
+              }
+              return;
+            }
+          }
+
           set((state) => {
             if (!open) {
               return { isSettingsDialogOpen: false };

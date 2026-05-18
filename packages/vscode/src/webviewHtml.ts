@@ -3,7 +3,7 @@ import * as os from 'os';
 import { getThemeKindName } from './theme';
 import type { ConnectionStatus } from './opencode';
 
-export type PanelType = 'chat' | 'agentManager';
+export type PanelType = 'chat' | 'agentManager' | 'settings';
 
 export interface WebviewHtmlOptions {
   webview: vscode.Webview;
@@ -13,6 +13,7 @@ export interface WebviewHtmlOptions {
   cliAvailable: boolean;
   panelType?: PanelType;
   initialSessionId?: string;
+  initialSettingsPage?: string;
   viewMode?: 'sidebar' | 'editor';
   devServerUrl?: string | null;
   extensionVersion?: string;
@@ -50,6 +51,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
     cliAvailable,
     panelType = 'chat',
     initialSessionId,
+    initialSettingsPage,
     viewMode = 'sidebar',
     devServerUrl,
     extensionVersion = '',
@@ -175,6 +177,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       panelType: "${panelType}",
       viewMode: "${viewMode}",
       initialSessionId: ${initialSessionId ? `"${initialSessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : 'null'},
+      initialSettingsPage: ${initialSettingsPage ? JSON.stringify(initialSettingsPage) : 'null'},
     };
     window.__OPENCHAMBER_HOME__ = "${workspaceFolder.replace(/\\/g, '\\\\')}";
     
