@@ -6,6 +6,7 @@ import { handleFsBridgeMessage } from './bridge-fs-runtime';
 import { handleConfigBridgeMessage } from './bridge-config-runtime';
 import { handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
+import { handleCheckpointBridgeMessage } from './bridge-checkpoint-runtime';
 import {
   fetchOpenCodeSkillsFromApi,
   persistSettings,
@@ -107,6 +108,10 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     );
     if (configResponse) {
       return configResponse;
+    }
+    const checkpointResponse = await handleCheckpointBridgeMessage({ id, type, payload }, ctx);
+    if (checkpointResponse) {
+      return checkpointResponse;
     }
     const systemResponse = await handleSystemBridgeMessage(
       { id, type, payload },

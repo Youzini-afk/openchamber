@@ -45,6 +45,8 @@ import {
   updateSessionTitle as updateSessionTitleAction,
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
+  createLocalMessageId,
+  createMessageCheckpointIfAvailable,
   optimisticSend,
   refetchSessionMessages,
 } from "./session-actions"
@@ -74,13 +76,17 @@ function routeMessage(params: {
   if (params.inputMode === "shell") {
     const sdk = opencodeClient.getSdkClient()
     const dir = opencodeClient.getDirectory() || undefined
-    return sdk.session.shell({
-      sessionID: params.sessionId,
-      directory: dir,
-      agent: params.agent,
-      model: { providerID: params.providerID, modelID: params.modelID },
-      command: params.content,
-    }).then(() => {})
+    const messageID = createLocalMessageId()
+    return createMessageCheckpointIfAvailable(params.sessionId, messageID).then(() =>
+      sdk.session.shell({
+        sessionID: params.sessionId,
+        directory: dir,
+        messageID,
+        agent: params.agent,
+        model: { providerID: params.providerID, modelID: params.modelID },
+        command: params.content,
+      }).then(() => {}),
+    )
   }
 
   // Slash commands — fire and forget, SSE delivers messages and status

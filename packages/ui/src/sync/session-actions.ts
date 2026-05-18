@@ -16,6 +16,10 @@ import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { partitionMessagesByRevert } from "./revert-filter"
 import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
+import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
+import { sessionEvents } from "@/lib/sessionEvents"
+import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from "@/lib/i18n/store"
+import type { CheckpointChangedFile, CheckpointRecord } from "@/lib/api/types"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -94,6 +98,158 @@ export async function waitForConnectionOrThrow(): Promise<void> {
 
 function getSessionDirectory(sessionId: string): string | undefined {
   return useSessionUIStore.getState().getDirectoryForSession(sessionId) || dir()
+}
+
+function t(key: I18nKey, params?: I18nParams): string {
+  return formatMessage(useI18nStore.getState().dictionary, key, params)
+}
+
+export async function createMessageCheckpointIfAvailable(sessionId: string, messageId: string): Promise<void> {
+  const runtime = getRegisteredRuntimeAPIs()
+  const checkpoints = runtime?.checkpoints
+  if (!runtime?.runtime.isVSCode || !checkpoints) return
+
+  const directory = getSessionDirectory(sessionId)
+  if (!directory) return
+
+  try {
+    await checkpoints.create({
+      sessionId,
+      messageId,
+      directory,
+      label: t("chat.checkpoint.label.beforeMessage"),
+      phase: "before-message",
+    })
+  } catch (error) {
+    console.warn("[session-actions] failed to create message checkpoint", error)
+  }
+}
+
+async function findRevertCheckpoint(
+  sessionId: string,
+  messageId: string,
+  targetMessage?: Message,
+): Promise<CheckpointRecord | null> {
+  const runtime = getRegisteredRuntimeAPIs()
+  const checkpoints = runtime?.checkpoints
+  if (!runtime?.runtime.isVSCode || !checkpoints) return null
+
+  const directory = getSessionDirectory(sessionId)
+  if (!directory) return null
+
+  const candidates = new Set<string>([messageId])
+  const parentId = typeof (targetMessage as { parentID?: unknown } | undefined)?.parentID === "string"
+    ? ((targetMessage as { parentID: string }).parentID || "").trim()
+    : ""
+  if (parentId) {
+    candidates.add(parentId)
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const checkpoint = await checkpoints.getForMessage({ sessionId, messageId: candidate, directory })
+      if (checkpoint) return checkpoint
+    } catch (error) {
+      console.warn("[session-actions] failed to lookup checkpoint", error)
+    }
+  }
+
+  return null
+}
+
+function pickDiffPreviewFile(files: CheckpointChangedFile[]): CheckpointChangedFile | null {
+  return files.find((file) => file.type !== "deleted") ?? files[0] ?? null
+}
+
+type CheckpointRestoreChoice = {
+  checkpoint: CheckpointRecord | null
+  cancelRevert?: boolean
+}
+
+async function chooseCheckpointRestore(
+  sessionId: string,
+  messageId: string,
+  targetMessage?: Message,
+): Promise<CheckpointRestoreChoice> {
+  const runtime = getRegisteredRuntimeAPIs()
+  const checkpoints = runtime?.checkpoints
+  if (!runtime?.runtime.isVSCode || !checkpoints) return { checkpoint: null }
+
+  const checkpoint = await findRevertCheckpoint(sessionId, messageId, targetMessage)
+  if (!checkpoint) return { checkpoint: null }
+
+  if (checkpoints.reviewRestore) {
+    try {
+      const review = await checkpoints.reviewRestore({ sessionId, checkpointId: checkpoint.id })
+      if (review.cancelled) {
+        return { checkpoint: null, cancelRevert: true }
+      }
+      return { checkpoint: review.restore ? checkpoint : null }
+    } catch (error) {
+      console.warn("[session-actions] failed to review checkpoint restore", error)
+    }
+  }
+
+  let changedFiles: CheckpointChangedFile[] = []
+  let diffLoaded = false
+  try {
+    changedFiles = (await checkpoints.diff({ sessionId, checkpointId: checkpoint.id })).files
+    diffLoaded = true
+  } catch (error) {
+    console.warn("[session-actions] failed to diff checkpoint", error)
+  }
+
+  if (diffLoaded && changedFiles.length === 0) {
+    return { checkpoint: null }
+  }
+
+  if (changedFiles.length > 0) {
+    const preview = pickDiffPreviewFile(changedFiles)
+    if (preview && typeof window !== "undefined") {
+      const shouldOpenDiff = window.confirm(t("chat.checkpoint.confirm.viewDiff", { count: changedFiles.length }))
+      if (shouldOpenDiff) {
+        try {
+          await checkpoints.openFileDiff({ sessionId, checkpointId: checkpoint.id, filePath: preview.path })
+        } catch (error) {
+          console.warn("[session-actions] failed to open checkpoint diff", error)
+        }
+      }
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    const count = diffLoaded ? changedFiles.length : checkpoint.fileCount
+    const shouldRestore = window.confirm(t("chat.checkpoint.confirm.restore", { count }))
+    return { checkpoint: shouldRestore ? checkpoint : null }
+  }
+
+  return { checkpoint: null }
+}
+
+async function restoreCheckpointAfterRevert(sessionId: string, checkpoint: CheckpointRecord): Promise<void> {
+  const runtime = getRegisteredRuntimeAPIs()
+  const checkpoints = runtime?.checkpoints
+  if (!runtime?.runtime.isVSCode || !checkpoints) return
+
+  try {
+    const result = await checkpoints.restore({
+      sessionId,
+      checkpointId: checkpoint.id,
+      createSafetyCheckpoint: true,
+    })
+    if (!result.success) {
+      throw new Error("Checkpoint restore failed")
+    }
+    if (checkpoint.directory) {
+      sessionEvents.requestGitRefresh({ directory: checkpoint.directory })
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error("[session-actions] failed to restore checkpoint", error)
+    if (typeof window !== "undefined") {
+      window.alert(t("chat.checkpoint.alert.restoreFailed", { message }))
+    }
+  }
 }
 
 function getDirectoryStore(directory?: string) {
@@ -369,6 +525,10 @@ function ascendingId(prefix: string): string {
   return `${prefix}_${hex}${rand}`
 }
 
+export function createLocalMessageId(): string {
+  return ascendingId("msg")
+}
+
 /**
  * Wraps an async send operation with optimistic user-message insertion.
  * Uses useSync()'s optimistic infrastructure — message + parts are inserted
@@ -435,6 +595,7 @@ export async function optimisticSend(input: {
   })
 
   try {
+    await createMessageCheckpointIfAvailable(input.sessionId, messageID)
     await input.send(messageID)
   } catch (error) {
     // Rollback via optimistic infrastructure
@@ -587,6 +748,12 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       .trim()
   }
 
+  const checkpointChoice = await chooseCheckpointRestore(sessionId, messageId, targetMsg)
+  if (checkpointChoice.cancelRevert) {
+    return
+  }
+  const checkpointToRestore = checkpointChoice.checkpoint
+
   // Optimistically remove reverted messages + set marker
   const prevRevert = (() => {
     const s = state.session.find((s) => s.id === sessionId)
@@ -636,6 +803,9 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
         updated[idx] = result.data
         store.setState({ session: updated })
       }
+    }
+    if (checkpointToRestore) {
+      await restoreCheckpointAfterRevert(sessionId, checkpointToRestore)
     }
   } catch (err) {
     // Rollback: restore removed messages + revert marker
