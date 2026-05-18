@@ -575,6 +575,14 @@ async function waitForOpenCodeConnection(delayMs?: number) {
 
 type ConfigRefreshMode = "active" | "projects";
 
+type ConfigRefreshExpectations = {
+  expectedProviderId?: string;
+  expectedProviderPresent?: boolean;
+  expectedAgentName?: string;
+  expectedAgentPresent?: boolean;
+  settleAttempts?: number;
+};
+
 const notifyRealtimePipelineReconnect = () => {
   if (typeof window === "undefined") {
     return;
@@ -596,12 +604,54 @@ const normalizeRefreshScopes = (scopes?: ConfigChangeScope[]): ConfigChangeScope
   return unique;
 };
 
+const normalizeExpectedId = (value?: string): string | null => {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized.length > 0 ? normalized : null;
+};
+
+const isRefreshSettled = (
+  scopes: ConfigChangeScope[],
+  expectations: ConfigRefreshExpectations,
+): boolean => {
+  const configState = useConfigStore.getState();
+  const refreshProviders = scopes.includes("all") || scopes.includes("providers");
+  const refreshAgents = scopes.includes("all") || scopes.includes("agents");
+
+  if (refreshProviders) {
+    const expectedProviderId = normalizeExpectedId(expectations.expectedProviderId);
+    if (expectedProviderId) {
+      const expectedPresent = expectations.expectedProviderPresent !== false;
+      const exists = configState.providers.some((provider) => provider.id === expectedProviderId);
+      if (exists !== expectedPresent) {
+        return false;
+      }
+    } else if (configState.providers.length === 0) {
+      return false;
+    }
+  }
+
+  if (refreshAgents) {
+    const expectedAgentName = normalizeExpectedId(expectations.expectedAgentName);
+    if (expectedAgentName) {
+      const expectedPresent = expectations.expectedAgentPresent !== false;
+      const exists = configState.agents.some((agent) => agent.name === expectedAgentName);
+      if (exists !== expectedPresent) {
+        return false;
+      }
+    } else if (configState.agents.length === 0) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 async function performConfigRefresh(options: {
   message?: string;
   delayMs?: number;
   scopes?: ConfigChangeScope[];
   mode?: ConfigRefreshMode;
-} = {}) {
+} & ConfigRefreshExpectations = {}) {
   const { message, delayMs } = options;
   const scopes = normalizeRefreshScopes(options.scopes);
   const mode: ConfigRefreshMode = options.mode ?? (scopes.includes("all") ? "projects" : "active");
@@ -645,30 +695,54 @@ async function performConfigRefresh(options: {
       useConfigStore.getState().invalidateModelMetadataCache();
     }
 
-    const sdkRefreshTasks: Promise<void>[] = [];
-    for (const directory of directoriesToRefresh) {
-      if (refreshProviders) {
-        sdkRefreshTasks.push(configStore.loadProviders({ directory, force: true }).then(() => undefined));
+    const refreshOnce = async () => {
+      const sdkRefreshTasks: Promise<void>[] = [];
+      for (const directory of directoriesToRefresh) {
+        if (refreshProviders) {
+          sdkRefreshTasks.push(configStore.loadProviders({ directory, force: true }).then(() => undefined));
+        }
+        if (refreshSdkAgents) {
+          sdkRefreshTasks.push(configStore.loadAgents({ directory, force: true }).then(() => undefined));
+        }
       }
-      if (refreshSdkAgents) {
-        sdkRefreshTasks.push(configStore.loadAgents({ directory, force: true }).then(() => undefined));
+
+      const uiRefreshTasks: Promise<void>[] = [];
+      if (refreshAgentConfigs) {
+        uiRefreshTasks.push(agentConfigStore.loadAgents({ force: true }).then(() => undefined));
+      }
+      if (refreshCommands) {
+        uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
+      }
+      if (refreshSkills) {
+        uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
+        uiRefreshTasks.push(skillsCatalogStore.loadCatalog().then(() => undefined));
+      }
+
+      await Promise.all([...sdkRefreshTasks, ...uiRefreshTasks]);
+    };
+
+    const maxAttempts = Math.max(
+      1,
+      options.settleAttempts ?? (refreshProviders || refreshSdkAgents ? 8 : 1),
+    );
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      updateConfigUpdateMessage(
+        maxAttempts > 1
+          ? `Refreshing configuration… (${attempt}/${maxAttempts})`
+          : "Refreshing configuration…",
+      );
+
+      await refreshOnce();
+
+      if (isRefreshSettled(scopes, options)) {
+        break;
+      }
+
+      if (attempt < maxAttempts) {
+        await sleep(Math.min(300 + attempt * 250, 1500));
       }
     }
-
-    const uiRefreshTasks: Promise<void>[] = [];
-    if (refreshAgentConfigs) {
-      uiRefreshTasks.push(agentConfigStore.loadAgents({ force: true }).then(() => undefined));
-    }
-    if (refreshCommands) {
-      uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
-    }
-    if (refreshSkills) {
-      uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
-      uiRefreshTasks.push(skillsCatalogStore.loadCatalog().then(() => undefined));
-    }
-
-    updateConfigUpdateMessage("Refreshing configuration…");
-    await Promise.all([...sdkRefreshTasks, ...uiRefreshTasks]);
   } catch {
     updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
     await sleep(1500);
@@ -682,7 +756,7 @@ export async function refreshAfterOpenCodeRestart(options?: {
   delayMs?: number;
   scopes?: ConfigChangeScope[];
   mode?: ConfigRefreshMode;
-}) {
+} & ConfigRefreshExpectations) {
   await performConfigRefresh(options);
 }
 
@@ -691,21 +765,25 @@ export async function reloadOpenCodeConfiguration(options?: {
   delayMs?: number;
   scopes?: ConfigChangeScope[];
   mode?: ConfigRefreshMode;
-}) {
+  skipServerReload?: boolean;
+} & ConfigRefreshExpectations) {
   startConfigUpdate(options?.message || "Reloading OpenCode configuration…");
 
   try {
+    let payload: { requiresReload?: boolean; message?: string; reloadDelayMs?: number; error?: string } | null = null;
 
-    const response = await fetch('/api/config/reload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    if (!options?.skipServerReload) {
+      const response = await fetch('/api/config/reload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-    const payload = await response.json().catch(() => null);
+      payload = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      const message = payload?.error || 'Failed to reload configuration';
-      throw new Error(message);
+      if (!response.ok) {
+        const message = payload?.error || 'Failed to reload configuration';
+        throw new Error(message);
+      }
     }
 
     const refreshOptions = {

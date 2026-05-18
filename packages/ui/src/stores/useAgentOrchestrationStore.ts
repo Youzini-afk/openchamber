@@ -66,6 +66,13 @@ const readApiError = async (response: Response, fallback: string): Promise<strin
   return typeof payload?.error === 'string' && payload.error.trim() ? payload.error : fallback;
 };
 
+const getExpectedAgentNameForMode = (mode: Exclude<SlimMode, 'conflict'>): string | undefined => {
+  if (mode === 'slim') return 'orchestrator';
+  if (mode === 'omo') return 'sisyphus';
+  if (mode === 'native') return 'build';
+  return undefined;
+};
+
 export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
   devtools(
     (set, get) => ({
@@ -156,6 +163,7 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
               delayMs: payload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
               scopes: ['all'],
               mode: 'projects',
+              expectedAgentName: getExpectedAgentNameForMode(mode),
             });
           }
           await get().loadConfig({ force: true });

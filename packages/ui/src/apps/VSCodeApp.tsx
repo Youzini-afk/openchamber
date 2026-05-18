@@ -16,6 +16,7 @@ import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { SyncProvider } from '@/sync/sync-context';
@@ -35,6 +36,88 @@ declare global {
 type VSCodeAppProps = {
   apis: RuntimeAPIs;
 };
+
+function useVSCodeConfigBootstrap(enabled: boolean) {
+  const [connectionStatus, setConnectionStatus] = React.useState<'connecting' | 'connected' | 'error' | 'disconnected'>(
+    () => (typeof window !== 'undefined'
+      ? (window as { __OPENCHAMBER_CONNECTION__?: { status?: string } }).__OPENCHAMBER_CONNECTION__?.status as
+        'connecting' | 'connected' | 'error' | 'disconnected' | undefined
+      : 'connecting') || 'connecting'
+  );
+
+  React.useEffect(() => {
+    if (!enabled || typeof window === 'undefined') {
+      return;
+    }
+
+    const current = (window as { __OPENCHAMBER_CONNECTION__?: { status?: string } }).__OPENCHAMBER_CONNECTION__?.status as
+      'connecting' | 'connected' | 'error' | 'disconnected' | undefined;
+    if (current === 'connected' || current === 'connecting' || current === 'error' || current === 'disconnected') {
+      setConnectionStatus(current);
+    }
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ status?: string }>).detail;
+      const status = detail?.status;
+      if (status === 'connected' || status === 'connecting' || status === 'error' || status === 'disconnected') {
+        setConnectionStatus(status);
+      }
+    };
+
+    window.addEventListener('openchamber:connection-status', handler as EventListener);
+    return () => window.removeEventListener('openchamber:connection-status', handler as EventListener);
+  }, [enabled]);
+
+  React.useEffect(() => {
+    if (!enabled || connectionStatus !== 'connected') {
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20;
+
+    const hasCoreConfig = () => {
+      const state = useConfigStore.getState();
+      return state.isInitialized && state.isConnected && state.providers.length > 0 && state.agents.length > 0;
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS || hasCoreConfig()) {
+        return;
+      }
+      const delayMs = Math.min(1000 + attempts * 250, 3000);
+      retryTimer = window.setTimeout(() => {
+        void run();
+      }, delayMs);
+    };
+
+    const run = async () => {
+      if (cancelled || hasCoreConfig()) {
+        return;
+      }
+
+      attempts += 1;
+      try {
+        await useConfigStore.getState().initializeApp();
+      } catch {
+        // Retry below; transient failures are expected while OpenCode is restarting.
+      }
+
+      scheduleRetry();
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [connectionStatus, enabled]);
+}
 
 export function VSCodeApp({ apis }: VSCodeAppProps) {
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -69,6 +152,8 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
     registerRuntimeAPIs(apis);
     return () => registerRuntimeAPIs(null);
   }, [apis]);
+
+  useVSCodeConfigBootstrap(panelType === 'settings' || panelType === 'agentManager');
 
   React.useEffect(() => {
     if (panelType !== 'settings' || !initialSettingsPage) {

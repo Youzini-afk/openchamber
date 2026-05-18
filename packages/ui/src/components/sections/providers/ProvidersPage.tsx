@@ -327,7 +327,41 @@ const getCustomProviderModelIdSet = (rows: Array<Pick<CustomProviderModelRow, 'i
   new Set(rows.map(getCustomProviderModelRowId).filter(Boolean))
 );
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const getMutationReloadDelayMs = (payload: unknown, fallback = 0): number => (
+  isRecord(payload) && typeof payload.reloadDelayMs === 'number'
+    ? payload.reloadDelayMs
+    : fallback
+);
+
+const getMutationMessage = (payload: unknown): string | undefined => (
+  isRecord(payload) && typeof payload.message === 'string'
+    ? payload.message
+    : undefined
+);
+
+const refreshProvidersAfterMutation = async (
+  payload: unknown,
+  options: {
+    expectedProviderId?: string;
+    expectedProviderPresent?: boolean;
+    fallbackDelayMs?: number;
+  } = {},
+) => {
+  if (isRecord(payload) && payload.requiresReload === false) {
+    await useConfigStore.getState().loadProviders({ force: true });
+    return;
+  }
+
+  await reloadOpenCodeConfiguration({
+    scopes: ["providers"],
+    mode: "active",
+    skipServerReload: isRecord(payload) && payload.requiresReload === true,
+    delayMs: getMutationReloadDelayMs(payload, options.fallbackDelayMs),
+    message: getMutationMessage(payload),
+    expectedProviderId: options.expectedProviderId,
+    expectedProviderPresent: options.expectedProviderPresent,
+  });
+};
 
 export const ProvidersPage: React.FC = () => {
   const { t } = useI18n();
@@ -563,13 +597,7 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      const reloadDelayMs = isRecord(payload) && typeof payload.reloadDelayMs === 'number'
-        ? payload.reloadDelayMs
-        : 0;
-      if (reloadDelayMs > 0) {
-        await wait(reloadDelayMs);
-      }
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      await refreshProvidersAfterMutation(payload, { expectedProviderId: providerId });
       setSelectedProvider(providerId);
     } catch (error) {
       console.error('Failed to save API key:', error);
@@ -668,7 +696,11 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.oauthCompleted'));
       setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
       setPendingOAuth(null);
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      await reloadOpenCodeConfiguration({
+        scopes: ["providers"],
+        mode: "active",
+        expectedProviderId: providerId,
+      });
       setSelectedProvider(providerId);
     } catch (error) {
       console.error('Failed to complete OAuth flow:', error);
@@ -749,7 +781,10 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      await refreshProvidersAfterMutation(payload, {
+        expectedProviderId: providerId,
+        expectedProviderPresent: false,
+      });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
       toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));
@@ -1012,12 +1047,10 @@ export const ProvidersPage: React.FC = () => {
         throw new Error(message);
       }
 
-      const reloadDelayMs = isRecord(payload) && typeof payload.reloadDelayMs === 'number'
-        ? payload.reloadDelayMs
-        : 800;
-      await wait(reloadDelayMs);
-
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      await refreshProvidersAfterMutation(payload, {
+        expectedProviderId: providerId,
+        fallbackDelayMs: 800,
+      });
       const savedProviderVisible = useConfigStore.getState().providers.some((provider) => provider.id === providerId);
       if (!savedProviderVisible) {
         toast.warning(t('settings.providers.page.toast.customProviderSavedButNotListed'));
