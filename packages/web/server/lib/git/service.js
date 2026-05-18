@@ -1742,20 +1742,32 @@ export async function revertFile(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
   const repoRoot = path.resolve(directoryPath);
-  const absoluteTarget = path.resolve(repoRoot, filePath);
+  const normalizedFilePath = filePath.trim();
 
-  if (!absoluteTarget.startsWith(repoRoot + path.sep) && absoluteTarget !== repoRoot) {
+  if (!normalizedFilePath) {
+    throw new Error('path is required to revert git changes');
+  }
+
+  const absoluteTarget = path.resolve(repoRoot, normalizedFilePath);
+  const comparableRoot = process.platform === 'win32' ? repoRoot.toLowerCase() : repoRoot;
+  const comparableTarget = process.platform === 'win32' ? absoluteTarget.toLowerCase() : absoluteTarget;
+  const rootWithSeparator = comparableRoot.endsWith(path.sep) ? comparableRoot : `${comparableRoot}${path.sep}`;
+
+  if (comparableTarget === comparableRoot || !comparableTarget.startsWith(rootWithSeparator)) {
     throw new Error('Invalid file path');
   }
 
-  const isTracked = await git
-    .raw(['ls-files', '--error-unmatch', filePath])
-    .then(() => true)
+  const existsInHead = await git
+    .raw(['ls-tree', '-r', '--name-only', 'HEAD', '--', normalizedFilePath])
+    .then((stdout) => stdout.split('\n').map((line) => line.trim()).includes(normalizedFilePath))
     .catch(() => false);
 
-  if (!isTracked) {
+  if (!existsInHead) {
+    await git.raw(['restore', '--staged', '--', normalizedFilePath]).catch(() => {});
+    await git.raw(['reset', 'HEAD', '--', normalizedFilePath]).catch(() => {});
+
     try {
-      await git.raw(['clean', '-f', '-d', '--', filePath]);
+      await git.raw(['clean', '-f', '-d', '--', normalizedFilePath]);
       return;
     } catch (cleanError) {
       try {
@@ -1772,16 +1784,12 @@ export async function revertFile(directory, filePath) {
   }
 
   try {
-    await git.raw(['restore', '--staged', filePath]);
+    await git.raw(['restore', '--staged', '--worktree', '--', normalizedFilePath]);
+    return;
   } catch (error) {
-    await git.raw(['reset', 'HEAD', '--', filePath]).catch(() => {});
-  }
-
-  try {
-    await git.raw(['restore', filePath]);
-  } catch (error) {
+    await git.raw(['reset', 'HEAD', '--', normalizedFilePath]).catch(() => {});
     try {
-      await git.raw(['checkout', '--', filePath]);
+      await git.raw(['checkout', '--', normalizedFilePath]);
     } catch (fallbackError) {
       console.error('Failed to revert git file:', fallbackError);
       throw fallbackError;

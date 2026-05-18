@@ -39,6 +39,16 @@ import {
   type SkillsCatalogSourceConfig,
 } from './skillsCatalog';
 import type { BridgeContext, BridgeResponse } from './bridge';
+// Reuse the web runtime's config helpers so VS Code and web manage the same files
+// with the same validation and conflict checks.
+// @ts-ignore The web package currently ships these helpers as JS modules.
+import { readAgentOrchestrationConfig, setAgentOrchestrationMode } from '../../web/server/lib/opencode/agent-orchestration-config.js';
+// @ts-ignore The web package currently ships these helpers as JS modules.
+import { readOpenAgentConfig, saveOpenAgentConfig, setOpenAgentPluginEnabled } from '../../web/server/lib/opencode/openagent-config.js';
+// @ts-ignore The web package currently ships these helpers as JS modules.
+import { readSlimConfig, saveSlimConfig } from '../../web/server/lib/opencode/slim-config.js';
+// @ts-ignore The web package currently ships these helpers as JS modules.
+import { readMagicContextConfig, saveMagicContextConfig } from '../../web/server/lib/opencode/magic-context-config.js';
 
 type BridgeMessageInput = {
   id: string;
@@ -57,8 +67,19 @@ type ConfigRuntimeDeps = {
   clientReloadDelayMs: number;
 };
 
+type ConfigError = Error & { code?: string };
+
 const AGENTS_MD_PATH = path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md');
 const MAX_BEHAVIOR_PROMPT_SIZE = 1024 * 1024;
+
+const configWriteErrorStatus = (error: unknown): number => (
+  (error as ConfigError)?.code === 'CONFIG_MODIFIED' ? 409 : 400
+);
+
+const configErrorPayload = (error: unknown, fallback: string) => ({
+  error: error instanceof Error && error.message ? error.message : fallback,
+  status: configWriteErrorStatus(error),
+});
 
 const resolveWorkingDirectory = (ctx: BridgeContext | undefined, directory?: string): string | undefined => (
   (typeof directory === 'string' && directory.trim())
@@ -208,6 +229,219 @@ export async function handleConfigBridgeMessage(
     case 'api:config/reload': {
       await ctx?.manager?.restart();
       return { id, type, success: true, data: { restarted: true } };
+    }
+
+    case 'api:agent-orchestration:config:get': {
+      const request = (payload || {}) as { directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      const data = readAgentOrchestrationConfig({ directory: workingDirectory });
+      return { id, type, success: true, data };
+    }
+
+    case 'api:agent-orchestration:mode:set': {
+      const request = (payload || {}) as {
+        directory?: string;
+        mode?: string;
+        expectedMtimeMsByPath?: Record<string, number | null>;
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        const config = setAgentOrchestrationMode({
+          directory: workingDirectory,
+          mode: request.mode,
+          expectedMtimeMsByPath: request.expectedMtimeMsByPath,
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: 'Agent orchestration mode updated. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config,
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to update agent orchestration mode'),
+        };
+      }
+    }
+
+    case 'api:agent-orchestration:slim-config:get': {
+      const request = (payload || {}) as { directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      const data = readSlimConfig({ directory: workingDirectory });
+      return { id, type, success: true, data };
+    }
+
+    case 'api:agent-orchestration:slim-config:save': {
+      const request = (payload || {}) as {
+        directory?: string;
+        expectedMtimeMs?: number | null;
+        config?: Record<string, unknown>;
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        saveSlimConfig({
+          expectedMtimeMs: request.expectedMtimeMs ?? null,
+          config: request.config ?? {},
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: 'Slim configuration saved. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config: readSlimConfig({ directory: workingDirectory }),
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to save Slim configuration'),
+        };
+      }
+    }
+
+    case 'api:openagent:config:get': {
+      const request = (payload || {}) as { directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      const data = readOpenAgentConfig({ directory: workingDirectory });
+      return { id, type, success: true, data };
+    }
+
+    case 'api:openagent:config:save': {
+      const request = (payload || {}) as {
+        directory?: string;
+        expectedMtimeMs?: number | null;
+        agents?: Record<string, unknown>;
+        categories?: Record<string, unknown>;
+        disabled_hooks?: unknown[];
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        saveOpenAgentConfig({
+          expectedMtimeMs: request.expectedMtimeMs ?? null,
+          agents: request.agents ?? {},
+          categories: request.categories ?? {},
+          disabled_hooks: Array.isArray(request.disabled_hooks) ? request.disabled_hooks : [],
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: 'Oh My OpenAgent configuration saved. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config: readOpenAgentConfig({ directory: workingDirectory }),
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to save Oh My OpenAgent configuration'),
+        };
+      }
+    }
+
+    case 'api:openagent:plugin:set': {
+      const request = (payload || {}) as {
+        directory?: string;
+        enabled?: boolean;
+        expectedMtimeMs?: number | null;
+        entry?: string;
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        setOpenAgentPluginEnabled({
+          directory: workingDirectory,
+          enabled: request.enabled === true,
+          expectedMtimeMs: request.expectedMtimeMs ?? null,
+          entry: request.entry,
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: request.enabled === true
+              ? 'Oh My OpenAgent plugin enabled. Refreshing interface...'
+              : 'Oh My OpenAgent plugin disabled. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config: readOpenAgentConfig({ directory: workingDirectory }),
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to update Oh My OpenAgent plugin registration'),
+        };
+      }
+    }
+
+    case 'api:magic-context:config:get': {
+      const request = (payload || {}) as { directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      const data = readMagicContextConfig({ directory: workingDirectory });
+      return { id, type, success: true, data };
+    }
+
+    case 'api:magic-context:config:save': {
+      const request = (payload || {}) as {
+        directory?: string;
+        expectedMtimeMs?: number | null;
+        config?: Record<string, unknown>;
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        saveMagicContextConfig({
+          expectedMtimeMs: request.expectedMtimeMs ?? null,
+          config: request.config ?? {},
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: 'Magic Context configuration saved. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config: readMagicContextConfig({ directory: workingDirectory }),
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to save Magic Context configuration'),
+        };
+      }
     }
 
     case 'api:config/agents': {

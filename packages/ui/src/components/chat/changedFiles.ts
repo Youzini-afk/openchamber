@@ -19,10 +19,26 @@ export interface GitChangedFile {
 }
 
 export type ChangedFileEntry = ChangedFile | GitChangedFile;
+export type GitChangeKind = 'created' | 'deleted' | 'modified' | 'renamed' | 'copied';
 
 export const FILE_EDIT_TOOLS = new Set(['edit', 'multiedit', 'write', 'apply_patch', 'create', 'file_write']);
 
 export const isGitFile = (file: ChangedFileEntry): file is GitChangedFile => 'insertions' in file;
+
+const isAbsolutePath = (value: string): boolean => (
+    value.startsWith('/')
+    || value.startsWith('\\\\')
+    || /^[A-Za-z]:[\\/]/.test(value)
+);
+
+export const getGitChangeKind = (file: GitChangedFile): GitChangeKind => {
+    const code = file.status.trim().charAt(0);
+    if (code === '?' || code === 'A') return 'created';
+    if (code === 'D') return 'deleted';
+    if (code === 'R') return 'renamed';
+    if (code === 'C') return 'copied';
+    return 'modified';
+};
 
 const parseCount = (value: unknown): number | undefined => {
     if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value));
@@ -153,8 +169,12 @@ export const extractGitChangedFiles = (
 ): GitChangedFile[] => {
     const result: GitChangedFile[] = [];
     for (const file of files) {
-        const code = file.working_dir !== ' ' ? file.working_dir : file.index;
-        if (code === '!' || code === ' ') continue;
+        const indexCode = file.index.trim();
+        const workingCode = file.working_dir.trim();
+        const code = indexCode === 'A' || workingCode === '?'
+            ? (workingCode === '?' ? '?' : 'A')
+            : (workingCode || indexCode);
+        if (!code || code === '!') continue;
         const stats = diffStats?.[file.path];
         result.push({
             path: file.path.startsWith('/') ? file.path : (directory.endsWith('/') ? directory : directory + '/') + file.path,
@@ -178,6 +198,15 @@ export const toRelativePath = (absolutePath: string, baseDirectory: string): str
         return absPath.slice(base.length) || absPath;
     }
     return absPath;
+};
+
+export const toAbsoluteChangedFilePath = (file: ChangedFileEntry, currentDirectory: string): string => {
+    const rawPath = isGitFile(file) ? (file.relativePath || file.path) : file.path;
+    if (isAbsolutePath(rawPath)) return rawPath;
+
+    const root = currentDirectory.replace(/[\\/]+$/, '');
+    const relativePath = rawPath.replace(/^[\\/]+/, '');
+    return `${root}/${relativePath}`;
 };
 
 export const getDisplayPath = (file: ChangedFileEntry, currentDirectory: string): { fileName: string; dirPart: string } => {

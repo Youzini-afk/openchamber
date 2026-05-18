@@ -375,18 +375,133 @@ function mapStatus(status: Status): string {
   return statusMap[status] || ' ';
 }
 
+async function computeDiffStats(
+  directory: string,
+  files: GitStatusFile[],
+  lightMode: boolean
+): Promise<Record<string, { insertions: number; deletions: number }> | undefined> {
+  if (lightMode) {
+    return undefined;
+  }
+
+  const [stagedStats, workingStats] = await Promise.all([
+    execGit(['diff', '--cached', '--numstat'], directory),
+    execGit(['diff', '--numstat'], directory),
+  ]);
+
+  const diffStats = new Map<string, { insertions: number; deletions: number }>();
+
+  const accumulateStats = (raw: string) => {
+    if (!raw) return;
+    raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const parts = line.split('\t');
+        if (parts.length < 3) return;
+
+        const [insertionsRaw, deletionsRaw, ...pathParts] = parts;
+        const filePath = pathParts.join('\t');
+        if (!filePath) return;
+
+        const insertions = insertionsRaw === '-' ? 0 : parseInt(insertionsRaw, 10) || 0;
+        const deletions = deletionsRaw === '-' ? 0 : parseInt(deletionsRaw, 10) || 0;
+        const existing = diffStats.get(filePath) || { insertions: 0, deletions: 0 };
+        diffStats.set(filePath, {
+          insertions: existing.insertions + insertions,
+          deletions: existing.deletions + deletions,
+        });
+      });
+  };
+
+  if (stagedStats.exitCode === 0) {
+    accumulateStats(stagedStats.stdout);
+  }
+  if (workingStats.exitCode === 0) {
+    accumulateStats(workingStats.stdout);
+  }
+
+  const directoryPath = path.resolve(normalizeDirectoryPath(directory));
+  const comparableRoot = process.platform === 'win32' ? directoryPath.toLowerCase() : directoryPath;
+  const rootWithSeparator = comparableRoot.endsWith(path.sep) ? comparableRoot : `${comparableRoot}${path.sep}`;
+  const MAX_NEW_FILE_STATS = 200;
+  const MAX_NEW_FILE_STAT_SIZE = 1024 * 1024;
+  let newFileStatsCount = 0;
+
+  for (const file of files) {
+    if (newFileStatsCount >= MAX_NEW_FILE_STATS) {
+      break;
+    }
+
+    const working = file.working_dir.trim();
+    const indexStatus = file.index.trim();
+    const statusCode = working || indexStatus;
+    if (statusCode !== '?' && statusCode !== 'A') {
+      continue;
+    }
+
+    const existing = diffStats.get(file.path);
+    if (existing && existing.insertions > 0) {
+      continue;
+    }
+
+    const absolutePath = path.resolve(directoryPath, file.path);
+    const comparableTarget = process.platform === 'win32' ? absolutePath.toLowerCase() : absolutePath;
+    if (comparableTarget === comparableRoot || !comparableTarget.startsWith(rootWithSeparator)) {
+      continue;
+    }
+
+    try {
+      const stat = await fs.promises.stat(absolutePath);
+      if (!stat.isFile() || stat.size > MAX_NEW_FILE_STAT_SIZE) {
+        continue;
+      }
+
+      const buffer = await fs.promises.readFile(absolutePath);
+      if (buffer.indexOf(0) !== -1) {
+        diffStats.set(file.path, {
+          insertions: existing?.insertions ?? 0,
+          deletions: existing?.deletions ?? 0,
+        });
+        newFileStatsCount += 1;
+        continue;
+      }
+
+      const normalized = buffer.toString('utf8').replace(/\r\n/g, '\n');
+      if (!normalized.length) {
+        diffStats.set(file.path, { insertions: 0, deletions: 0 });
+        newFileStatsCount += 1;
+        continue;
+      }
+
+      const segments = normalized.split('\n');
+      if (normalized.endsWith('\n')) {
+        segments.pop();
+      }
+
+      diffStats.set(file.path, { insertions: segments.length, deletions: 0 });
+      newFileStatsCount += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn('Failed to estimate diff stats for new file', file.path, error);
+      }
+    }
+  }
+
+  return Object.fromEntries(diffStats.entries());
+}
+
 /**
  * Get git status for a directory
  */
 export async function getGitStatus(directory: string, options?: GitStatusOptions): Promise<GitStatusResult> {
-  // The VS Code Git API path does not compute heavyweight diff stats today,
-  // but accepts the shared options contract so callers can rely on parity.
-  void options;
+  const lightMode = options?.mode === 'light';
   const repo = await getRepository(directory);
   
   if (!repo) {
     // Fallback to raw git
-    return getGitStatusRaw(directory);
+    return getGitStatusRaw(directory, lightMode);
   }
 
   const state = repo.state;
@@ -421,6 +536,7 @@ export async function getGitStatus(directory: string, options?: GitStatusOptions
 
   // Check for in-progress operations
   const inProgressState = await checkInProgressOperations(directory);
+  const diffStats = await computeDiffStats(directory, files, lightMode);
 
   return {
     current: head?.name || '',
@@ -429,6 +545,7 @@ export async function getGitStatus(directory: string, options?: GitStatusOptions
     behind: head?.behind || 0,
     files,
     isClean: files.length === 0,
+    diffStats,
     ...inProgressState,
   };
 }
@@ -499,7 +616,7 @@ async function checkInProgressOperations(directory: string): Promise<{
 /**
  * Fallback: Get git status using raw git commands
  */
-async function getGitStatusRaw(directory: string): Promise<GitStatusResult> {
+async function getGitStatusRaw(directory: string, lightMode = false): Promise<GitStatusResult> {
   const statusResult = await execGit(['status', '--porcelain=v1', '-b', '-uall'], directory);
   
   if (statusResult.exitCode !== 0) {
@@ -548,6 +665,7 @@ async function getGitStatusRaw(directory: string): Promise<GitStatusResult> {
 
   // Check for in-progress operations
   const inProgressState = await checkInProgressOperations(directory);
+  const diffStats = await computeDiffStats(directory, files, lightMode);
 
   return {
     current,
@@ -556,6 +674,7 @@ async function getGitStatusRaw(directory: string): Promise<GitStatusResult> {
     behind,
     files,
     isClean: files.length === 0,
+    diffStats,
     ...inProgressState,
   };
 }
@@ -2083,19 +2202,52 @@ export async function getGitFileDiff(
  * Revert a file to its last committed state
  */
 export async function revertGitFile(directory: string, filePath: string): Promise<void> {
-  const repo = await getRepository(directory);
-  
-  if (repo) {
-    try {
-      await repo.revert([filePath]);
-      return;
-    } catch (error) {
-      console.error('[GitService] Failed to revert via API:', error);
-    }
+  const normalizedDirectory = normalizeDirectoryPath(directory);
+  const normalizedFilePath = filePath.trim();
+
+  if (!normalizedFilePath) {
+    throw new Error('path is required to revert git changes');
   }
 
-  // Fallback to raw git
-  await execGit(['checkout', '--', filePath], directory);
+  const repoRoot = path.resolve(normalizedDirectory);
+  const absoluteTarget = path.resolve(repoRoot, normalizedFilePath);
+  const comparableRoot = process.platform === 'win32' ? repoRoot.toLowerCase() : repoRoot;
+  const comparableTarget = process.platform === 'win32' ? absoluteTarget.toLowerCase() : absoluteTarget;
+  const rootWithSeparator = comparableRoot.endsWith(path.sep) ? comparableRoot : `${comparableRoot}${path.sep}`;
+
+  if (comparableTarget === comparableRoot || !comparableTarget.startsWith(rootWithSeparator)) {
+    throw new Error('Invalid file path');
+  }
+
+  const headEntry = await execGit(['ls-tree', '-r', '--name-only', 'HEAD', '--', normalizedFilePath], normalizedDirectory);
+  const existsInHead = headEntry.exitCode === 0
+    && headEntry.stdout.split('\n').map((line) => line.trim()).includes(normalizedFilePath);
+
+  if (!existsInHead) {
+    await execGit(['restore', '--staged', '--', normalizedFilePath], normalizedDirectory).catch(() => undefined);
+    await execGit(['reset', 'HEAD', '--', normalizedFilePath], normalizedDirectory).catch(() => undefined);
+
+    const cleanResult = await execGit(['clean', '-f', '-d', '--', normalizedFilePath], normalizedDirectory);
+    if (cleanResult.exitCode === 0) {
+      return;
+    }
+
+    await fs.promises.rm(absoluteTarget, { recursive: true, force: true });
+    return;
+  }
+
+  const restoreResult = await execGit(['restore', '--staged', '--worktree', '--', normalizedFilePath], normalizedDirectory);
+  if (restoreResult.exitCode === 0) {
+    return;
+  }
+
+  await execGit(['reset', 'HEAD', '--', normalizedFilePath], normalizedDirectory).catch(() => undefined);
+  const checkoutResult = await execGit(['checkout', '--', normalizedFilePath], normalizedDirectory);
+  if (checkoutResult.exitCode === 0) {
+    return;
+  }
+
+  throw new Error(checkoutResult.stderr || restoreResult.stderr || 'Failed to revert git changes');
 }
 
 // ============== Commit Operations ==============

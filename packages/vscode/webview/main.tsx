@@ -336,6 +336,40 @@ const buildProxiedResponse = (
   return new Response(body, { status: proxied.status, headers: proxied.headers });
 };
 
+const jsonResponse = (data: unknown, status = 200): Response => (
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+);
+
+const getHeaderValue = (headers: HeadersInit | undefined, name: string): string | undefined => {
+  if (!headers) return undefined;
+  const normalized = headers instanceof Headers ? headers : new Headers(headers);
+  return normalized.get(name) || undefined;
+};
+
+const getRequestedDirectory = (url: URL, init?: RequestInit): string | undefined => (
+  url.searchParams.get('directory')
+  || getHeaderValue(init?.headers, 'x-opencode-directory')
+  || undefined
+);
+
+const readJsonBody = async (init?: RequestInit): Promise<Record<string, unknown>> => {
+  const body = init?.body;
+  if (!body) return {};
+  if (typeof body === 'string') return JSON.parse(body) as Record<string, unknown>;
+  if (body instanceof URLSearchParams) return Object.fromEntries(body.entries());
+  if (body instanceof Blob) return JSON.parse(await body.text()) as Record<string, unknown>;
+  return {};
+};
+
+const bridgePayloadStatus = (data: unknown): number => {
+  if (!data || typeof data !== 'object') return 200;
+  const status = (data as { status?: unknown }).status;
+  return typeof status === 'number' && status >= 100 && status <= 599 ? status : 200;
+};
+
 const encodeBase64 = (bytes: Uint8Array): string => {
   const CHUNK = 0x8000;
   let binary = '';
@@ -845,6 +879,128 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(init.body as string) : {};
     const updated = await sendBridgeMessage('api:config/settings:save', body);
     return new Response(JSON.stringify(updated), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (normalizedPathname === '/api/agent-orchestration/config' && method === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:agent-orchestration:config:get', {
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
+  if (normalizedPathname === '/api/agent-orchestration/mode' && method === 'PATCH') {
+    try {
+      const body = await readJsonBody(init);
+      const data = await sendBridgeMessage('api:agent-orchestration:mode:set', {
+        ...body,
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data, bridgePayloadStatus(data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
+  if (normalizedPathname === '/api/agent-orchestration/slim/config' && method === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:agent-orchestration:slim-config:get', {
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
+  if (normalizedPathname === '/api/agent-orchestration/slim/config' && method === 'PATCH') {
+    try {
+      const body = await readJsonBody(init);
+      const data = await sendBridgeMessage('api:agent-orchestration:slim-config:save', {
+        ...body,
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data, bridgePayloadStatus(data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
+  if (normalizedPathname === '/api/openagent/config') {
+    if (method === 'GET') {
+      try {
+        const data = await sendBridgeMessage('api:openagent:config:get', {
+          directory: getRequestedDirectory(url, init),
+        });
+        return jsonResponse(data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, 500);
+      }
+    }
+
+    if (method === 'PATCH') {
+      try {
+        const body = await readJsonBody(init);
+        const data = await sendBridgeMessage('api:openagent:config:save', {
+          ...body,
+          directory: getRequestedDirectory(url, init),
+        });
+        return jsonResponse(data, bridgePayloadStatus(data));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, 500);
+      }
+    }
+  }
+
+  if (normalizedPathname === '/api/openagent/plugin' && method === 'PATCH') {
+    try {
+      const body = await readJsonBody(init);
+      const data = await sendBridgeMessage('api:openagent:plugin:set', {
+        ...body,
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data, bridgePayloadStatus(data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
+  if (normalizedPathname === '/api/magic-context/config') {
+    if (method === 'GET') {
+      try {
+        const data = await sendBridgeMessage('api:magic-context:config:get', {
+          directory: getRequestedDirectory(url, init),
+        });
+        return jsonResponse(data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, 500);
+      }
+    }
+
+    if (method === 'PATCH') {
+      try {
+        const body = await readJsonBody(init);
+        const data = await sendBridgeMessage('api:magic-context:config:save', {
+          ...body,
+          directory: getRequestedDirectory(url, init),
+        });
+        return jsonResponse(data, bridgePayloadStatus(data));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse({ error: message }, 500);
+      }
+    }
   }
 
   if (normalizedPathname === '/api/behavior/agents-md') {
