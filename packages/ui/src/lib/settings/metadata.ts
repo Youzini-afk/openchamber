@@ -9,6 +9,7 @@ export type SettingsPageSlug =
   | 'agents'
   | 'openagent'
   | 'magic-context'
+  | 'smart-search'
   | 'behavior'
   | 'commands'
   | 'mcp'
@@ -131,6 +132,14 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'opencode',
     kind: 'single',
     keywords: ['magic context', 'opencode-magic-context', 'context', 'memory', 'historian', 'dreamer', 'sidekick'],
+  },
+  {
+    slug: 'smart-search',
+    title: 'Smart Search',
+    group: 'opencode',
+    kind: 'single',
+    keywords: ['smart search', 'smart-search', 'web research', 'search', 'exa', 'context7', 'zhipu', 'tavily', 'firecrawl'],
+    isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
     slug: 'behavior',

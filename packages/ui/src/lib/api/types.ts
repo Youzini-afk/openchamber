@@ -921,6 +921,68 @@ export interface ToolsAPI {
   getAvailableTools(): Promise<string[]>;
 }
 
+export type SmartSearchConfigSource = 'environment' | 'config_file' | 'default';
+
+export interface SmartSearchConfigValue {
+  key: string;
+  isSet: boolean;
+  value?: string;
+  maskedValue?: string;
+  secret: boolean;
+  source: SmartSearchConfigSource;
+  editable: boolean;
+}
+
+export interface SmartSearchPathInfo {
+  ok?: boolean;
+  config_file?: string;
+  config_dir?: string;
+  config_dir_source?: string;
+  default_config_file?: string;
+  legacy_windows_config_file?: string;
+  legacy_windows_config_exists?: boolean;
+  config_dir_override_value?: string;
+  config_dir_override_matches_default?: boolean;
+  exists?: boolean;
+}
+
+export interface SmartSearchConfigResponse {
+  ok: boolean;
+  path?: SmartSearchPathInfo;
+  values: Record<string, SmartSearchConfigValue>;
+  error?: string;
+}
+
+export interface SmartSearchStatusResponse {
+  ok: boolean;
+  available: boolean;
+  binary: string;
+  version?: string;
+  path?: SmartSearchPathInfo;
+  error?: string;
+}
+
+export interface SmartSearchConfigPatch {
+  set?: Record<string, string>;
+  unset?: string[];
+}
+
+export interface SmartSearchDoctorResponse {
+  ok: boolean;
+  exitCode?: number | null;
+  signal?: string | null;
+  result?: Record<string, unknown>;
+  stderr?: string;
+  error?: string;
+}
+
+export interface SmartSearchAPI {
+  status(): Promise<SmartSearchStatusResponse>;
+  loadConfig(): Promise<SmartSearchConfigResponse>;
+  saveConfig(patch: SmartSearchConfigPatch): Promise<SmartSearchConfigResponse>;
+  doctor(): Promise<SmartSearchDoctorResponse>;
+}
+
 export interface EditorAPI {
   openFile(path: string, line?: number, column?: number): Promise<void>;
   openDiff(
@@ -1334,6 +1396,7 @@ export interface RuntimeAPIs {
   mobile?: MobileAPI;
   diagnostics?: DiagnosticsAPI;
   tools: ToolsAPI;
+  smartSearch?: SmartSearchAPI;
   editor?: EditorAPI;
   vscode?: VSCodeAPI;
   worktrees?: WorktreeMetadata[];

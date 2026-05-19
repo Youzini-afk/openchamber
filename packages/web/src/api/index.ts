@@ -10,6 +10,7 @@ import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebWorkspaceAPI } from './workspace';
 import { createWebMobileAPI } from './mobile';
+import { createWebSmartSearchAPI } from './smart-search';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
@@ -24,4 +25,5 @@ export const createWebAPIs = (): RuntimeAPIs => ({
   push: createWebPushAPI(),
   mobile: createWebMobileAPI(),
   tools: createWebToolsAPI(),
+  smartSearch: createWebSmartSearchAPI(),
 });

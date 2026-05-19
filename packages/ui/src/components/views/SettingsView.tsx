@@ -33,6 +33,7 @@ import {
   RiRestartLine,
   RiServerLine,
   RiSlashCommands2,
+  RiSearchEyeLine,
   RiBrainLine,
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -41,6 +42,7 @@ import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
 import { AgentOrchestrationPage } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
 import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
+import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -108,6 +110,7 @@ const pageOrder: SettingsPageSlug[] = [
   'agents',
   'openagent',
   'magic-context',
+  'smart-search',
   'behavior',
   'commands',
   'mcp',
@@ -162,6 +165,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiRobot2Line;
     case 'magic-context':
       return RiBrainLine;
+    case 'smart-search':
+      return RiSearchEyeLine;
     case 'behavior':
       return RiBrainLine;
     case 'commands':
@@ -452,6 +457,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.openagent.title');
       case 'magic-context':
         return t('settings.page.magicContext.title');
+      case 'smart-search':
+        return 'Smart Search';
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':
@@ -543,6 +550,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <AgentOrchestrationPage />;
       case 'magic-context':
         return <MagicContextPage />;
+      case 'smart-search':
+        return <SmartSearchPage />;
       case 'behavior':
         return <BehaviorPage />;
       case 'commands':
