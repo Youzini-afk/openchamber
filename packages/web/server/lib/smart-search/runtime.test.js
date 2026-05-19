@@ -15,12 +15,12 @@ const createSpawn = (handlers) => vi.fn((bin, args) => {
     kill: vi.fn(),
   };
   queueMicrotask(() => {
-    const effectiveArgs = bin === 'cmd.exe' && args.slice(0, 4).join('\0') === ['/d', '/s', '/c', 'smart-search.cmd'].join('\0')
+    const effectiveArgs = bin === 'cmd.exe' && args.slice(0, 3).join('\0') === ['/d', '/s', '/c'].join('\0')
       ? args.slice(4)
       : bin === process.execPath && /smart-search\.js$/.test(args[0] ?? '')
         ? args.slice(1)
       : args;
-    const response = handlers(effectiveArgs, bin);
+    const response = handlers(effectiveArgs, bin, args);
     if (response.error) {
       listeners.error?.(response.error);
       return;
@@ -125,18 +125,19 @@ describe('Smart Search runtime', () => {
     await expect(runtime.patchConfig({ set: { XAI_MODEL: 'file-model' } })).rejects.toThrow(/controlled by environment/);
   });
 
-  it('falls back to sibling npm wrapper when PATH command is missing', async () => {
+  it('falls back to configured global npm bin when PATH command is missing', async () => {
     const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
-    const spawn = createSpawn((args, bin) => {
-      if (bin === 'cmd.exe') return { error: new Error('not found') };
-      if (bin === process.execPath && args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
-      if (bin === process.execPath && args[0] === '--version') return { stdout: '0.1.12\n' };
+    const npmBin = pathModule.join('home', 'AppData', 'Roaming', 'npm', 'smart-search.cmd');
+    const spawn = createSpawn((args, bin, rawArgs) => {
+      if (bin === 'cmd.exe' && rawArgs[3] === 'smart-search.cmd') return { error: new Error('not found') };
+      if (bin === 'cmd.exe' && rawArgs[3] === npmBin && args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+      if (bin === 'cmd.exe' && rawArgs[3] === npmBin && args[0] === '--version') return { stdout: '0.1.12\n' };
       return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
     });
     const runtime = createSmartSearchRuntime({
       fsPromises: {
         access: vi.fn(async (file) => {
-          if (String(file).endsWith(pathModule.join('npm', 'bin', 'smart-search.js'))) return undefined;
+          if (String(file) === npmBin) return undefined;
           throw Object.assign(new Error('missing'), { code: 'ENOENT' });
         }),
         readFile: vi.fn(async () => '{}'),
@@ -146,12 +147,43 @@ describe('Smart Search runtime', () => {
       },
       path: pathModule,
       spawn,
-      env: {},
+      env: { APPDATA: pathModule.join('home', 'AppData', 'Roaming') },
     });
 
     const status = await runtime.getStatus();
 
     expect(status.available).toBe(true);
-    expect(status.binary).toMatch(/smart-search\.js$/);
+    expect(status.binary).toBe(npmBin);
+  });
+
+  it('uses source checkout only when SMART_SEARCH_SOURCE_DIR is explicit', async () => {
+    const sourceDir = pathModule.join('srv', 'smartsearch', 'src');
+    const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
+    const spawn = createSpawn((args, bin) => {
+      if (bin === 'cmd.exe') return { error: new Error('not found') };
+      if (bin === 'python.exe' && args[0] === '-m' && args[2] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+      if (bin === 'python.exe' && args[0] === '-m' && args[2] === '--version') return { stdout: '0.1.12\n' };
+      return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+    });
+    const runtime = createSmartSearchRuntime({
+      fsPromises: {
+        access: vi.fn(async (file) => {
+          if (String(file) === pathModule.join(sourceDir, 'smart_search', 'cli.py')) return undefined;
+          throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        }),
+        readFile: vi.fn(async () => '{}'),
+        mkdir: vi.fn(),
+        writeFile: vi.fn(),
+        rename: vi.fn(),
+      },
+      path: pathModule,
+      spawn,
+      env: { SMART_SEARCH_SOURCE_DIR: sourceDir },
+    });
+
+    const status = await runtime.getStatus();
+
+    expect(status.available).toBe(true);
+    expect(status.binary).toContain(sourceDir);
   });
 });

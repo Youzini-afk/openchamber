@@ -69,6 +69,46 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     return `${addition}${process.platform === 'win32' ? ';' : ':'}${base}`;
   };
 
+  const pushExecutableCandidate = async (candidates, filePath, args) => {
+    if (!filePath || !(await hasFile(filePath))) return;
+    if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(filePath)) {
+      candidates.push({ label: filePath, command: 'cmd.exe', args: ['/d', '/s', '/c', filePath, ...args] });
+      return;
+    }
+    candidates.push({ label: filePath, command: filePath, args });
+  };
+
+  const getGlobalBinCandidates = () => {
+    const home = env.HOME || env.USERPROFILE || '';
+    if (process.platform === 'win32') {
+      return [
+        env.APPDATA ? path.join(env.APPDATA, 'npm', 'smart-search.cmd') : '',
+        env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'pnpm', 'smart-search.cmd') : '',
+        env.APPDATA ? path.join(env.APPDATA, 'pnpm', 'smart-search.cmd') : '',
+        home ? path.join(home, '.bun', 'bin', 'smart-search.cmd') : '',
+        home ? path.join(home, '.bun', 'bin', 'smart-search') : '',
+      ];
+    }
+    return [
+      home ? path.join(home, '.npm-global', 'bin', 'smart-search') : '',
+      home ? path.join(home, '.bun', 'bin', 'smart-search') : '',
+      home ? path.join(home, '.local', 'share', 'pnpm', 'smart-search') : '',
+      '/usr/local/bin/smart-search',
+      '/opt/homebrew/bin/smart-search',
+    ];
+  };
+
+  const getConfiguredSourceDir = async () => {
+    const configured = typeof env.SMART_SEARCH_SOURCE_DIR === 'string' ? env.SMART_SEARCH_SOURCE_DIR.trim() : '';
+    if (!configured) return '';
+    const directCli = path.join(configured, 'smart_search', 'cli.py');
+    if (await hasFile(directCli)) return configured;
+    const nestedSrc = path.join(configured, 'src');
+    const nestedCli = path.join(nestedSrc, 'smart_search', 'cli.py');
+    if (await hasFile(nestedCli)) return nestedSrc;
+    return configured;
+  };
+
   const buildSmartSearchCandidates = async (args) => {
     const binary = resolveSmartSearchBinary(env);
     const candidates = [];
@@ -79,15 +119,12 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     }
 
     if (!env.SMART_SEARCH_BIN) {
-      const siblingRoot = path.resolve(process.cwd(), '..', 'smartsearch');
-      const wrapper = path.join(siblingRoot, 'npm', 'bin', 'smart-search.js');
-      if (await hasFile(wrapper)) {
-        candidates.push({ label: wrapper, command: process.execPath, args: [wrapper, ...args] });
+      for (const candidatePath of getGlobalBinCandidates()) {
+        await pushExecutableCandidate(candidates, candidatePath, args);
       }
 
-      const sourceDir = path.join(siblingRoot, 'src');
-      const cliPy = path.join(sourceDir, 'smart_search', 'cli.py');
-      if (await hasFile(cliPy)) {
+      const sourceDir = await getConfiguredSourceDir();
+      if (sourceDir) {
         candidates.push({
           label: `${sourceDir} via python -m smart_search.cli`,
           command: env.PYTHON || env.PYTHON_BIN || (process.platform === 'win32' ? 'python.exe' : 'python3'),

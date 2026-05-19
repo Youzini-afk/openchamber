@@ -66,7 +66,7 @@ export const settingsDict = {
   'settings.smartSearch.status.config': '配置',
   'settings.smartSearch.status.source': '来源',
   'settings.smartSearch.status.unknown': '未知',
-  'settings.smartSearch.status.installHint': '请使用 npm install -g @konbakuyomu/smart-search 安装，或设置 SMART_SEARCH_BIN，或保留同级 ../smartsearch 源码并安装其 Python 依赖。',
+  'settings.smartSearch.status.installHint': '请使用 npm install -g @konbakuyomu/smart-search 安装，并确保 Web server 进程能看到全局 npm/bun/pnpm bin 目录；也可以设置 SMART_SEARCH_BIN。源码 checkout 必须显式设置 SMART_SEARCH_SOURCE_DIR。',
   'settings.smartSearch.status.doctorPassed': '诊断通过',
   'settings.smartSearch.status.doctorIssues': '诊断发现问题',
   'settings.smartSearch.source.environment': '环境变量覆盖',
