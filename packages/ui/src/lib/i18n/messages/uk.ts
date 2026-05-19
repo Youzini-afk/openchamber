@@ -1,7 +1,8 @@
-import type { I18nKey } from './en';
+import { dict as enDict, type I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
+  ...enDict,
   ...settingsDict,
   "common.loading": "Завантаження...",
   "common.unavailable": "Недоступно",

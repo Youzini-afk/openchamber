@@ -22,6 +22,7 @@ import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLay
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { toast } from '@/components/ui';
 import { useRuntimeAPI } from '@/hooks/useRuntimeAPIs';
+import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type {
   SmartSearchConfigResponse,
@@ -29,6 +30,7 @@ import type {
   SmartSearchDoctorResponse,
   SmartSearchStatusResponse,
 } from '@/lib/api/types';
+import type { I18nKey } from '@/lib/i18n';
 
 const SECRET_PLACEHOLDER = '••••••••••••';
 
@@ -149,11 +151,11 @@ const getConfigText = (entry: SmartSearchConfigValue | undefined): string => {
   return typeof entry.value === 'string' ? entry.value : '';
 };
 
-const getDisplaySource = (entry: SmartSearchConfigValue | undefined): string => {
-  if (!entry) return 'default';
-  if (entry.source === 'environment') return 'env override';
-  if (entry.source === 'config_file') return 'config file';
-  return 'default';
+const getDisplaySourceKey = (entry: SmartSearchConfigValue | undefined): I18nKey => {
+  if (!entry) return 'settings.smartSearch.source.default';
+  if (entry.source === 'environment') return 'settings.smartSearch.source.environment';
+  if (entry.source === 'config_file') return 'settings.smartSearch.source.configFile';
+  return 'settings.smartSearch.source.default';
 };
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
@@ -177,12 +179,14 @@ function SmartSearchField({
   draft,
   onChange,
   onUnset,
+  t,
 }: {
   field: FieldDefinition;
   entry?: SmartSearchConfigValue;
   draft: Record<string, string>;
   onChange: (key: string, value: string) => void;
   onUnset: (key: string) => void;
+  t: (key: I18nKey, params?: Record<string, string | number | boolean | null | undefined>) => string;
 }) {
   const editable = entry?.editable !== false;
   const current = draft[field.key] ?? getConfigText(entry);
@@ -195,7 +199,7 @@ function SmartSearchField({
         <Input
           type="password"
           value={current}
-          placeholder={entry?.isSet ? `${SECRET_PLACEHOLDER} (${entry.maskedValue ?? 'set'})` : 'Not configured'}
+          placeholder={entry?.isSet ? `${SECRET_PLACEHOLDER} (${entry.maskedValue ?? t('settings.smartSearch.secret.set')})` : t('settings.smartSearch.secret.notConfigured')}
           onChange={(event) => onChange(field.key, event.target.value)}
           disabled={!editable}
           className="font-mono"
@@ -224,7 +228,7 @@ function SmartSearchField({
       return (
         <label className="flex items-center gap-2 rounded-md border border-border bg-[var(--surface-elevated)] px-3 py-2">
           <Checkbox checked={checked} onChange={(next) => onChange(field.key, next ? 'true' : 'false')} disabled={!editable} />
-          <span className="typography-ui text-foreground">{checked ? 'Enabled' : 'Disabled'}</span>
+          <span className="typography-ui text-foreground">{checked ? t('settings.smartSearch.boolean.enabled') : t('settings.smartSearch.boolean.disabled')}</span>
         </label>
       );
     }
@@ -277,17 +281,17 @@ function SmartSearchField({
         <div className="min-w-0">
           <div className="typography-ui-label text-foreground">{field.label}</div>
           <div className="typography-micro text-muted-foreground">
-            <span className="font-mono">{field.key}</span> · {getDisplaySource(entry)}
+            <span className="font-mono">{field.key}</span> · {t(getDisplaySourceKey(entry))}
             {entry?.secret && entry.isSet && entry.maskedValue ? ` · ${entry.maskedValue}` : ''}
-            {!entry?.isSet && current ? ` · default ${current}` : ''}
+            {!entry?.isSet && current ? ` · ${t('settings.smartSearch.source.defaultValue', { value: current })}` : ''}
           </div>
           {field.description && <div className="typography-micro text-muted-foreground/80">{field.description}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {isDirty && <span className="typography-micro text-[var(--status-warning)]">modified</span>}
+          {isDirty && <span className="typography-micro text-[var(--status-warning)]">{t('settings.smartSearch.status.modified')}</span>}
           {entry?.isSet && editable && (
             <Button variant="ghost" size="xs" type="button" onClick={() => onUnset(field.key)}>
-              Unset
+              {t('settings.smartSearch.actions.unset')}
             </Button>
           )}
         </div>
@@ -296,7 +300,7 @@ function SmartSearchField({
       {showEnvWarning && (
         <div className="flex items-start gap-2 rounded-md border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-3 py-2 typography-micro text-[var(--status-warning)]">
           <RiInformationLine className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          This value is controlled by an environment variable. Editing the config file would not affect runtime behavior.
+          {t('settings.smartSearch.envWarning')}
         </div>
       )}
     </div>
@@ -311,6 +315,7 @@ function FieldGroup({
   draft,
   onChange,
   onUnset,
+  t,
   divider,
 }: {
   title: string;
@@ -320,6 +325,7 @@ function FieldGroup({
   draft: Record<string, string>;
   onChange: (key: string, value: string) => void;
   onUnset: (key: string) => void;
+  t: (key: I18nKey, params?: Record<string, string | number | boolean | null | undefined>) => string;
   divider?: boolean;
 }) {
   return (
@@ -333,6 +339,7 @@ function FieldGroup({
             draft={draft}
             onChange={onChange}
             onUnset={onUnset}
+            t={t}
           />
         ))}
       </div>
@@ -341,6 +348,7 @@ function FieldGroup({
 }
 
 export const SmartSearchPage: React.FC = () => {
+  const { t } = useI18n();
   const api = useRuntimeAPI((apis) => apis.smartSearch);
   const [status, setStatus] = React.useState<SmartSearchStatusResponse | null>(null);
   const [config, setConfig] = React.useState<SmartSearchConfigResponse | null>(null);
@@ -363,11 +371,11 @@ export const SmartSearchPage: React.FC = () => {
       setDraft({});
       setUnsetKeys(new Set());
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to load Smart Search configuration');
+      toast.error(error instanceof Error ? error.message : t('settings.smartSearch.toast.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, t]);
 
   React.useEffect(() => {
     void refresh();
@@ -404,13 +412,13 @@ export const SmartSearchPage: React.FC = () => {
       setConfig(response);
       setDraft({});
       setUnsetKeys(new Set());
-      toast.success('Smart Search configuration saved');
+      toast.success(t('settings.smartSearch.toast.saved'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to save Smart Search configuration');
+      toast.error(error instanceof Error ? error.message : t('settings.smartSearch.toast.saveFailed'));
     } finally {
       setSaving(false);
     }
-  }, [api, draft, unsetKeys]);
+  }, [api, draft, t, unsetKeys]);
 
   const runDoctor = React.useCallback(async () => {
     if (!api || doctorRunning) return;
@@ -419,23 +427,23 @@ export const SmartSearchPage: React.FC = () => {
       const result = await api.doctor();
       setDoctor(result);
       if (result.ok) {
-        toast.success('Smart Search doctor passed');
+        toast.success(t('settings.smartSearch.toast.doctorPassed'));
       } else {
-        toast.error('Smart Search doctor reported issues');
+        toast.error(t('settings.smartSearch.toast.doctorIssues'));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to run Smart Search doctor');
+      toast.error(error instanceof Error ? error.message : t('settings.smartSearch.toast.doctorFailed'));
     } finally {
       setDoctorRunning(false);
     }
-  }, [api, doctorRunning]);
+  }, [api, doctorRunning, t]);
 
   if (!api) {
     return (
       <SettingsPageLayout>
-        <SettingsSection title="Smart Search" description="This runtime does not expose Smart Search configuration APIs.">
+        <SettingsSection title={t('settings.page.smartSearch.title')} description={t('settings.smartSearch.unavailable.description')}>
           <div className="rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-muted-foreground">
-            Smart Search settings are available in the Web runtime.
+            {t('settings.smartSearch.unavailable.body')}
           </div>
         </SettingsSection>
       </SettingsPageLayout>
@@ -446,42 +454,45 @@ export const SmartSearchPage: React.FC = () => {
     <SettingsPageLayout className="max-w-4xl">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="typography-title text-foreground">Smart Search</h1>
+          <h1 className="typography-title text-foreground">{t('settings.page.smartSearch.title')}</h1>
           <p className="typography-ui text-muted-foreground">
-            Configure the local smart-search CLI used for web research, source discovery, docs lookup, and fetch/map tools.
+            {t('settings.smartSearch.description')}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" onClick={() => void refresh()} disabled={loading || saving}>
             <RiRefreshLine className="h-4 w-4" />
-            Refresh
+            {t('settings.smartSearch.actions.refresh')}
           </Button>
           <Button onClick={() => void save()} disabled={!dirty || saving}>
             <RiSaveLine className="h-4 w-4" />
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('settings.smartSearch.actions.saving') : t('settings.smartSearch.actions.save')}
           </Button>
         </div>
       </div>
 
-      <SettingsSection title="Status" description="CLI availability, active config path, and live provider diagnostics.">
+      <SettingsSection title={t('settings.smartSearch.section.status.title')} description={t('settings.smartSearch.section.status.description')}>
         <div className="grid gap-3 rounded-lg border border-border bg-[var(--surface-elevated)] p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill ok={Boolean(status?.available)} label={status?.available ? 'CLI available' : 'CLI unavailable'} />
-            {dirty && <span className="typography-micro text-[var(--status-warning)]">Unsaved changes</span>}
+            <StatusPill ok={Boolean(status?.available)} label={status?.available ? t('settings.smartSearch.status.cliAvailable') : t('settings.smartSearch.status.cliUnavailable')} />
+            {dirty && <span className="typography-micro text-[var(--status-warning)]">{t('settings.smartSearch.status.unsaved')}</span>}
           </div>
           <div className="grid gap-1 typography-micro text-muted-foreground">
-            <div>Binary: <span className="font-mono text-foreground">{status?.binary ?? 'smart-search'}</span></div>
-            <div>Version: <span className="font-mono text-foreground">{status?.version || 'unknown'}</span></div>
-            <div>Config: <span className="font-mono text-foreground break-all">{config?.path?.config_file ?? status?.path?.config_file ?? 'unknown'}</span></div>
-            <div>Source: <span className="font-mono text-foreground">{config?.path?.config_dir_source ?? status?.path?.config_dir_source ?? 'unknown'}</span></div>
+            <div>{t('settings.smartSearch.status.binary')}: <span className="font-mono text-foreground">{status?.binary ?? 'smart-search'}</span></div>
+            <div>{t('settings.smartSearch.status.version')}: <span className="font-mono text-foreground">{status?.version || t('settings.smartSearch.status.unknown')}</span></div>
+            <div>{t('settings.smartSearch.status.config')}: <span className="font-mono text-foreground break-all">{config?.path?.config_file ?? status?.path?.config_file ?? t('settings.smartSearch.status.unknown')}</span></div>
+            <div>{t('settings.smartSearch.status.source')}: <span className="font-mono text-foreground">{config?.path?.config_dir_source ?? status?.path?.config_dir_source ?? t('settings.smartSearch.status.unknown')}</span></div>
             {status?.error && <div className="text-[var(--status-error)]">{status.error}</div>}
+            {!status?.available && (
+              <div className="text-muted-foreground">{t('settings.smartSearch.status.installHint')}</div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => void runDoctor()} disabled={doctorRunning || !status?.available}>
               <RiStethoscopeLine className="h-4 w-4" />
-              {doctorRunning ? 'Running doctor…' : 'Run doctor'}
+              {doctorRunning ? t('settings.smartSearch.actions.runningDoctor') : t('settings.smartSearch.actions.runDoctor')}
             </Button>
-            {doctor && <StatusPill ok={doctor.ok} label={doctor.ok ? 'Doctor passed' : 'Doctor issues'} />}
+            {doctor && <StatusPill ok={doctor.ok} label={doctor.ok ? t('settings.smartSearch.status.doctorPassed') : t('settings.smartSearch.status.doctorIssues')} />}
           </div>
           {doctor?.result && (
             <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 typography-micro text-foreground">
@@ -496,12 +507,12 @@ export const SmartSearchPage: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <FieldGroup title="Main search" description="Primary providers for direct web research answers." fields={MAIN_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
-      <FieldGroup title="Docs and source discovery" description="Supplemental providers for source-first search and documentation lookup." fields={DOC_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
-      <FieldGroup title="Chinese and current web search" description="Zhipu Web Search settings for Chinese/current information routes." fields={CHINA_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
-      <FieldGroup title="Fetch and site map" description="Tavily and Firecrawl are used for page extraction, search fallback, and site maps." fields={CRAWL_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
-      <FieldGroup title="Strategy" description="Validation, fallback, retry, and TLS behavior." fields={STRATEGY_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
-      <FieldGroup title="Diagnostics and logs" description="Debug logging and output cleanup controls." fields={LOG_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} divider />
+      <FieldGroup title={t('settings.smartSearch.section.main.title')} description={t('settings.smartSearch.section.main.description')} fields={MAIN_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
+      <FieldGroup title={t('settings.smartSearch.section.docs.title')} description={t('settings.smartSearch.section.docs.description')} fields={DOC_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
+      <FieldGroup title={t('settings.smartSearch.section.china.title')} description={t('settings.smartSearch.section.china.description')} fields={CHINA_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
+      <FieldGroup title={t('settings.smartSearch.section.crawl.title')} description={t('settings.smartSearch.section.crawl.description')} fields={CRAWL_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
+      <FieldGroup title={t('settings.smartSearch.section.strategy.title')} description={t('settings.smartSearch.section.strategy.description')} fields={STRATEGY_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
+      <FieldGroup title={t('settings.smartSearch.section.logs.title')} description={t('settings.smartSearch.section.logs.description')} fields={LOG_FIELDS} config={config} draft={draft} onChange={updateDraft} onUnset={unsetField} t={t} divider />
     </SettingsPageLayout>
   );
 };

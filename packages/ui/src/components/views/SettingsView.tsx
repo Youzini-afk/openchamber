@@ -458,7 +458,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'magic-context':
         return t('settings.page.magicContext.title');
       case 'smart-search':
-        return 'Smart Search';
+        return t('settings.page.smartSearch.title');
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':

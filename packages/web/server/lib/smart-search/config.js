@@ -80,6 +80,11 @@ export const resolveSmartSearchBinary = (env = process.env) => {
   return override || DEFAULT_BIN;
 };
 
+export const resolveSmartSearchBinaryLabel = (env = process.env) => {
+  const override = typeof env.SMART_SEARCH_BIN === 'string' ? env.SMART_SEARCH_BIN.trim() : '';
+  return override || 'auto';
+};
+
 export const getSmartSearchDefaultValue = (key) => DEFAULT_VALUES[key] ?? '';
 
 export const maskSmartSearchSecret = (value) => {

@@ -17,6 +17,8 @@ const createSpawn = (handlers) => vi.fn((bin, args) => {
   queueMicrotask(() => {
     const effectiveArgs = bin === 'cmd.exe' && args.slice(0, 4).join('\0') === ['/d', '/s', '/c', 'smart-search.cmd'].join('\0')
       ? args.slice(4)
+      : bin === process.execPath && /smart-search\.js$/.test(args[0] ?? '')
+        ? args.slice(1)
       : args;
     const response = handlers(effectiveArgs, bin);
     if (response.error) {
@@ -121,5 +123,35 @@ describe('Smart Search runtime', () => {
     });
 
     await expect(runtime.patchConfig({ set: { XAI_MODEL: 'file-model' } })).rejects.toThrow(/controlled by environment/);
+  });
+
+  it('falls back to sibling npm wrapper when PATH command is missing', async () => {
+    const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
+    const spawn = createSpawn((args, bin) => {
+      if (bin === 'cmd.exe') return { error: new Error('not found') };
+      if (bin === process.execPath && args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+      if (bin === process.execPath && args[0] === '--version') return { stdout: '0.1.12\n' };
+      return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+    });
+    const runtime = createSmartSearchRuntime({
+      fsPromises: {
+        access: vi.fn(async (file) => {
+          if (String(file).endsWith(pathModule.join('npm', 'bin', 'smart-search.js'))) return undefined;
+          throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        }),
+        readFile: vi.fn(async () => '{}'),
+        mkdir: vi.fn(),
+        writeFile: vi.fn(),
+        rename: vi.fn(),
+      },
+      path: pathModule,
+      spawn,
+      env: {},
+    });
+
+    const status = await runtime.getStatus();
+
+    expect(status.available).toBe(true);
+    expect(status.binary).toMatch(/smart-search\.js$/);
   });
 });

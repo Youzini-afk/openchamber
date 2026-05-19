@@ -1,4 +1,4 @@
-import { buildSmartSearchConfigResponse, normalizeSmartSearchPatch, redactSmartSearchPayload, redactSmartSearchSecrets, resolveSmartSearchBinary } from './config.js';
+import { buildSmartSearchConfigResponse, normalizeSmartSearchPatch, redactSmartSearchPayload, redactSmartSearchSecrets, resolveSmartSearchBinary, resolveSmartSearchBinaryLabel } from './config.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_OUTPUT_LIMIT_BYTES = 1024 * 1024;
@@ -55,12 +55,49 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   let doctorInFlight = null;
   let writeQueue = Promise.resolve();
 
-  const resolveSpawnCommand = (args) => {
-    const binary = resolveSmartSearchBinary(env);
-    if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(binary)) {
-      return { command: 'cmd.exe', args: ['/d', '/s', '/c', binary, ...args] };
+  const hasFile = async (filePath) => {
+    try {
+      await fsPromises.access(filePath);
+      return true;
+    } catch {
+      return false;
     }
-    return { command: binary, args };
+  };
+
+  const prependPathValue = (base, addition) => {
+    if (!base) return addition;
+    return `${addition}${process.platform === 'win32' ? ';' : ':'}${base}`;
+  };
+
+  const buildSmartSearchCandidates = async (args) => {
+    const binary = resolveSmartSearchBinary(env);
+    const candidates = [];
+    if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(binary)) {
+      candidates.push({ label: binary, command: 'cmd.exe', args: ['/d', '/s', '/c', binary, ...args] });
+    } else {
+      candidates.push({ label: binary, command: binary, args });
+    }
+
+    if (!env.SMART_SEARCH_BIN) {
+      const siblingRoot = path.resolve(process.cwd(), '..', 'smartsearch');
+      const wrapper = path.join(siblingRoot, 'npm', 'bin', 'smart-search.js');
+      if (await hasFile(wrapper)) {
+        candidates.push({ label: wrapper, command: process.execPath, args: [wrapper, ...args] });
+      }
+
+      const sourceDir = path.join(siblingRoot, 'src');
+      const cliPy = path.join(sourceDir, 'smart_search', 'cli.py');
+      if (await hasFile(cliPy)) {
+        candidates.push({
+          label: `${sourceDir} via python -m smart_search.cli`,
+          command: env.PYTHON || env.PYTHON_BIN || (process.platform === 'win32' ? 'python.exe' : 'python3'),
+          args: ['-m', 'smart_search.cli', ...args],
+          env: { PYTHONPATH: prependPathValue(env.PYTHONPATH || '', sourceDir) },
+        });
+      }
+    }
+
+    return candidates;
   };
 
   const killProcessTree = (child) => {
@@ -81,14 +118,14 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     }
   };
 
-  const runCli = (args, options = {}) => new Promise((resolve, reject) => {
+  const runCliCandidate = (candidate, options = {}) => new Promise((resolve, reject) => {
     const childEnv = {
       ...env,
+      ...(candidate.env ?? {}),
       PYTHONIOENCODING: env.PYTHONIOENCODING || 'utf-8',
       PYTHONUTF8: env.PYTHONUTF8 || '1',
     };
-    const spawnCommand = resolveSpawnCommand(args);
-    const child = spawn(spawnCommand.command, spawnCommand.args, {
+    const child = spawn(candidate.command, candidate.args, {
       shell: false,
       windowsHide: true,
       detached: process.platform !== 'win32',
@@ -125,7 +162,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(makeEndpointError('Smart Search CLI is not available. Install @konbakuyomu/smart-search or set SMART_SEARCH_BIN.', 503, redactSmartSearchSecrets(error.message)));
+      reject(makeEndpointError(`Smart Search candidate failed to start: ${candidate.label}`, 503, redactSmartSearchSecrets(error.message)));
     });
     child.on('close', (code, signal) => {
       if (settled) return;
@@ -135,9 +172,29 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
         reject(makeEndpointError('Smart Search command output exceeded the safety limit.', 502));
         return;
       }
-      resolve({ code, signal, stdout, stderr });
+      resolve({ code, signal, stdout, stderr, label: candidate.label });
     });
   });
+
+  const runCli = async (args, options = {}) => {
+    const candidates = await buildSmartSearchCandidates(args);
+    const failures = [];
+    for (const candidate of candidates) {
+      try {
+        const result = await runCliCandidate(candidate, options);
+        if (options.allowNonZero || result.code === 0) {
+          return result;
+        }
+        failures.push(`${candidate.label}: exit ${result.code}${result.stderr ? `, ${redactSmartSearchSecrets(result.stderr.trim())}` : ''}`);
+      } catch (error) {
+        failures.push(`${candidate.label}: ${redactSmartSearchSecrets(error?.details || error?.message || 'failed')}`);
+      }
+    }
+    throw makeEndpointError(
+      `Smart Search CLI is not available. Tried ${candidates.length} candidate(s). ${failures.join(' | ')}`,
+      503,
+    );
+  };
 
   const getPathInfo = async () => {
     const result = await runCli(['config', 'path', '--format', 'json'], { timeoutMs: 20_000, outputLimitBytes: 256 * 1024 });
@@ -224,7 +281,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
       return {
         ok: true,
         available: true,
-        binary: resolveSmartSearchBinary(env),
+        binary: versionResult?.label || pathInfo?.binary || resolveSmartSearchBinaryLabel(env),
         version,
         path: pathInfo,
       };
@@ -232,7 +289,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
       return {
         ok: false,
         available: false,
-        binary: resolveSmartSearchBinary(env),
+        binary: resolveSmartSearchBinaryLabel(env),
         error: redactSmartSearchSecrets(error?.message || 'Smart Search is not available.'),
       };
     }
@@ -241,7 +298,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   const runDoctor = async () => {
     if (doctorInFlight) return doctorInFlight;
     doctorInFlight = (async () => {
-      const result = await runCli(['doctor', '--format', 'json'], { timeoutMs, outputLimitBytes });
+      const result = await runCli(['doctor', '--format', 'json'], { timeoutMs, outputLimitBytes, allowNonZero: true });
       const parsed = parseJsonOutput(result.stdout);
       return {
         ok: Boolean(parsed?.ok),
