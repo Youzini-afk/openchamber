@@ -125,19 +125,19 @@ describe('Smart Search runtime', () => {
     await expect(runtime.patchConfig({ set: { XAI_MODEL: 'file-model' } })).rejects.toThrow(/controlled by environment/);
   });
 
-  it('falls back to configured global npm bin when PATH command is missing', async () => {
+  it('uses installed npm package wrapper before PATH command', async () => {
     const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
-    const npmBin = pathModule.join('home', 'AppData', 'Roaming', 'npm', 'smart-search.cmd');
-    const spawn = createSpawn((args, bin, rawArgs) => {
-      if (bin === 'cmd.exe' && rawArgs[3] === 'smart-search.cmd') return { error: new Error('not found') };
-      if (bin === 'cmd.exe' && rawArgs[3] === npmBin && args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
-      if (bin === 'cmd.exe' && rawArgs[3] === npmBin && args[0] === '--version') return { stdout: '0.1.12\n' };
+    const packageRoot = pathModule.join('app', 'node_modules', '@konbakuyomu', 'smart-search');
+    const packageWrapper = pathModule.join(packageRoot, 'npm', 'bin', 'smart-search.js');
+    const spawn = createSpawn((args, bin) => {
+      if (bin === process.execPath && args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
+      if (bin === process.execPath && args[0] === '--version') return { stdout: '0.1.12\n' };
       return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
     });
     const runtime = createSmartSearchRuntime({
       fsPromises: {
         access: vi.fn(async (file) => {
-          if (String(file) === npmBin) return undefined;
+          if (String(file) === packageWrapper) return undefined;
           throw Object.assign(new Error('missing'), { code: 'ENOENT' });
         }),
         readFile: vi.fn(async () => '{}'),
@@ -147,13 +147,14 @@ describe('Smart Search runtime', () => {
       },
       path: pathModule,
       spawn,
-      env: { APPDATA: pathModule.join('home', 'AppData', 'Roaming') },
+      env: {},
+      resolvePackageRoot: () => packageRoot,
     });
 
     const status = await runtime.getStatus();
 
     expect(status.available).toBe(true);
-    expect(status.binary).toBe(npmBin);
+    expect(status.binary).toBe('@konbakuyomu/smart-search package');
   });
 
   it('uses source checkout only when SMART_SEARCH_SOURCE_DIR is explicit', async () => {

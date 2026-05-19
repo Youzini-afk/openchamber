@@ -66,7 +66,7 @@ export const settingsDict = {
   'settings.smartSearch.status.config': 'Config',
   'settings.smartSearch.status.source': 'Source',
   'settings.smartSearch.status.unknown': 'unknown',
-  'settings.smartSearch.status.installHint': 'Install with npm install -g @konbakuyomu/smart-search, ensure the global npm/bun/pnpm bin directory is visible to the web server process, or set SMART_SEARCH_BIN. Source checkouts require explicit SMART_SEARCH_SOURCE_DIR.',
+  'settings.smartSearch.status.installHint': 'Install @konbakuyomu/smart-search where the Web server can resolve it, ensure smart-search is on the Web server PATH, or set SMART_SEARCH_BIN. Source checkouts require explicit SMART_SEARCH_SOURCE_DIR.',
   'settings.smartSearch.status.doctorPassed': 'Doctor passed',
   'settings.smartSearch.status.doctorIssues': 'Doctor issues',
   'settings.smartSearch.source.environment': 'env override',

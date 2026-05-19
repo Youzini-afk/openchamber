@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { buildSmartSearchConfigResponse, normalizeSmartSearchPatch, redactSmartSearchPayload, redactSmartSearchSecrets, resolveSmartSearchBinary, resolveSmartSearchBinaryLabel } from './config.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -44,6 +45,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     path,
     spawn,
     env = process.env,
+    resolvePackageRoot,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     outputLimitBytes = DEFAULT_OUTPUT_LIMIT_BYTES,
   } = dependencies;
@@ -69,33 +71,14 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     return `${addition}${process.platform === 'win32' ? ';' : ':'}${base}`;
   };
 
-  const pushExecutableCandidate = async (candidates, filePath, args) => {
-    if (!filePath || !(await hasFile(filePath))) return;
-    if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(filePath)) {
-      candidates.push({ label: filePath, command: 'cmd.exe', args: ['/d', '/s', '/c', filePath, ...args] });
-      return;
+  const resolveInstalledPackageRoot = () => {
+    if (typeof resolvePackageRoot === 'function') return resolvePackageRoot();
+    try {
+      const requireFromHere = createRequire(import.meta.url);
+      return path.dirname(requireFromHere.resolve('@konbakuyomu/smart-search/package.json'));
+    } catch {
+      return '';
     }
-    candidates.push({ label: filePath, command: filePath, args });
-  };
-
-  const getGlobalBinCandidates = () => {
-    const home = env.HOME || env.USERPROFILE || '';
-    if (process.platform === 'win32') {
-      return [
-        env.APPDATA ? path.join(env.APPDATA, 'npm', 'smart-search.cmd') : '',
-        env.LOCALAPPDATA ? path.join(env.LOCALAPPDATA, 'pnpm', 'smart-search.cmd') : '',
-        env.APPDATA ? path.join(env.APPDATA, 'pnpm', 'smart-search.cmd') : '',
-        home ? path.join(home, '.bun', 'bin', 'smart-search.cmd') : '',
-        home ? path.join(home, '.bun', 'bin', 'smart-search') : '',
-      ];
-    }
-    return [
-      home ? path.join(home, '.npm-global', 'bin', 'smart-search') : '',
-      home ? path.join(home, '.bun', 'bin', 'smart-search') : '',
-      home ? path.join(home, '.local', 'share', 'pnpm', 'smart-search') : '',
-      '/usr/local/bin/smart-search',
-      '/opt/homebrew/bin/smart-search',
-    ];
   };
 
   const getConfiguredSourceDir = async () => {
@@ -110,28 +93,39 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   };
 
   const buildSmartSearchCandidates = async (args) => {
-    const binary = resolveSmartSearchBinary(env);
     const candidates = [];
+
+    if (env.SMART_SEARCH_BIN) {
+      const binary = resolveSmartSearchBinary(env);
+      if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(binary)) {
+        candidates.push({ label: binary, command: 'cmd.exe', args: ['/d', '/s', '/c', binary, ...args] });
+      } else {
+        candidates.push({ label: binary, command: binary, args });
+      }
+      return candidates;
+    }
+
+    const packageRoot = resolveInstalledPackageRoot();
+    const packageWrapper = packageRoot ? path.join(packageRoot, 'npm', 'bin', 'smart-search.js') : '';
+    if (packageWrapper && await hasFile(packageWrapper)) {
+      candidates.push({ label: '@konbakuyomu/smart-search package', command: process.execPath, args: [packageWrapper, ...args] });
+    }
+
+    const sourceDir = await getConfiguredSourceDir();
+    if (sourceDir) {
+      candidates.push({
+        label: `${sourceDir} via python -m smart_search.cli`,
+        command: env.PYTHON || env.PYTHON_BIN || (process.platform === 'win32' ? 'python.exe' : 'python3'),
+        args: ['-m', 'smart_search.cli', ...args],
+        env: { PYTHONPATH: prependPathValue(env.PYTHONPATH || '', sourceDir) },
+      });
+    }
+
+    const binary = resolveSmartSearchBinary(env);
     if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(binary)) {
       candidates.push({ label: binary, command: 'cmd.exe', args: ['/d', '/s', '/c', binary, ...args] });
     } else {
       candidates.push({ label: binary, command: binary, args });
-    }
-
-    if (!env.SMART_SEARCH_BIN) {
-      for (const candidatePath of getGlobalBinCandidates()) {
-        await pushExecutableCandidate(candidates, candidatePath, args);
-      }
-
-      const sourceDir = await getConfiguredSourceDir();
-      if (sourceDir) {
-        candidates.push({
-          label: `${sourceDir} via python -m smart_search.cli`,
-          command: env.PYTHON || env.PYTHON_BIN || (process.platform === 'win32' ? 'python.exe' : 'python3'),
-          args: ['-m', 'smart_search.cli', ...args],
-          env: { PYTHONPATH: prependPathValue(env.PYTHONPATH || '', sourceDir) },
-        });
-      }
     }
 
     return candidates;
