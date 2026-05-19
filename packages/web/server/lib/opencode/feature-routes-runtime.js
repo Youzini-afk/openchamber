@@ -14,6 +14,7 @@ import { registerOpenCodeRoutes } from './routes.js';
 import { registerOpenAgentRoutes } from './openagent-routes.js';
 import { registerAgentOrchestrationRoutes } from './agent-orchestration-routes.js';
 import { registerMagicContextRoutes } from './magic-context-routes.js';
+import { registerSmartSearchRoutes } from '../smart-search/routes.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -131,6 +132,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       saveMagicContextConfig,
       refreshOpenCodeAfterConfigChange,
       resolveOptionalProjectDirectory,
+    });
+
+    registerSmartSearchRoutes(app, {
+      fsPromises,
+      path,
+      spawn,
+      env: process.env,
     });
 
     registerProjectIconRoutes(app, {

@@ -73,4 +73,28 @@ describe('core-routes', () => {
       },
     });
   });
+
+  it('parses JSON bodies for Smart Search routes', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+
+    app.patch('/api/smart-search/config', (req, res) => {
+      res.json({ body: req.body ?? null });
+    });
+
+    const response = await request(app)
+      .patch('/api/smart-search/config')
+      .send({
+        set: { XAI_MODEL: 'grok-4-fast' },
+        unset: ['EXA_API_KEY'],
+      })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      body: {
+        set: { XAI_MODEL: 'grok-4-fast' },
+        unset: ['EXA_API_KEY'],
+      },
+    });
+  });
 });
