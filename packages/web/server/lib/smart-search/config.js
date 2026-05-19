@@ -39,6 +39,36 @@ const CONFIG_KEYS = new Set([
 const SECRET_PATTERN = /(KEY|TOKEN|SECRET)/;
 const DEFAULT_BIN = process.platform === 'win32' ? 'smart-search.cmd' : 'smart-search';
 
+const DEFAULT_VALUES = {
+  XAI_API_URL: 'https://api.x.ai/v1',
+  XAI_MODEL: 'grok-4-fast',
+  XAI_TOOLS: 'web_search,x_search',
+  OPENAI_COMPATIBLE_MODEL: 'grok-4-fast',
+  SMART_SEARCH_VALIDATION_LEVEL: 'balanced',
+  SMART_SEARCH_FALLBACK_MODE: 'auto',
+  SMART_SEARCH_MINIMUM_PROFILE: 'standard',
+  EXA_BASE_URL: 'https://api.exa.ai',
+  EXA_TIMEOUT_SECONDS: '30',
+  CONTEXT7_BASE_URL: 'https://context7.com',
+  CONTEXT7_TIMEOUT_SECONDS: '30',
+  ZHIPU_API_URL: 'https://open.bigmodel.cn/api',
+  ZHIPU_SEARCH_ENGINE: 'search_std',
+  ZHIPU_TIMEOUT_SECONDS: '30',
+  TAVILY_API_URL: 'https://api.tavily.com',
+  TAVILY_ENABLED: 'true',
+  TAVILY_TIMEOUT_SECONDS: '30',
+  FIRECRAWL_API_URL: 'https://api.firecrawl.dev/v2',
+  SMART_SEARCH_DEBUG: 'false',
+  SMART_SEARCH_LOG_LEVEL: 'INFO',
+  SMART_SEARCH_LOG_DIR: 'logs',
+  SMART_SEARCH_RETRY_MAX_ATTEMPTS: '3',
+  SMART_SEARCH_RETRY_MULTIPLIER: '1',
+  SMART_SEARCH_RETRY_MAX_WAIT: '10',
+  SMART_SEARCH_OUTPUT_CLEANUP: 'true',
+  SMART_SEARCH_LOG_TO_FILE: 'false',
+  SSL_VERIFY: 'true',
+};
+
 export const SMART_SEARCH_CONFIG_KEYS = [...CONFIG_KEYS];
 
 export const isSmartSearchConfigKey = (key) => CONFIG_KEYS.has(key);
@@ -49,6 +79,8 @@ export const resolveSmartSearchBinary = (env = process.env) => {
   const override = typeof env.SMART_SEARCH_BIN === 'string' ? env.SMART_SEARCH_BIN.trim() : '';
   return override || DEFAULT_BIN;
 };
+
+export const getSmartSearchDefaultValue = (key) => DEFAULT_VALUES[key] ?? '';
 
 export const maskSmartSearchSecret = (value) => {
   const text = typeof value === 'string' ? value : String(value ?? '');
@@ -65,6 +97,19 @@ export const redactSmartSearchSecrets = (value) => {
       if (/^[A-Za-z0-9_\-]+$/.test(match)) return maskSmartSearchSecret(match);
       return match;
     });
+};
+
+export const redactSmartSearchPayload = (value, keyHint = '') => {
+  if (typeof value === 'string') {
+    return isSmartSearchSecretKey(String(keyHint).toUpperCase()) ? maskSmartSearchSecret(value) : redactSmartSearchSecrets(value);
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((entry) => redactSmartSearchPayload(entry, keyHint));
+  const redacted = {};
+  for (const [key, entry] of Object.entries(value)) {
+    redacted[key] = redactSmartSearchPayload(entry, key);
+  }
+  return redacted;
 };
 
 export const normalizeSmartSearchPatch = (payload) => {
@@ -92,7 +137,7 @@ export const normalizeSmartSearchPatch = (payload) => {
         error.status = 400;
         throw error;
       }
-      if (rawValue === null || rawValue === undefined) {
+      if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') {
         unset.push(key);
         continue;
       }
@@ -129,7 +174,7 @@ export const buildSmartSearchConfigResponse = ({ pathInfo, fileValues, env = pro
     const envValue = env[key];
     const hasEnvValue = envValue !== undefined;
     const hasFileValue = Object.prototype.hasOwnProperty.call(fileValues, key) && fileValues[key] !== undefined && fileValues[key] !== null;
-    const rawValue = hasEnvValue ? String(envValue) : (hasFileValue ? String(fileValues[key]) : '');
+    const rawValue = hasEnvValue ? String(envValue) : (hasFileValue ? String(fileValues[key]) : getSmartSearchDefaultValue(key));
     const secret = isSmartSearchSecretKey(key);
     values[key] = {
       key,

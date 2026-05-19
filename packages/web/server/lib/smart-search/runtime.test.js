@@ -8,13 +8,17 @@ const createSpawn = (handlers) => vi.fn((bin, args) => {
   const stdoutListeners = {};
   const stderrListeners = {};
   const child = {
+    pid: 12345,
     stdout: { on: (event, cb) => { stdoutListeners[event] = cb; } },
     stderr: { on: (event, cb) => { stderrListeners[event] = cb; } },
     on: (event, cb) => { listeners[event] = cb; },
     kill: vi.fn(),
   };
   queueMicrotask(() => {
-    const response = handlers(args, bin);
+    const effectiveArgs = bin === 'cmd.exe' && args.slice(0, 4).join('\0') === ['/d', '/s', '/c', 'smart-search.cmd'].join('\0')
+      ? args.slice(4)
+      : args;
+    const response = handlers(effectiveArgs, bin);
     if (response.error) {
       listeners.error?.(response.error);
       return;
@@ -31,9 +35,12 @@ describe('Smart Search runtime', () => {
     const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
     const fsPromises = {
       readFile: vi.fn(async () => JSON.stringify({ XAI_API_KEY: 'sk-1234567890', XAI_MODEL: 'grok-4-fast' })),
+      stat: vi.fn(async () => ({ mode: 0o600 })),
       mkdir: vi.fn(),
       writeFile: vi.fn(),
       rename: vi.fn(),
+      chmod: vi.fn(),
+      rm: vi.fn(),
     };
     const spawn = createSpawn((args) => {
       if (args[0] === 'config') return { stdout: JSON.stringify({ ok: true, config_file: configFile }) };
@@ -54,9 +61,12 @@ describe('Smart Search runtime', () => {
     let file = { XAI_API_KEY: 'old-secret', XAI_MODEL: 'old-model', EXA_API_KEY: 'exa-secret' };
     const fsPromises = {
       readFile: vi.fn(async () => JSON.stringify(file)),
+      stat: vi.fn(async () => ({ mode: 0o600 })),
       mkdir: vi.fn(),
       writeFile: vi.fn(async (_file, content) => { file = JSON.parse(content); }),
       rename: vi.fn(),
+      chmod: vi.fn(),
+      rm: vi.fn(),
     };
     const spawn = createSpawn(() => ({ stdout: JSON.stringify({ ok: true, config_file: configFile }) }));
     const runtime = createSmartSearchRuntime({ fsPromises, path: pathModule, spawn, env: {} });
@@ -81,5 +91,35 @@ describe('Smart Search runtime', () => {
     const doctor = await runtime.runDoctor();
 
     expect(doctor).toMatchObject({ ok: false, exitCode: 2, result: { ok: false, error_type: 'config_error' } });
+  });
+
+  it('redacts secrets from doctor JSON payloads', async () => {
+    const spawn = createSpawn((args) => {
+      if (args[0] === 'doctor') return { stdout: JSON.stringify({ ok: true, XAI_API_KEY: 'sk-1234567890' }) };
+      return { stdout: JSON.stringify({ ok: true, config_file: '/tmp/config.json' }) };
+    });
+    const runtime = createSmartSearchRuntime({
+      fsPromises: { readFile: vi.fn(), mkdir: vi.fn(), writeFile: vi.fn(), rename: vi.fn() },
+      path: pathModule,
+      spawn,
+      env: {},
+    });
+
+    const doctor = await runtime.runDoctor();
+
+    expect(doctor.result.XAI_API_KEY).toBe('sk-1*****7890');
+  });
+
+  it('rejects writes to environment-controlled keys', async () => {
+    const configFile = pathModule.join('tmp', 'smart-search', 'config.json');
+    const spawn = createSpawn(() => ({ stdout: JSON.stringify({ ok: true, config_file: configFile }) }));
+    const runtime = createSmartSearchRuntime({
+      fsPromises: { readFile: vi.fn(async () => '{}'), mkdir: vi.fn(), writeFile: vi.fn(), rename: vi.fn() },
+      path: pathModule,
+      spawn,
+      env: { XAI_MODEL: 'env-model' },
+    });
+
+    await expect(runtime.patchConfig({ set: { XAI_MODEL: 'file-model' } })).rejects.toThrow(/controlled by environment/);
   });
 });

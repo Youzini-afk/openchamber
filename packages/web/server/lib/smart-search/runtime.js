@@ -1,4 +1,4 @@
-import { buildSmartSearchConfigResponse, normalizeSmartSearchPatch, redactSmartSearchSecrets, resolveSmartSearchBinary } from './config.js';
+import { buildSmartSearchConfigResponse, normalizeSmartSearchPatch, redactSmartSearchPayload, redactSmartSearchSecrets, resolveSmartSearchBinary } from './config.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_OUTPUT_LIMIT_BYTES = 1024 * 1024;
@@ -28,7 +28,11 @@ const parseJsonOutput = (stdout) => {
     const firstBrace = trimmed.indexOf('{');
     const lastBrace = trimmed.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      try {
+        return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      } catch {
+        throw makeEndpointError('Smart Search returned invalid JSON output.', 502);
+      }
     }
     throw makeEndpointError('Smart Search returned non-JSON output.', 502);
   }
@@ -49,6 +53,33 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   }
 
   let doctorInFlight = null;
+  let writeQueue = Promise.resolve();
+
+  const resolveSpawnCommand = (args) => {
+    const binary = resolveSmartSearchBinary(env);
+    if (process.platform === 'win32' && /\.cmd$|\.bat$/i.test(binary)) {
+      return { command: 'cmd.exe', args: ['/d', '/s', '/c', binary, ...args] };
+    }
+    return { command: binary, args };
+  };
+
+  const killProcessTree = (child) => {
+    if (!child?.pid) return;
+    if (process.platform === 'win32') {
+      const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+        shell: false,
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('error', () => undefined);
+      return;
+    }
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      child.kill('SIGTERM');
+    }
+  };
 
   const runCli = (args, options = {}) => new Promise((resolve, reject) => {
     const childEnv = {
@@ -56,9 +87,11 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
       PYTHONIOENCODING: env.PYTHONIOENCODING || 'utf-8',
       PYTHONUTF8: env.PYTHONUTF8 || '1',
     };
-    const child = spawn(resolveSmartSearchBinary(env), args, {
+    const spawnCommand = resolveSpawnCommand(args);
+    const child = spawn(spawnCommand.command, spawnCommand.args, {
       shell: false,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -72,7 +105,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill('SIGTERM');
+      killProcessTree(child);
       reject(makeEndpointError('Smart Search command timed out.', 504));
     }, options.timeoutMs ?? timeoutMs);
 
@@ -80,13 +113,13 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
       const result = appendWithLimit(stdout, chunk.toString('utf8'), limitBytes);
       stdout = result.value;
       stdoutTruncated = stdoutTruncated || result.truncated;
-      if (stdoutTruncated) child.kill('SIGTERM');
+      if (stdoutTruncated) killProcessTree(child);
     });
     child.stderr?.on('data', (chunk) => {
       const result = appendWithLimit(stderr, chunk.toString('utf8'), limitBytes);
       stderr = result.value;
       stderrTruncated = stderrTruncated || result.truncated;
-      if (stderrTruncated) child.kill('SIGTERM');
+      if (stderrTruncated) killProcessTree(child);
     });
     child.on('error', (error) => {
       if (settled) return;
@@ -132,8 +165,25 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   const writeRawConfig = async (configFile, data) => {
     await fsPromises.mkdir(path.dirname(configFile), { recursive: true });
     const tempFile = `${configFile}.openchamber-${process.pid}-${Date.now()}.tmp`;
-    await fsPromises.writeFile(tempFile, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
-    await fsPromises.rename(tempFile, configFile);
+    let mode = 0o600;
+    try {
+      const stat = await fsPromises.stat(configFile);
+      mode = stat.mode & 0o777;
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error;
+    }
+    try {
+      await fsPromises.writeFile(tempFile, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode });
+      await fsPromises.rename(tempFile, configFile);
+      if (fsPromises.chmod) {
+        await Promise.resolve(fsPromises.chmod(configFile, mode)).catch(() => undefined);
+      }
+    } catch (error) {
+      if (fsPromises.rm) {
+        await Promise.resolve(fsPromises.rm(tempFile, { force: true })).catch(() => undefined);
+      }
+      throw error;
+    }
   };
 
   const loadConfig = async () => {
@@ -143,17 +193,25 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
   };
 
   const patchConfig = async (payload) => {
-    const patch = normalizeSmartSearchPatch(payload);
-    const pathInfo = await getPathInfo();
-    const raw = await readRawConfig(pathInfo.config_file);
-    for (const key of patch.unset) {
-      delete raw[key];
-    }
-    for (const [key, value] of Object.entries(patch.set)) {
-      raw[key] = value;
-    }
-    await writeRawConfig(pathInfo.config_file, raw);
-    return loadConfig();
+    const run = async () => {
+      const patch = normalizeSmartSearchPatch(payload);
+      const envControlled = [...Object.keys(patch.set), ...patch.unset].filter((key) => env[key] !== undefined);
+      if (envControlled.length > 0) {
+        throw makeEndpointError(`Cannot edit Smart Search keys controlled by environment variables: ${envControlled.join(', ')}`, 409);
+      }
+      const pathInfo = await getPathInfo();
+      const raw = await readRawConfig(pathInfo.config_file);
+      for (const key of patch.unset) {
+        delete raw[key];
+      }
+      for (const [key, value] of Object.entries(patch.set)) {
+        raw[key] = value;
+      }
+      await writeRawConfig(pathInfo.config_file, raw);
+      return loadConfig();
+    };
+    writeQueue = writeQueue.then(run, run);
+    return writeQueue;
   };
 
   const getStatus = async () => {
@@ -189,7 +247,7 @@ export const createSmartSearchRuntime = (dependencies = {}) => {
         ok: Boolean(parsed?.ok),
         exitCode: result.code,
         signal: result.signal,
-        result: parsed,
+        result: redactSmartSearchPayload(parsed),
         stderr: result.stderr ? redactSmartSearchSecrets(result.stderr).slice(0, 4000) : '',
       };
     })().finally(() => {

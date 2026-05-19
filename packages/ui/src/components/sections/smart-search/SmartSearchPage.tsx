@@ -21,7 +21,7 @@ import {
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { toast } from '@/components/ui';
-import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { useRuntimeAPI } from '@/hooks/useRuntimeAPIs';
 import { cn } from '@/lib/utils';
 import type {
   SmartSearchConfigResponse,
@@ -279,6 +279,7 @@ function SmartSearchField({
           <div className="typography-micro text-muted-foreground">
             <span className="font-mono">{field.key}</span> · {getDisplaySource(entry)}
             {entry?.secret && entry.isSet && entry.maskedValue ? ` · ${entry.maskedValue}` : ''}
+            {!entry?.isSet && current ? ` · default ${current}` : ''}
           </div>
           {field.description && <div className="typography-micro text-muted-foreground/80">{field.description}</div>}
         </div>
@@ -340,7 +341,7 @@ function FieldGroup({
 }
 
 export const SmartSearchPage: React.FC = () => {
-  const api = getRegisteredRuntimeAPIs()?.smartSearch;
+  const api = useRuntimeAPI((apis) => apis.smartSearch);
   const [status, setStatus] = React.useState<SmartSearchStatusResponse | null>(null);
   const [config, setConfig] = React.useState<SmartSearchConfigResponse | null>(null);
   const [doctor, setDoctor] = React.useState<SmartSearchDoctorResponse | null>(null);

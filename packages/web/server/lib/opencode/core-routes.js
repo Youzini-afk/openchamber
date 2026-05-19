@@ -460,6 +460,12 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
       express.json({ limit: '1mb' })(req, res, next);
+    } else if (req.path.startsWith('/api/smart-search')) {
+      const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+      if (contentLength > 256 * 1024) {
+        return res.status(413).json({ error: 'Content exceeds maximum size of 262144 bytes' });
+      }
+      express.json({ limit: '256kb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/config/agents') ||
       req.path.startsWith('/api/config/commands') ||
@@ -478,7 +484,6 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/openagent') ||
       req.path.startsWith('/api/agent-orchestration') ||
       req.path.startsWith('/api/magic-context') ||
-      req.path.startsWith('/api/smart-search') ||
       req.path.startsWith('/api/provider') ||
       req.path.startsWith('/api/push') ||
       req.path.startsWith('/api/mobile') ||
