@@ -522,6 +522,8 @@ export const settingsDict = {
   'settings.skills.sidebar.section.user': '用户技能',
   'settings.skills.sidebar.empty.title': '未配置技能',
   'settings.skills.sidebar.empty.description': '使用上方 + 按钮创建一个',
+  'settings.skills.sidebar.empty.userTitle': '未发现用户技能。已检查：',
+  'settings.skills.sidebar.empty.projectTitle': '未发现项目技能。已检查：',
   'settings.skills.sidebar.badge.claude': 'claude',
   'settings.skills.sidebar.badge.agents': 'agents',
   'settings.skills.sidebar.toast.skillDeleted': '技能“{name}”已删除',

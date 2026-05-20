@@ -41,6 +41,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   const {
     selectedSkillName,
     skills,
+    discoveryMeta,
     setSelectedSkill,
     setSkillDraft,
     createSkill,
@@ -49,6 +50,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   } = useSkillsStore(useShallow((s) => ({
     selectedSkillName: s.selectedSkillName,
     skills: s.skills,
+    discoveryMeta: s.discoveryMeta,
     setSelectedSkill: s.setSelectedSkill,
     setSkillDraft: s.setSkillDraft,
     createSkill: s.createSkill,
@@ -213,6 +215,27 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
   const groupedProjectSkills = useMemo(() => groupSkillsByFolder(projectSkills), [projectSkills]);
   const groupedUserSkills = useMemo(() => groupSkillsByFolder(userSkills), [userSkills]);
+  const userSkillDirs = discoveryMeta?.userSkillDirs ?? [];
+  const projectSkillDirs = discoveryMeta?.projectSkillDirs ?? [];
+
+  const renderEmptyScopeHint = (scope: 'user' | 'project') => {
+    const dirs = scope === 'user' ? userSkillDirs : projectSkillDirs;
+    const title = scope === 'user'
+      ? t('settings.skills.sidebar.empty.userTitle')
+      : t('settings.skills.sidebar.empty.projectTitle');
+    return (
+      <div className="px-2 pb-3 text-xs text-muted-foreground">
+        <div>{title}</div>
+        {dirs.length > 0 && (
+          <div className="mt-1 space-y-0.5">
+            {dirs.map((dir) => (
+              <div key={dir} className="break-all font-mono text-[11px] opacity-75">{dir}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
@@ -232,19 +255,19 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {skills.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
+        <>
+          {skills.length === 0 && (
+            <div className="py-8 px-4 text-center text-muted-foreground">
+              <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
+              <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
+            </div>
+          )}
+          <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('settings.skills.sidebar.section.project')}
           </div>
-        ) : (
-          <>
-            {projectSkills.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.skills.sidebar.section.project')}
-                </div>
+          {projectSkills.length > 0 ? (
+            <>
                 {groupedProjectSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
                   <SidebarGroup
                     key={groupName}
@@ -288,14 +311,14 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                     onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
                   />
                 ))}
-              </>
-            )}
+            </>
+          ) : renderEmptyScopeHint('project')}
 
-            {userSkills.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.skills.sidebar.section.user')}
-                </div>
+          <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('settings.skills.sidebar.section.user')}
+          </div>
+          {userSkills.length > 0 ? (
+            <>
                 {groupedUserSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
                   <SidebarGroup
                     key={groupName}
@@ -339,10 +362,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                     onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
                   />
                 ))}
-              </>
-            )}
-          </>
-        )}
+            </>
+          ) : renderEmptyScopeHint('user')}
+        </>
       </ScrollableOverlay>
 
       <Dialog

@@ -182,6 +182,17 @@ export const registerSkillRoutes = (app, dependencies) => {
     return Array.from(merged.values());
   };
 
+  const getSkillsDiscoveryMeta = (directory) => ({
+    userSkillDirs: [SKILL_DIR],
+    projectSkillDirs: directory ? [
+      path.join(directory, '.opencode', 'skills'),
+      path.join(directory, '.agents', 'skills'),
+      path.join(directory, '.claude', 'skills'),
+    ] : [],
+    home: os.homedir(),
+    opencodeConfigDir: path.dirname(SKILL_DIR),
+  });
+
   const listGitIdentitiesForResponse = () => {
     try {
       const profiles = getProfiles();
@@ -223,7 +234,7 @@ export const registerSkillRoutes = (app, dependencies) => {
         };
       });
 
-      res.json({ skills: enrichedSkills });
+      res.json({ skills: enrichedSkills, meta: getSkillsDiscoveryMeta(directory) });
     } catch (error) {
       console.error('Failed to list skills:', error);
       res.status(500).json({ error: 'Failed to list skills' });

@@ -522,6 +522,8 @@ export const settingsDict = {
   'settings.skills.sidebar.section.user': 'User Skills',
   'settings.skills.sidebar.empty.title': 'No skills configured',
   'settings.skills.sidebar.empty.description': 'Use the + button above to create one',
+  'settings.skills.sidebar.empty.userTitle': 'No user skills found. Checked:',
+  'settings.skills.sidebar.empty.projectTitle': 'No project skills found. Checked:',
   'settings.skills.sidebar.badge.claude': 'claude',
   'settings.skills.sidebar.badge.agents': 'agents',
   'settings.skills.sidebar.toast.skillDeleted': 'Skill "{name}" deleted successfully',

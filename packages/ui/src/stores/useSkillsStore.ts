@@ -68,6 +68,13 @@ export interface DiscoveredSkill {
   group?: string;
 }
 
+export interface SkillsDiscoveryMeta {
+  userSkillDirs?: string[];
+  projectSkillDirs?: string[];
+  home?: string;
+  opencodeConfigDir?: string;
+}
+
 /** Parse the domain group folder from a skill file path.
  *  e.g. "~/.config/opencode/skills/automation-ai/ai-production/SKILL.md" → "automation-ai"
  *  e.g. "~/.config/opencode/skills/theme-system/SKILL.md"                → undefined (flat)
@@ -129,6 +136,7 @@ export interface SkillDetail {
 interface SkillsStore {
   selectedSkillName: string | null;
   skills: DiscoveredSkill[];
+  discoveryMeta: SkillsDiscoveryMeta | null;
   isLoading: boolean;
   skillDraft: SkillDraft | null;
 
@@ -176,6 +184,7 @@ export const useSkillsStore = create<SkillsStore>()(
       (set, get) => ({
         selectedSkillName: null,
         skills: [],
+        discoveryMeta: null,
         isLoading: false,
         skillDraft: null,
 
@@ -228,7 +237,7 @@ export const useSkillsStore = create<SkillsStore>()(
                   group: parseSkillGroup(s.path),
                 }));
 
-                set({ skills, isLoading: false });
+                set({ skills, discoveryMeta: data.meta ?? null, isLoading: false });
                 skillsLastLoadedAt.set(cacheKey, Date.now());
                 return true;
               } catch (error) {
