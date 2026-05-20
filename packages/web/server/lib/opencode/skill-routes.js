@@ -229,6 +229,8 @@ export const registerSkillRoutes = (app, dependencies) => {
       path.join(directory, '.claude', 'skills'),
     ] : [];
     return {
+      source: 'openchamber-web-skill-routes',
+      contractVersion: 2,
       userSkillDirs,
       projectSkillDirs,
       userSkillDirStatus: userSkillDirs.map(describeSkillDir),
@@ -286,6 +288,7 @@ export const registerSkillRoutes = (app, dependencies) => {
         };
       });
 
+      res.set('Cache-Control', 'no-store');
       res.json({ skills: enrichedSkills, meta: getSkillsDiscoveryMeta(directory, error) });
     } catch (error) {
       console.error('Failed to list skills:', error);

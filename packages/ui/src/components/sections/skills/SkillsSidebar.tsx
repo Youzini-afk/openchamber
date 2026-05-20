@@ -42,23 +42,29 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     selectedSkillName,
     skills,
     discoveryMeta,
+    lastLoadError,
     setSelectedSkill,
     setSkillDraft,
     createSkill,
     deleteSkill,
     getSkillDetail,
+    loadSkills,
   } = useSkillsStore(useShallow((s) => ({
     selectedSkillName: s.selectedSkillName,
     skills: s.skills,
     discoveryMeta: s.discoveryMeta,
+    lastLoadError: s.lastLoadError,
     setSelectedSkill: s.setSelectedSkill,
     setSkillDraft: s.setSkillDraft,
     createSkill: s.createSkill,
     deleteSkill: s.deleteSkill,
     getSkillDetail: s.getSkillDetail,
+    loadSkills: s.loadSkills,
   })));
 
-  // Skills are loaded by the Settings shell when this page is active.
+  React.useEffect(() => {
+    void loadSkills();
+  }, [loadSkills]);
 
   const bgClass = 'bg-background';
 
@@ -243,6 +249,14 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             {dirs.map((dir) => (
               <div key={dir} className="break-all font-mono text-[11px] opacity-75">{dir}</div>
             ))}
+          </div>
+        ) : lastLoadError ? (
+          <div className="mt-1 space-y-0.5 text-[11px] opacity-75">
+            <div>{t('settings.skills.sidebar.diagnostics.loadError', { message: lastLoadError.message })}</div>
+            {lastLoadError.status ? <div>HTTP {lastLoadError.status}</div> : null}
+            {lastLoadError.url ? <div className="break-all font-mono">{lastLoadError.url}</div> : null}
+            {lastLoadError.responseShape ? <div>{t('settings.skills.sidebar.diagnostics.responseShape', { shape: lastLoadError.responseShape })}</div> : null}
+            {lastLoadError.responseSnippet ? <div className="break-all font-mono">{lastLoadError.responseSnippet}</div> : null}
           </div>
         ) : (
           <div className="mt-1 text-[11px] opacity-75">{t('settings.skills.sidebar.diagnostics.noMeta')}</div>

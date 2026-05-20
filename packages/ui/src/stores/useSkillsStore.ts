@@ -69,6 +69,8 @@ export interface DiscoveredSkill {
 }
 
 export interface SkillsDiscoveryMeta {
+  source?: string;
+  contractVersion?: number;
   userSkillDirs?: string[];
   projectSkillDirs?: string[];
   userSkillDirStatus?: Array<{ path: string; exists: boolean; readable: boolean; skillMdCount: number; error?: string | null }>;
@@ -76,6 +78,14 @@ export interface SkillsDiscoveryMeta {
   home?: string;
   opencodeConfigDir?: string;
   envOpenCodeConfigDir?: string | null;
+}
+
+export interface SkillsLoadError {
+  message: string;
+  status?: number;
+  url?: string;
+  responseShape?: string;
+  responseSnippet?: string;
 }
 
 /** Parse the domain group folder from a skill file path.
@@ -140,6 +150,7 @@ interface SkillsStore {
   selectedSkillName: string | null;
   skills: DiscoveredSkill[];
   discoveryMeta: SkillsDiscoveryMeta | null;
+  lastLoadError: SkillsLoadError | null;
   isLoading: boolean;
   skillDraft: SkillDraft | null;
 
@@ -174,6 +185,22 @@ const skillsLoadInFlight = new Map<string, Promise<boolean>>();
 const getSkillsCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_SKILLS_CACHE_KEY;
 };
+
+const getResponseShape = (value: unknown): string => {
+  if (Array.isArray(value)) return 'array';
+  if (value === null) return 'null';
+  return typeof value;
+};
+
+const getResponseSnippet = (text: string): string | undefined => {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  return normalized ? normalized.slice(0, 240) : undefined;
+};
+
+const parseJsonResponse = (text: string): unknown => {
+  if (!text.trim()) return null;
+  return JSON.parse(text);
+};
 const MAX_HEALTH_WAIT_MS = 20000;
 const FAST_HEALTH_POLL_INTERVAL_MS = 300;
 const FAST_HEALTH_POLL_ATTEMPTS = 4;
@@ -188,6 +215,7 @@ export const useSkillsStore = create<SkillsStore>()(
         selectedSkillName: null,
         skills: [],
         discoveryMeta: null,
+        lastLoadError: null,
         isLoading: false,
         skillDraft: null,
 
@@ -218,19 +246,58 @@ export const useSkillsStore = create<SkillsStore>()(
           const request = (async () => {
             set({ isLoading: true });
             const previousSkills = get().skills;
-            let lastError: unknown = null;
+            let lastError: SkillsLoadError | null = null;
 
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-                const response = await fetch(`/api/config/skills${queryParams}`);
-                if (!response.ok) {
-                  throw new Error(`Failed to list skills: ${response.status}`);
+                const url = `/api/config/skills${queryParams}`;
+                const response = await fetch(url, {
+                  cache: 'no-store',
+                  headers: { Accept: 'application/json' },
+                });
+                const responseText = await response.text();
+                let data: unknown = null;
+                try {
+                  data = parseJsonResponse(responseText);
+                } catch (parseError) {
+                  throw {
+                    message: parseError instanceof Error ? parseError.message : 'Failed to parse skills response as JSON',
+                    status: response.status,
+                    url,
+                    responseShape: 'invalid-json',
+                    responseSnippet: getResponseSnippet(responseText),
+                  } satisfies SkillsLoadError;
                 }
 
-                const data = await response.json();
-                const rawSkills: RawSkillResponse[] = data.skills || [];
+                if (!response.ok) {
+                  const bodyMessage = data && typeof data === 'object' && 'error' in data
+                    ? String((data as { error?: unknown }).error || '')
+                    : '';
+                  throw {
+                    message: bodyMessage || `Failed to list skills: HTTP ${response.status}`,
+                    status: response.status,
+                    url,
+                    responseShape: getResponseShape(data),
+                    responseSnippet: getResponseSnippet(responseText),
+                  } satisfies SkillsLoadError;
+                }
+
+                if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                  throw {
+                    message: 'Skills API returned an unexpected response shape',
+                    status: response.status,
+                    url,
+                    responseShape: getResponseShape(data),
+                    responseSnippet: getResponseSnippet(responseText),
+                  } satisfies SkillsLoadError;
+                }
+
+                const responseRecord = data as { skills?: unknown; meta?: unknown };
+                const rawSkills: RawSkillResponse[] = Array.isArray(responseRecord.skills)
+                  ? responseRecord.skills as RawSkillResponse[]
+                  : [];
                 const skills: DiscoveredSkill[] = rawSkills.map((s) => ({
                   name: s.name,
                   path: s.path,
@@ -240,18 +307,32 @@ export const useSkillsStore = create<SkillsStore>()(
                   group: parseSkillGroup(s.path),
                 }));
 
-                set({ skills, discoveryMeta: data.meta ?? null, isLoading: false });
+                const meta = responseRecord.meta && typeof responseRecord.meta === 'object' && !Array.isArray(responseRecord.meta)
+                  ? responseRecord.meta as SkillsDiscoveryMeta
+                  : null;
+
+                const missingMetaError: SkillsLoadError | null = meta ? null : {
+                  message: 'Skills API response did not include discovery metadata',
+                  status: response.status,
+                  url,
+                  responseShape: getResponseShape(data),
+                  responseSnippet: getResponseSnippet(responseText),
+                };
+
+                set({ skills, discoveryMeta: meta, lastLoadError: missingMetaError, isLoading: false });
                 skillsLastLoadedAt.set(cacheKey, Date.now());
                 return true;
               } catch (error) {
-                lastError = error;
+                lastError = error && typeof error === 'object' && 'message' in error
+                  ? error as SkillsLoadError
+                  : { message: error instanceof Error ? error.message : String(error) };
                 const waitMs = 200 * (attempt + 1);
                 await new Promise((resolve) => setTimeout(resolve, waitMs));
               }
             }
 
             console.error("Failed to load skills:", lastError);
-            set({ skills: previousSkills, isLoading: false });
+            set({ skills: previousSkills, lastLoadError: lastError, isLoading: false });
             return false;
           })();
 

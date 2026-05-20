@@ -530,6 +530,8 @@ export const settingsDict = {
   'settings.skills.sidebar.diagnostics.unreadable': 'not readable',
   'settings.skills.sidebar.diagnostics.skillMdCount': '{count} SKILL.md',
   'settings.skills.sidebar.diagnostics.noMeta': 'The server did not return discovery metadata. Restart or update the Web server.',
+  'settings.skills.sidebar.diagnostics.loadError': 'Failed to load skills: {message}',
+  'settings.skills.sidebar.diagnostics.responseShape': 'Response shape: {shape}',
   'settings.skills.sidebar.badge.claude': 'claude',
   'settings.skills.sidebar.badge.agents': 'agents',
   'settings.skills.sidebar.toast.skillDeleted': 'Skill "{name}" deleted successfully',

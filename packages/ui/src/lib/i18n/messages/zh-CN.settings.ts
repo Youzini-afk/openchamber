@@ -530,6 +530,8 @@ export const settingsDict = {
   'settings.skills.sidebar.diagnostics.unreadable': '不可读',
   'settings.skills.sidebar.diagnostics.skillMdCount': '{count} 个 SKILL.md',
   'settings.skills.sidebar.diagnostics.noMeta': '服务端没有返回发现诊断信息。请重启或更新 Web server。',
+  'settings.skills.sidebar.diagnostics.loadError': '加载技能失败：{message}',
+  'settings.skills.sidebar.diagnostics.responseShape': '响应形状：{shape}',
   'settings.skills.sidebar.badge.claude': 'claude',
   'settings.skills.sidebar.badge.agents': 'agents',
   'settings.skills.sidebar.toast.skillDeleted': '技能“{name}”已删除',
