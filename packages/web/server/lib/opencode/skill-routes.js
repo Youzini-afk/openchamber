@@ -182,16 +182,62 @@ export const registerSkillRoutes = (app, dependencies) => {
     return Array.from(merged.values());
   };
 
-  const getSkillsDiscoveryMeta = (directory) => ({
-    userSkillDirs: [SKILL_DIR],
-    projectSkillDirs: directory ? [
+  const countSkillMdFiles = (root) => {
+    let count = 0;
+    const walk = (dir) => {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile?.() && entry.name === 'SKILL.md') {
+          count += 1;
+        }
+      }
+    };
+    walk(root);
+    return count;
+  };
+
+  const describeSkillDir = (dir) => {
+    const exists = fs.existsSync(dir);
+    let readable = false;
+    let skillMdCount = 0;
+    let error = null;
+    if (exists) {
+      try {
+        fs.accessSync(dir, fs.constants.R_OK);
+        readable = true;
+        skillMdCount = countSkillMdFiles(dir);
+      } catch (accessError) {
+        error = accessError?.message || 'Directory is not readable';
+      }
+    }
+    return { path: dir, exists, readable, skillMdCount, error };
+  };
+
+  const getSkillsDiscoveryMeta = (directory) => {
+    const userSkillDirs = [SKILL_DIR];
+    const projectSkillDirs = directory ? [
       path.join(directory, '.opencode', 'skills'),
       path.join(directory, '.agents', 'skills'),
       path.join(directory, '.claude', 'skills'),
-    ] : [],
-    home: os.homedir(),
-    opencodeConfigDir: path.dirname(SKILL_DIR),
-  });
+    ] : [];
+    return {
+      userSkillDirs,
+      projectSkillDirs,
+      userSkillDirStatus: userSkillDirs.map(describeSkillDir),
+      projectSkillDirStatus: projectSkillDirs.map(describeSkillDir),
+      home: os.homedir(),
+      opencodeConfigDir: path.dirname(SKILL_DIR),
+      envOpenCodeConfigDir: process.env.OPENCODE_CONFIG_DIR || null,
+    };
+  };
 
   const listGitIdentitiesForResponse = () => {
     try {

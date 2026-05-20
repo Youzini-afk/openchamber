@@ -71,8 +71,11 @@ export interface DiscoveredSkill {
 export interface SkillsDiscoveryMeta {
   userSkillDirs?: string[];
   projectSkillDirs?: string[];
+  userSkillDirStatus?: Array<{ path: string; exists: boolean; readable: boolean; skillMdCount: number; error?: string | null }>;
+  projectSkillDirStatus?: Array<{ path: string; exists: boolean; readable: boolean; skillMdCount: number; error?: string | null }>;
   home?: string;
   opencodeConfigDir?: string;
+  envOpenCodeConfigDir?: string | null;
 }
 
 /** Parse the domain group folder from a skill file path.

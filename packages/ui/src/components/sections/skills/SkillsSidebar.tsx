@@ -217,21 +217,35 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   const groupedUserSkills = useMemo(() => groupSkillsByFolder(userSkills), [userSkills]);
   const userSkillDirs = discoveryMeta?.userSkillDirs ?? [];
   const projectSkillDirs = discoveryMeta?.projectSkillDirs ?? [];
+  const userSkillDirStatus = discoveryMeta?.userSkillDirStatus ?? [];
+  const projectSkillDirStatus = discoveryMeta?.projectSkillDirStatus ?? [];
 
   const renderEmptyScopeHint = (scope: 'user' | 'project') => {
     const dirs = scope === 'user' ? userSkillDirs : projectSkillDirs;
+    const dirStatus = scope === 'user' ? userSkillDirStatus : projectSkillDirStatus;
     const title = scope === 'user'
       ? t('settings.skills.sidebar.empty.userTitle')
       : t('settings.skills.sidebar.empty.projectTitle');
     return (
       <div className="px-2 pb-3 text-xs text-muted-foreground">
         <div>{title}</div>
-        {dirs.length > 0 && (
+        {dirStatus.length > 0 ? (
+          <div className="mt-1 space-y-0.5">
+            {dirStatus.map((entry) => (
+              <div key={entry.path} className="break-all font-mono text-[11px] opacity-75">
+                {entry.path} · {entry.exists ? t('settings.skills.sidebar.diagnostics.exists') : t('settings.skills.sidebar.diagnostics.missing')} · {entry.readable ? t('settings.skills.sidebar.diagnostics.readable') : t('settings.skills.sidebar.diagnostics.unreadable')} · {t('settings.skills.sidebar.diagnostics.skillMdCount', { count: entry.skillMdCount })}
+                {entry.error ? ` · ${entry.error}` : ''}
+              </div>
+            ))}
+          </div>
+        ) : dirs.length > 0 ? (
           <div className="mt-1 space-y-0.5">
             {dirs.map((dir) => (
               <div key={dir} className="break-all font-mono text-[11px] opacity-75">{dir}</div>
             ))}
           </div>
+        ) : (
+          <div className="mt-1 text-[11px] opacity-75">{t('settings.skills.sidebar.diagnostics.noMeta')}</div>
         )}
       </div>
     );
