@@ -1,24 +1,4 @@
-import {
-  RiBrainAi3Line,
-  RiCheckboxCircleLine,
-  RiBugLine,
-  RiCodeLine,
-  RiCommandLine,
-  RiFileTextLine,
-  RiFlaskLine,
-  RiGitBranchLine,
-  RiHammerLine,
-  RiPlayLine,
-  RiRocketLine,
-  RiRobot2Line,
-  RiSearchLine,
-  RiServerLine,
-  RiSettings3Line,
-  RiStackLine,
-  RiTerminalBoxLine,
-  RiToolsLine,
-} from '@remixicon/react';
-import type { ComponentType } from 'react';
+import type { IconName } from '@/components/icon/icons';
 import type {
   OpenChamberProjectAction,
   OpenChamberProjectActionPlatform,
@@ -51,31 +31,36 @@ export type ProjectActionIconKey =
 export const PROJECT_ACTION_ICONS: Array<{
   key: ProjectActionIconKey;
   label: string;
-  Icon: ComponentType<{ className?: string }>;
+  Icon: IconName;
+  iconName: IconName;
 }> = [
-  { key: 'play', label: 'Play', Icon: RiPlayLine },
-  { key: 'build', label: 'Build', Icon: RiHammerLine },
-  { key: 'lint', label: 'Lint', Icon: RiCheckboxCircleLine },
-  { key: 'terminal', label: 'Terminal', Icon: RiTerminalBoxLine },
-  { key: 'tools', label: 'Tools', Icon: RiToolsLine },
-  { key: 'bug', label: 'Bug', Icon: RiBugLine },
-  { key: 'flask', label: 'Flask', Icon: RiFlaskLine },
-  { key: 'rocket', label: 'Rocket', Icon: RiRocketLine },
-  { key: 'code', label: 'Code', Icon: RiCodeLine },
-  { key: 'server', label: 'Server', Icon: RiServerLine },
-  { key: 'branch', label: 'Branch', Icon: RiGitBranchLine },
-  { key: 'search', label: 'Search', Icon: RiSearchLine },
-  { key: 'settings', label: 'Settings', Icon: RiSettings3Line },
-  { key: 'brain', label: 'Brain', Icon: RiBrainAi3Line },
-  { key: 'stack', label: 'Stack', Icon: RiStackLine },
-  { key: 'robot', label: 'Robot', Icon: RiRobot2Line },
-  { key: 'command', label: 'Command', Icon: RiCommandLine },
-  { key: 'file', label: 'File', Icon: RiFileTextLine },
+  { key: 'play', label: 'Play', iconName: 'play', Icon: 'play' },
+  { key: 'build', label: 'Build', iconName: 'hammer', Icon: 'hammer' },
+  { key: 'lint', label: 'Lint', iconName: 'checkbox-circle', Icon: 'checkbox-circle' },
+  { key: 'terminal', label: 'Terminal', iconName: 'terminal-box', Icon: 'terminal-box' },
+  { key: 'tools', label: 'Tools', iconName: 'tools', Icon: 'tools' },
+  { key: 'bug', label: 'Bug', iconName: 'bug', Icon: 'bug' },
+  { key: 'flask', label: 'Flask', iconName: 'flask', Icon: 'flask' },
+  { key: 'rocket', label: 'Rocket', iconName: 'rocket', Icon: 'rocket' },
+  { key: 'code', label: 'Code', iconName: 'code', Icon: 'code' },
+  { key: 'server', label: 'Server', iconName: 'server', Icon: 'server' },
+  { key: 'branch', label: 'Branch', iconName: 'git-branch', Icon: 'git-branch' },
+  { key: 'search', label: 'Search', iconName: 'search', Icon: 'search' },
+  { key: 'settings', label: 'Settings', iconName: 'settings-3', Icon: 'settings-3' },
+  { key: 'brain', label: 'Brain', iconName: 'brain-ai-3', Icon: 'brain-ai-3' },
+  { key: 'stack', label: 'Stack', iconName: 'stack', Icon: 'stack' },
+  { key: 'robot', label: 'Robot', iconName: 'robot-2', Icon: 'robot-2' },
+  { key: 'command', label: 'Command', iconName: 'command', Icon: 'command' },
+  { key: 'file', label: 'File', iconName: 'file-text', Icon: 'file-text' },
 ];
 
 export const PROJECT_ACTION_ICON_MAP = Object.fromEntries(
+  PROJECT_ACTION_ICONS.map((entry) => [entry.key, entry.iconName])
+) as Record<ProjectActionIconKey, IconName>;
+
+export const PROJECT_ACTION_ICON_COMPONENT_MAP = Object.fromEntries(
   PROJECT_ACTION_ICONS.map((entry) => [entry.key, entry.Icon])
-) as Record<ProjectActionIconKey, ComponentType<{ className?: string }>>;
+) as Record<ProjectActionIconKey, IconName>;
 
 export const PROJECT_ACTIONS_UPDATED_EVENT = 'openchamber:project-actions-updated';
 

@@ -25,10 +25,15 @@ import type {
   GitLogOptions,
   GitLogResponse,
   GitCommitFilesResponse,
+  CommitFileDiffResponse,
   GitIdentityProfile,
   GitIdentitySummary,
   DiscoveredGitCredential,
   MergeConflictDetails,
+  CheckoutCommitResponse,
+  CherryPickResponse,
+  RevertCommitResponse,
+  ResetToCommitResponse,
 } from './api/types';
 
 declare global {
@@ -199,7 +204,11 @@ export async function getGitFileDiff(directory: string, options: GetGitFileDiffO
   return response.json();
 }
 
-export async function revertGitFile(directory: string, filePath: string): Promise<void> {
+export async function revertGitFile(
+  directory: string,
+  filePath: string,
+  options?: { scope?: 'all' | 'working' }
+): Promise<void> {
   if (!filePath) {
     throw new Error('path is required to revert git changes');
   }
@@ -207,7 +216,7 @@ export async function revertGitFile(directory: string, filePath: string): Promis
   const response = await fetch(buildUrl(`${API_BASE}/revert`, directory), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: filePath }),
+    body: JSON.stringify({ path: filePath, scope: options?.scope }),
   });
 
   if (!response.ok) {
@@ -215,6 +224,52 @@ export async function revertGitFile(directory: string, filePath: string): Promis
       .json()
       .catch(() => ({ error: response.statusText }));
     throw new Error(message.error || 'Failed to revert git changes');
+  }
+}
+
+export async function stageGitFile(directory: string, filePath: string): Promise<void> {
+  await stageGitFiles(directory, [filePath]);
+}
+
+export async function stageGitFiles(directory: string, filePaths: string[]): Promise<void> {
+  const paths = filePaths.map((path) => path.trim()).filter(Boolean);
+
+  if (paths.length === 0) {
+    throw new Error('path is required to stage git changes');
+  }
+
+  const response = await fetch(buildUrl(`${API_BASE}/stage`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  });
+
+  if (!response.ok) {
+    const message = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(message.error || 'Failed to stage git changes');
+  }
+}
+
+export async function unstageGitFile(directory: string, filePath: string): Promise<void> {
+  await unstageGitFiles(directory, [filePath]);
+}
+
+export async function unstageGitFiles(directory: string, filePaths: string[]): Promise<void> {
+  const paths = filePaths.map((path) => path.trim()).filter(Boolean);
+
+  if (paths.length === 0) {
+    throw new Error('path is required to unstage git changes');
+  }
+
+  const response = await fetch(buildUrl(`${API_BASE}/unstage`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  });
+
+  if (!response.ok) {
+    const message = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(message.error || 'Failed to unstage git changes');
   }
 }
 
@@ -493,6 +548,7 @@ export async function createGitCommit(
       message,
       addAll: options.addAll ?? false,
       files: options.files,
+      stageFiles: options.stageFiles,
     }),
   });
   if (!response.ok) {
@@ -659,10 +715,12 @@ export async function getGitLog(
       from: options.from,
       to: options.to,
       file: options.file,
+      all: options.all ? 'true' : undefined,
     })
   );
   if (!response.ok) {
-    throw new Error(`Failed to get git log: ${response.statusText}`);
+    const errorBody = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(`Failed to get git log: ${errorBody.error || response.statusText}`);
   }
   return response.json();
 }
@@ -676,6 +734,25 @@ export async function getCommitFiles(
   );
   if (!response.ok) {
     throw new Error(`Failed to get commit files: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function getCommitFileDiff(
+  directory: string,
+  hash: string,
+  filePath: string,
+  isBinary: boolean
+): Promise<CommitFileDiffResponse> {
+  const response = await fetch(
+    buildUrl(`${API_BASE}/commit-file-diff`, directory, {
+      hash,
+      path: filePath,
+      binary: isBinary ? 'true' : undefined,
+    })
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to get commit file diff: ${response.statusText}`);
   }
   return response.json();
 }
@@ -854,6 +931,72 @@ export async function merge(
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to merge');
+  }
+  return response.json();
+}
+
+export async function checkoutCommit(
+  directory: string,
+  hash: string
+): Promise<CheckoutCommitResponse> {
+  const response = await fetch(buildUrl(`${API_BASE}/checkout-commit`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hash }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to checkout commit');
+  }
+  return response.json();
+}
+
+export async function cherryPick(
+  directory: string,
+  hash: string
+): Promise<CherryPickResponse> {
+  const response = await fetch(buildUrl(`${API_BASE}/cherry-pick`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hash }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to cherry-pick');
+  }
+  return response.json();
+}
+
+export async function revertCommit(
+  directory: string,
+  hash: string
+): Promise<RevertCommitResponse> {
+  const response = await fetch(buildUrl(`${API_BASE}/revert-commit`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hash }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to revert commit');
+  }
+  return response.json();
+}
+
+export async function resetToCommit(
+  directory: string,
+  hash: string,
+  mode: 'soft' | 'mixed' | 'hard',
+  force?: boolean
+): Promise<ResetToCommitResponse> {
+  const response = await fetch(buildUrl(`${API_BASE}/reset-to-commit`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hash, mode, force }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to reset');
   }
   return response.json();
 }

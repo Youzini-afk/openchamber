@@ -54,7 +54,7 @@ describe('projectTurnRecords', () => {
         expect(projection.ungroupedMessageIds.size).toBe(0);
     });
 
-    test('does not render assistant replies while their parent user turn is missing', () => {
+    test('keeps assistant replies ungrouped while their parent user turn is missing', () => {
         const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
         const assistant2 = createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 4 });
@@ -64,17 +64,17 @@ describe('projectTurnRecords', () => {
         expect(projection.turns).toHaveLength(1);
         expect(projection.turns[0]?.turnId).toBe('u1');
         expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1']);
-        expect(projection.ungroupedMessageIds.has('a2')).toBe(false);
+        expect(projection.ungroupedMessageIds.has('a2')).toBe(true);
         expect(projection.indexes.messageToTurnId.has('a2')).toBe(false);
     });
 
-    test('does not render orphan assistant messages as standalone ungrouped entries', () => {
+    test('keeps orphan assistant messages available as standalone ungrouped entries', () => {
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'missing-user', createdAt: 1 });
 
         const projection = projectTurnRecords([assistant]);
 
         expect(projection.turns).toHaveLength(0);
-        expect(projection.ungroupedMessageIds.has('a1')).toBe(false);
+        expect(projection.ungroupedMessageIds.has('a1')).toBe(true);
         expect(projection.indexes.messageToTurnId.has('a1')).toBe(false);
     });
 
@@ -85,5 +85,37 @@ describe('projectTurnRecords', () => {
 
         expect(projection.turns).toHaveLength(0);
         expect(projection.ungroupedMessageIds.has('s1')).toBe(true);
+    });
+
+    test('reuses unchanged turn records from the previous projection', () => {
+        const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
+        const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3 });
+        const assistant2 = createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 4 });
+        const initial = projectTurnRecords([user1, assistant1, user2, assistant2]);
+        const updatedAssistant2 = {
+            ...assistant2,
+            parts: [{ type: 'text', text: 'stream update' } as Part],
+        };
+
+        const next = projectTurnRecords([user1, assistant1, user2, updatedAssistant2], {
+            previousProjection: initial,
+        });
+
+        expect(next.turns[0]).toBe(initial.turns[0]);
+        expect(next.turns[1]).not.toBe(initial.turns[1]);
+    });
+
+    test('reuses the whole turns array when every turn is unchanged', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
+        const initial = projectTurnRecords([user, assistant]);
+
+        const next = projectTurnRecords([user, assistant], {
+            previousProjection: initial,
+        });
+
+        expect(next.turns).toBe(initial.turns);
+        expect(next.turns[0]).toBe(initial.turns[0]);
     });
 });

@@ -13,6 +13,8 @@ import {
 } from '../lib/turns/windowTurns';
 import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
+import { isVSCodeRuntime } from '@/lib/desktop';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -59,6 +61,38 @@ export interface UseChatTimelineControllerResult {
     handleActiveTurnChange: (turnId: string | null) => void;
 }
 
+const TURN_MODEL_CACHE_MAX = 30
+const VSCODE_TURN_MODEL_CACHE_MAX = 4
+const VSCODE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
+const MOBILE_TURN_MODEL_CACHE_MAX = 4
+const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
+const turnModelCache = new Map<string, { messages: ChatMessageEntry[]; model: TurnWindowModel }>()
+const getTurnModelCacheMax = () => {
+    if (isVSCodeRuntime()) return VSCODE_TURN_MODEL_CACHE_MAX
+    if (isMobileSurfaceRuntime()) return MOBILE_TURN_MODEL_CACHE_MAX
+    return TURN_MODEL_CACHE_MAX
+}
+
+const shouldCacheTurnModelMessages = (messages: ChatMessageEntry[]): boolean => {
+    if (isVSCodeRuntime()) return messages.length <= VSCODE_TURN_MODEL_CACHE_MAX_MESSAGES
+    if (isMobileSurfaceRuntime()) return messages.length <= MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES
+    return true
+}
+
+const rememberTurnModel = (key: string, value: { messages: ChatMessageEntry[]; model: TurnWindowModel }) => {
+    turnModelCache.delete(key)
+    if (!shouldCacheTurnModelMessages(value.messages)) {
+        return
+    }
+    const max = getTurnModelCacheMax()
+    while (turnModelCache.size >= max) {
+        const oldest = turnModelCache.keys().next().value
+        if (typeof oldest !== 'string') break
+        turnModelCache.delete(oldest)
+    }
+    turnModelCache.set(key, value)
+}
+
 export const useChatTimelineController = ({
     sessionId,
     messages,
@@ -74,6 +108,15 @@ export const useChatTimelineController = ({
     const previousTurnWindowModelRef = React.useRef<TurnWindowModel | null>(null);
     const previousMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
     const turnWindowModel = React.useMemo(() => {
+        const key = sessionId ?? ""
+        const cached = key ? turnModelCache.get(key) : undefined
+        if (cached && cached.messages === messages) {
+            rememberTurnModel(key, cached)
+            previousTurnWindowModelRef.current = cached.model
+            previousMessagesRef.current = messages
+            return cached.model
+        }
+
         const incrementalModel = updateTurnWindowModelIncremental(
             previousTurnWindowModelRef.current,
             previousMessagesRef.current,
@@ -82,8 +125,13 @@ export const useChatTimelineController = ({
         const nextModel = incrementalModel ?? buildTurnWindowModel(messages);
         previousTurnWindowModelRef.current = nextModel;
         previousMessagesRef.current = messages;
+
+        if (key && messages.length > 0) {
+            rememberTurnModel(key, { messages, model: nextModel })
+        }
+
         return nextModel;
-    }, [messages]);
+    }, [messages, sessionId]);
 
     const [turnStart, setTurnStart] = React.useState(() => getInitialTurnStart(turnWindowModel.turnCount));
     const [isLoadingOlder, setIsLoadingOlder] = React.useState(false);

@@ -51,6 +51,11 @@ import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import { useSessionUnseenCount } from '@/sync/notification-store';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { useI18n } from '@/lib/i18n';
+import { parseMultiRunSessionTitle } from '@/lib/multirun/title';
+import { MultiRunFusionDialog } from '@/components/multirun/MultiRunFusionDialog';
+import { FusionIcon } from '@/components/icons/FusionIcon';
+import { Icon } from '@/components/icon/Icon';
+import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 
 type Folder = { id: string; name: string; sessionIds: string[] };
 
@@ -78,9 +83,9 @@ type Props = {
   setEditTitle: (value: string) => void;
   handleSaveEdit: () => void;
   handleCancelEdit: () => void;
-  toggleParent: (sessionId: string) => void;
+  toggleParent: (expansionKey: string) => void;
   handleSessionSelect: (sessionId: string, sessionDirectory: string | null, isMissingDirectory: boolean, projectId?: string | null) => void;
-  handleSessionDoubleClick: () => void;
+  handleSessionDoubleClick: (sessionId: string, sessionTitle: string) => void;
   togglePinnedSession: (sessionId: string) => void;
   handleShareSession: (session: Session) => void;
   copiedSessionId: string | null;
@@ -94,7 +99,7 @@ type Props = {
   removeSessionFromFolder: (scopeKey: string, sessionId: string) => void;
   addSessionToFolder: (scopeKey: string, folderId: string, sessionId: string) => void;
   createFolderAndStartRename: (scopeKey: string, parentId?: string | null) => { id: string } | null;
-  openContextPanelTab: (directory: string, options: { mode: 'chat'; dedupeKey: string; label: string }) => void;
+  openContextPanelTab: (directory: string, options: { mode: 'chat'; dedupeKey: string; label: string; readOnly?: boolean }) => void;
   handleDeleteSession: (session: Session, source?: { archivedBucket?: boolean }) => void;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
@@ -176,7 +181,18 @@ const areEqual = (prev: Props, next: Props): boolean => {
     }
   }
   if (prev.pinnedSessionIds.has(prevSessionId) !== next.pinnedSessionIds.has(nextSessionId)) return false;
-  if (prev.expandedParents.has(prevSessionId) !== next.expandedParents.has(nextSessionId)) return false;
+  // Expansion is keyed per render context, so compare the composite key
+  // matching the one isExpanded reads from in render. If a session appears
+  // in two contexts (project + recent), they have independent state.
+  {
+    const prevRenderContext = prev.renderContext ?? 'project';
+    const nextRenderContext = next.renderContext ?? 'project';
+    const prevArchived = prev.archivedBucket ?? false;
+    const nextArchived = next.archivedBucket ?? false;
+    const prevExpansionKey = `${prevRenderContext}:${prevArchived ? 'archived' : 'active'}:${prevSessionId}`;
+    const nextExpansionKey = `${nextRenderContext}:${nextArchived ? 'archived' : 'active'}:${nextSessionId}`;
+    if (prev.expandedParents.has(prevExpansionKey) !== next.expandedParents.has(nextExpansionKey)) return false;
+  }
   if (prev.hasSessionSearchQuery !== next.hasSessionSearchQuery) return false;
   if (prev.normalizedSessionSearchQuery !== next.normalizedSessionSearchQuery) return false;
   if (prev.notifyOnSubtasks !== next.notifyOnSubtasks) return false;
@@ -269,23 +285,35 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isMinimalMode = displayMode === 'minimal';
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
+  const runtimeApis = React.useContext(RuntimeAPIContext);
   const revealOnHoverClass = isVSCode
     ? 'group-hover:opacity-100 group-hover:pointer-events-auto'
     : 'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto';
   const hideOnHoverClass = isVSCode
     ? 'group-hover:opacity-0'
     : 'group-hover:opacity-0 group-focus-within:opacity-0';
+  const showOpenInEditorAction = isVSCode;
   const showQuickArchiveAction = !archivedBucket && !mobileVariant;
   const revealPaddingClass = isMinimalMode
     ? (isVSCode
         ? 'group-hover:pr-2'
         : 'group-hover:pr-2 group-focus-within:pr-2')
     : (isVSCode
-        ? (showQuickArchiveAction ? 'group-hover:pr-12' : 'group-hover:pr-5')
+        ? (showQuickArchiveAction && showOpenInEditorAction
+            ? 'group-hover:pr-18'
+            : showQuickArchiveAction || showOpenInEditorAction
+              ? 'group-hover:pr-12'
+              : 'group-hover:pr-5')
         : (showQuickArchiveAction ? 'group-hover:pr-12 group-focus-within:pr-12' : 'group-hover:pr-5 group-focus-within:pr-5'));
   const alwaysActionPaddingClass = showQuickArchiveAction ? 'pr-13' : 'pr-7';
   const suppressNextSelectRef = React.useRef(false);
   const [isTouchPressed, setIsTouchPressed] = React.useState(false);
+  const editingIdRef = React.useRef(editingId);
+  editingIdRef.current = editingId;
+  const pendingRenameRef = React.useRef<{ id: string; title: string } | null>(null);
+  const handleSaveEditRef = React.useRef(handleSaveEdit);
+  handleSaveEditRef.current = handleSaveEdit;
+  const formRef = React.useRef<HTMLFormElement>(null);
 
   const session = node.session;
   const liveSession = useSession(session.id);
@@ -331,7 +359,11 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const hasChildren = node.children.length > 0;
   const isPinnedSession = pinnedSessionIds.has(session.id);
-  const isExpanded = hasSessionSearchQuery ? true : expandedParents.has(session.id);
+  // Per-render-context expansion key: the same session can appear in both
+  // the project's root and the "Recent" list, and expanding one should not
+  // expand the other. Matches the format of menuInstanceKey.
+  const expansionKey = menuInstanceKey;
+  const isExpanded = hasSessionSearchQuery ? true : expandedParents.has(expansionKey);
   const isSubtaskSession = Boolean((resolvedSession as Session & { parentID?: string | null }).parentID);
   const unseenCount = useSessionUnseenCount(session.id);
   const needsAttention = unseenCount > 0 && (!isSubtaskSession || notifyOnSubtasks);
@@ -341,6 +373,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionUpdatedLabel = formatSessionDateLabel(sessionTimestamp);
   const sessionCompactUpdatedLabel = formatSessionCompactDateLabel(sessionTimestamp);
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
+  const isMultiRunLikeSession = React.useMemo(() => parseMultiRunSessionTitle(resolvedSession.title) !== null, [resolvedSession.title]);
+  const [fusionDialogOpen, setFusionDialogOpen] = React.useState(false);
 
   const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [collectNodeDescendantIds, node]);
 
@@ -441,6 +475,18 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     });
   }, [session.id, sessionDirectory]);
 
+  // Capture outside-clicks to save edits — immune to focus-race with onBlur.
+  React.useEffect(() => {
+    if (editingId !== session.id) return;
+    const handleDocMouseDown = (e: MouseEvent) => {
+      if (formRef.current && !formRef.current.contains(e.target as Node)) {
+        handleSaveEditRef.current();
+      }
+    };
+    document.addEventListener('mousedown', handleDocMouseDown);
+    return () => document.removeEventListener('mousedown', handleDocMouseDown);
+  }, [editingId, session.id]);
+
   if (editingId === session.id) {
     return (
       <div
@@ -449,8 +495,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0">
           <form
+            ref={formRef}
             className="flex w-full items-center gap-2"
-
             onSubmit={(event) => {
               event.preventDefault();
               handleSaveEdit();
@@ -546,13 +592,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
-        toggleParent(session.id);
+        toggleParent(expansionKey);
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           event.stopPropagation();
-          toggleParent(session.id);
+          toggleParent(expansionKey);
         }
       }}
       className={cn(
@@ -576,6 +622,15 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const handleMenuOpenChange = (open: boolean) => {
     setOpenSidebarMenuKey(open ? menuInstanceKey : null);
+  };
+
+  const handleMenuOpenChangeComplete = (open: boolean) => {
+    if (!open && pendingRenameRef.current) {
+      const { id, title } = pendingRenameRef.current;
+      pendingRenameRef.current = null;
+      setEditingId(id);
+      setEditTitle(title);
+    }
   };
 
   const handleMenuTriggerClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -609,6 +664,22 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
     handleDeleteSession(session, { archivedBucket });
+  };
+
+  const handleOpenInEditorPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleOpenInEditorMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleOpenInEditorClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void runtimeApis?.vscode?.executeCommand('openchamber.openSessionInEditor', session.id, sessionTitle);
   };
 
   const handleRowSelect = (event?: React.MouseEvent<HTMLButtonElement>) => {
@@ -655,11 +726,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   };
 
   const sessionMenuContent = (
-    <DropdownMenuContent align="end" className="min-w-[180px]" onCloseAutoFocus={(event) => { if (renamingFolderId) event.preventDefault(); }}>
+    <DropdownMenuContent align="end" className="min-w-[180px]" finalFocus={() => (renamingFolderId || editingIdRef.current) ? false : true}>
       <DropdownMenuItem
         onClick={() => {
-          setEditingId(session.id);
-          setEditTitle(sessionTitle);
+          // Defer rename until dropdown close transition completes.
+          // onOpenChangeComplete fires after animation + focus cleanup are done,
+          // avoiding focus stealing from Base UI's unmount cleanup.
+          pendingRenameRef.current = { id: session.id, title: sessionTitle };
         }}
         className="[&>svg]:mr-1"
       >
@@ -692,6 +765,12 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         <RiDownloadLine className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.session.menu.exportMarkdown')}
       </DropdownMenuItem>
+      {isMultiRunLikeSession ? (
+        <DropdownMenuItem onClick={() => setFusionDialogOpen(true)} className="[&>svg]:mr-1">
+          <FusionIcon className="mr-1 h-4 w-4" />
+          {t('sessions.sidebar.session.menu.runFusion')}
+        </DropdownMenuItem>
+      ) : null}
 
       {sessionDirectory && !archivedBucket ? (() => {
         const scopeFolders = getFoldersForScope(sessionDirectory);
@@ -797,7 +876,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 	                    onClick={(event) => handleRowSelect(event)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      handleSessionDoubleClick();
+                      handleSessionDoubleClick(session.id, sessionTitle);
                     }}
                     className={cn(
 	                      'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none disabled:cursor-not-allowed transition-[padding]',
@@ -861,7 +940,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 	                onClick={(event) => handleRowSelect(event)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  handleSessionDoubleClick();
+                  handleSessionDoubleClick(session.id, sessionTitle);
                 }}
                 className={cn(
 	                  'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none disabled:cursor-not-allowed transition-[padding]',
@@ -932,7 +1011,30 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 </TooltipContent>
               </Tooltip>
             ) : null}
-            <DropdownMenu open={isMenuOpen} onOpenChange={handleMenuOpenChange}>
+            {showOpenInEditorAction ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity',
+                      isMinimalMode && !alwaysShowActions ? 'h-4 w-4' : 'h-6 w-6',
+                    )}
+                    aria-label={t('sessions.sidebar.session.actions.openInEditor')}
+                    onPointerDown={handleOpenInEditorPointerDown}
+                    onMouseDown={handleOpenInEditorMouseDown}
+                    onClick={handleOpenInEditorClick}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <Icon name="external-link" className={cn(isMinimalMode && !alwaysShowActions ? 'h-2.5 w-2.5' : 'h-3.5 w-3.5')} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" sideOffset={8}>
+                  {t('sessions.sidebar.session.actions.openInEditor')}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            <DropdownMenu open={isMenuOpen} onOpenChange={handleMenuOpenChange} onOpenChangeComplete={handleMenuOpenChangeComplete}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -1002,6 +1104,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {isMultiRunLikeSession ? (
+        <MultiRunFusionDialog
+          session={resolvedSession}
+          open={fusionDialogOpen}
+          onOpenChange={setFusionDialogOpen}
+        />
+      ) : null}
     </React.Fragment>
   );
 }

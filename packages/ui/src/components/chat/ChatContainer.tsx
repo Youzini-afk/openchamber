@@ -35,9 +35,11 @@ import {
     useSessionMessageRecords,
     useSessions,
     useDirectorySync,
+    useSyncDirectory,
     useSessionStatus,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
+import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { getAllSyncSessions } from '@/sync/sync-refs';
@@ -315,11 +317,24 @@ const HYDRATING_SKELETON_ITEMS: Array<{
     },
 ];
 
-type ChatContainerProps = {
-    autoOpenDraft?: boolean;
+const ReadOnlyPromptBanner: React.FC = () => {
+    const { t } = useI18n();
+
+    return (
+        <div className="p-3">
+            <div className="rounded-2xl border border-border/70 bg-[var(--surface-background)] px-4 py-3 typography-ui-label text-muted-foreground">
+                {t('chat.container.readOnlySubagentPromptBanner')}
+            </div>
+        </div>
+    );
 };
 
-export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = true }) => {
+type ChatContainerProps = {
+    autoOpenDraft?: boolean;
+    readOnly?: boolean;
+};
+
+export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = true, readOnly = false }) => {
     const { t } = useI18n();
     // Session UI state
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
@@ -329,6 +344,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 
     // Sync actions
     const sync = useSync();
+    const syncDirectory = useSyncDirectory();
     const ensureSessionRenderable = React.useCallback(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId),
         [sync],
@@ -371,12 +387,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     // Messages from sync system
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '');
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
+    const sessionPrefetchInfo = React.useSyncExternalStore(
+        React.useCallback(
+            (notify) => currentSessionId
+                ? subscribeSessionPrefetch(syncDirectory, currentSessionId, notify)
+                : () => undefined,
+            [currentSessionId, syncDirectory],
+        ),
+        React.useCallback(
+            () => currentSessionId ? getSessionPrefetch(syncDirectory, currentSessionId) : undefined,
+            [currentSessionId, syncDirectory],
+        ),
+        React.useCallback(() => undefined, []),
+    );
 
     // Sessions from sync system
     const sessions = useSessions();
 
     // Plan detection - watches messages for plan creation and signals store
-    usePlanDetection(currentSessionId ?? '');
+    usePlanDetection(currentSessionId ?? '', sessionMessages);
 
     // Session status from sync system
     const sessionStatusForCurrent = useSessionStatus(currentSessionId ?? '') ?? IDLE_SESSION_STATUS;
@@ -481,12 +510,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     // History metadata — use sync's hasMore/isLoading
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
+        const prefetchHasMore = Boolean(sessionPrefetchInfo?.cursor) && sessionPrefetchInfo?.complete !== true;
         return {
             limit: sessionMessages.length,
-            complete: !sync.hasMore(currentSessionId),
+            complete: !(sync.hasMore(currentSessionId) || prefetchHasMore),
             loading: sync.isLoading(currentSessionId),
         };
-    }, [currentSessionId, sessionMessages.length, sync]);
+    }, [currentSessionId, sessionMessages.length, sessionPrefetchInfo, sync]);
 
     const { isMobile } = useDeviceInfo();
     const draftOpen = Boolean(newSessionDraft?.open);
@@ -525,6 +555,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
             {t('chat.container.returnToParent.label')}
         </Button>
     ) : null;
+    const promptReadOnly = readOnly || Boolean(parentSession);
 
     React.useEffect(() => {
         if (autoOpenDraft && !currentSessionId && !draftOpen) {
@@ -753,7 +784,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 							: 'bg-background'
 					)}
 				>
-						<ChatInput scrollToBottom={resumeToLatestInstant} />
+						{promptReadOnly ? <ReadOnlyPromptBanner /> : <ChatInput scrollToBottom={resumeToLatestInstant} />}
 				</div>
 			</div>
         );
@@ -813,7 +844,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 							: 'bg-background'
 					)}
 				>
-					<ChatInput scrollToBottom={resumeToLatestInstant} />
+					{promptReadOnly ? <ReadOnlyPromptBanner /> : <ChatInput scrollToBottom={resumeToLatestInstant} />}
 				</div>
             </div>
         );
@@ -846,7 +877,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 							: 'bg-background'
 					)}
 				>
-					<ChatInput scrollToBottom={resumeToLatestInstant} />
+					{promptReadOnly ? <ReadOnlyPromptBanner /> : <ChatInput scrollToBottom={resumeToLatestInstant} />}
 				</div>
             </div>
         );
@@ -856,6 +887,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 		<div className="relative flex flex-col h-full bg-background">
 			{returnToParentButton}
 			<ChatViewport
+				key={currentSessionId}
 				currentSessionId={currentSessionId}
                 isDesktopExpandedInput={isDesktopExpandedInput}
                 isMobile={isMobile}
@@ -894,7 +926,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                         onClick={navigation.resumeToLatest}
                     />
                 )}
-                <ChatInput scrollToBottom={resumeToLatestInstant} />
+                {promptReadOnly ? <ReadOnlyPromptBanner /> : <ChatInput scrollToBottom={resumeToLatestInstant} />}
             </div>
 
             <TimelineDialog

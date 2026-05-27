@@ -5,7 +5,6 @@ import {
   RiArrowRightSLine,
   RiDeleteBinLine,
   RiInformationLine,
-  RiPlayLine,
 } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -40,12 +39,13 @@ import {
 } from '@/lib/openchamberConfig';
 import {
   buildProjectActionDesktopForwardOptions,
-  PROJECT_ACTION_ICON_MAP,
+  PROJECT_ACTION_ICON_COMPONENT_MAP,
   PROJECT_ACTION_ICONS,
   PROJECT_ACTIONS_UPDATED_EVENT,
 } from '@/lib/projectActions';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { Icon } from '@/components/icon/Icon';
 
 type EditableProjectAction = OpenChamberProjectAction;
 
@@ -216,8 +216,8 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
         ) : (
           <div className="space-y-0 max-w-[30rem]">
             {actions.map((action) => {
-              const selectedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_MAP) || 'play';
-              const SelectedIcon = PROJECT_ACTION_ICON_MAP[selectedIconKey] || RiPlayLine;
+              const selectedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_COMPONENT_MAP) || 'play';
+              const selectedIconName = PROJECT_ACTION_ICON_COMPONENT_MAP[selectedIconKey] || 'play';
               const isOpen = expandedActions[action.id] ?? false;
               const title = action.name.trim() || t('settings.projects.actions.state.untitled');
 
@@ -242,7 +242,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                       ) : (
                         <RiArrowRightSLine className="h-4 w-4 text-muted-foreground" />
                       )}
-                      <SelectedIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Icon name={selectedIconName} className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="typography-ui-label text-foreground truncate">{title}</span>
@@ -271,13 +271,12 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--interactive-border)] text-foreground hover:bg-[var(--interactive-hover)]"
                                 aria-label={t('settings.projects.actions.field.selectIconAria')}
                               >
-                                <SelectedIcon className="h-4 w-4" />
+                                <Icon name={selectedIconName} className="h-4 w-4" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-56 p-2">
                               <div className="grid grid-cols-6 gap-1">
                               {PROJECT_ACTION_ICONS.map((entry) => {
-                                const Icon = entry.Icon;
                                 const selected = (action.icon || 'play') === entry.key;
                                 return (
                                   <button
@@ -290,7 +289,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                                     )}
                                     aria-label={t('settings.projects.actions.field.iconAria', { icon: entry.label })}
                                   >
-                                    <Icon className="h-4 w-4" />
+                                    <Icon name={entry.Icon} className="h-4 w-4" />
                                   </button>
                                 );
                               })}

@@ -14,6 +14,7 @@ import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
+import { createNgrokTunnelProvider } from './lib/tunnels/providers/ngrok.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
 import {
   TUNNEL_MODE_MANAGED_LOCAL,
@@ -202,6 +203,7 @@ const settingsNormalizationRuntime = createSettingsNormalizationRuntime({
   os,
   path,
   processLike: process,
+  realpathSync: fs.realpathSync,
   tunnelBootstrapTtlDefaultMs: TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS,
   tunnelBootstrapTtlMinMs: TUNNEL_BOOTSTRAP_TTL_MIN_MS,
   tunnelBootstrapTtlMaxMs: TUNNEL_BOOTSTRAP_TTL_MAX_MS,
@@ -253,9 +255,6 @@ const formatProjectLabel = (...args) => notificationTemplateRuntime.formatProjec
 const resolveNotificationTemplate = (...args) => notificationTemplateRuntime.resolveNotificationTemplate(...args);
 const shouldApplyResolvedTemplateMessage = (...args) => notificationTemplateRuntime.shouldApplyResolvedTemplateMessage(...args);
 const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZenModels(...args);
-const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
-const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
-const summarizeText = (...args) => notificationTemplateRuntime.summarizeText(...args);
 const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
 const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
 const fetchLastAssistantMessageText = (...args) => notificationTemplateRuntime.fetchLastAssistantMessageText(...args);
@@ -471,6 +470,7 @@ let activeTunnelController = null;
 let globalWatcherStartPromise = null;
 const tunnelProviderRegistry = createTunnelProviderRegistry([
   createCloudflareTunnelProvider(),
+  createNgrokTunnelProvider(),
 ]);
 tunnelProviderRegistry.seal();
 const tunnelAuthController = createTunnelAuth();
@@ -688,8 +688,6 @@ notificationTemplateRuntime = createNotificationTemplateRuntime({
 const notificationTriggerRuntime = createNotificationTriggerRuntime({
   readSettingsFromDisk,
   prepareNotificationLastMessage,
-  summarizeText,
-  resolveZenModel,
   buildTemplateVariables,
   extractLastMessageText,
   fetchLastAssistantMessageText,
@@ -751,7 +749,7 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
   emitSyntheticEvent({
     type: 'openchamber:session-status',
     properties: {
-      sessionId,
+      sessionID: sessionId,
       status,
       timestamp: Date.now(),
       metadata: {
@@ -1101,9 +1099,6 @@ async function main(options = {}) {
 
   const sayTTSCapability = await detectSayTtsCapability(process);
 
-  // Startup model validation is best-effort and runs in background.
-  void validateZenModelAtStartup();
-
   const app = express();
   const serverStartedAt = new Date().toISOString();
   app.set('trust proxy', true);
@@ -1158,7 +1153,6 @@ async function main(options = {}) {
     tunnelAuthController,
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
-    resolveZenModel,
     sayTTSCapability,
     ensurePushInitialized,
     ensureGlobalWatcherStarted,

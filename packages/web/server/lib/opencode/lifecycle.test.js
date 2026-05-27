@@ -3,11 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.fn();
 
-vi.mock('node:child_process', () => ({
-  spawn: spawnMock,
-  spawnSync: vi.fn(),
-}));
-
 const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
@@ -104,6 +99,8 @@ const createRuntime = (overrides = {}) => {
       SHELL_ONLY: 'yes',
       OPENCODE_SERVER_PASSWORD: 'shell-password',
     })),
+    spawnProcess: spawnMock,
+    spawnSyncProcess: vi.fn(() => ({ status: 1, stdout: '', stderr: '' })),
     ...overrides,
   });
 };

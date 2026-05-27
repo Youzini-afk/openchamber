@@ -16,6 +16,8 @@ export interface GitChangedFile {
     insertions: number;
     deletions: number;
     status: string;
+    hasStagedChanges: boolean;
+    hasWorkingChanges: boolean;
 }
 
 export type ChangedFileEntry = ChangedFile | GitChangedFile;
@@ -169,11 +171,13 @@ export const extractGitChangedFiles = (
 ): GitChangedFile[] => {
     const result: GitChangedFile[] = [];
     for (const file of files) {
-        const indexCode = file.index.trim();
-        const workingCode = file.working_dir.trim();
-        const code = indexCode === 'A' || workingCode === '?'
-            ? (workingCode === '?' ? '?' : 'A')
-            : (workingCode || indexCode);
+        const indexStatus = file.index?.trim() ?? '';
+        const workingStatus = file.working_dir?.trim() ?? '';
+        const hasStagedChanges = Boolean(indexStatus && indexStatus !== '?');
+        const hasWorkingChanges = Boolean(workingStatus || indexStatus === '?');
+        const code = indexStatus === 'A' || workingStatus === '?'
+            ? (workingStatus === '?' ? '?' : 'A')
+            : (workingStatus || indexStatus);
         if (!code || code === '!') continue;
         const stats = diffStats?.[file.path];
         result.push({
@@ -182,6 +186,8 @@ export const extractGitChangedFiles = (
             insertions: stats?.insertions ?? 0,
             deletions: stats?.deletions ?? 0,
             status: code,
+            hasStagedChanges,
+            hasWorkingChanges,
         });
     }
     return result;

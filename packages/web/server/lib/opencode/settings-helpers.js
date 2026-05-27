@@ -54,6 +54,14 @@ export const createSettingsHelpers = (dependencies) => {
     return fallback;
   };
 
+  const sanitizeMobileKeyboardMode = (value) => {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return MOBILE_KEYBOARD_MODE_VALUES.has(normalized) ? normalized : undefined;
+  };
+
   const sanitizeSettingsUpdate = (payload) => {
     if (!payload || typeof payload !== 'object') {
       return {};
@@ -112,6 +120,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.desktopLanAccessEnabled === 'boolean') {
       result.desktopLanAccessEnabled = candidate.desktopLanAccessEnabled;
     }
+    if (typeof candidate.desktopUiPassword === 'string') {
+      result.desktopUiPassword = candidate.desktopUiPassword.trim();
+    }
     if (Array.isArray(candidate.projects)) {
       const projects = sanitizeProjects(candidate.projects);
       if (projects) {
@@ -165,6 +176,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showReasoningTraces === 'boolean') {
       result.showReasoningTraces = candidate.showReasoningTraces;
     }
+    if (typeof candidate.collapsibleThinkingBlocks === 'boolean') {
+      result.collapsibleThinkingBlocks = candidate.collapsibleThinkingBlocks;
+    }
     if (typeof candidate.showTextJustificationActivity === 'boolean') {
       result.showTextJustificationActivity = candidate.showTextJustificationActivity;
     }
@@ -215,6 +229,9 @@ export const createSettingsHelpers = (dependencies) => {
     }
     if (candidate.usageDisplayMode === 'usage' || candidate.usageDisplayMode === 'remaining') {
       result.usageDisplayMode = candidate.usageDisplayMode;
+    }
+    if (typeof candidate.usageShowPredValues === 'boolean') {
+      result.usageShowPredValues = candidate.usageShowPredValues;
     }
     if (Array.isArray(candidate.usageDropdownProviders)) {
       result.usageDropdownProviders = normalizeStringArray(candidate.usageDropdownProviders);
@@ -326,7 +343,7 @@ export const createSettingsHelpers = (dependencies) => {
       result.pwaOrientation = normalizePwaOrientation(candidate.pwaOrientation, undefined);
     }
     if (typeof candidate.mobileKeyboardMode === 'string') {
-      const mode = normalizeMobileKeyboardMode(candidate.mobileKeyboardMode, undefined);
+      const mode = sanitizeMobileKeyboardMode(candidate.mobileKeyboardMode);
       if (mode) {
         result.mobileKeyboardMode = mode;
       }
@@ -688,7 +705,13 @@ export const createSettingsHelpers = (dependencies) => {
           ? settings.showReasoningTraces
           : typeof sanitized.showReasoningTraces === 'boolean'
             ? sanitized.showReasoningTraces
-            : false
+            : false,
+      collapsibleThinkingBlocks:
+        typeof settings.collapsibleThinkingBlocks === 'boolean'
+          ? settings.collapsibleThinkingBlocks
+          : typeof sanitized.collapsibleThinkingBlocks === 'boolean'
+            ? sanitized.collapsibleThinkingBlocks
+            : true,
     };
   };
 

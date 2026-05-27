@@ -110,6 +110,13 @@ function readJsoncFile(filePath) {
 
 function getFileMtimeMs(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const stat = fs.statSync(filePath, { bigint: true });
+    if (typeof stat.mtimeNs === 'bigint') {
+      return Number(stat.mtimeNs);
+    }
+  } catch {
+  }
   return fs.statSync(filePath).mtimeMs;
 }
 
@@ -221,8 +228,16 @@ function getConfigScan(directory) {
     getPrimaryUserOpenCodeConfigPath(),
   ]));
   const tuiConfigPath = getPrimaryUserTuiConfigPath();
+  const mtimePaths = [
+    ...userPaths,
+    ...legacyUserPaths,
+    ...projectPaths,
+    ...tuiPaths,
+    getPrimaryUserOpenCodeConfigPath(),
+    tuiConfigPath,
+  ];
   const mtimeMsByPath = {};
-  for (const filePath of Array.from(new Set([...configPaths, tuiConfigPath ? tuiConfigPath : null].filter(Boolean)))) {
+  for (const filePath of Array.from(new Set(mtimePaths.filter(Boolean)))) {
     mtimeMsByPath[filePath] = getFileMtimeMs(filePath);
   }
   return {
@@ -275,8 +290,8 @@ function createConfigModifiedError() {
 }
 
 function hasMtimeMismatch(filePath, expectedMtimeMs) {
-  if (expectedMtimeMs == null) return false;
   const currentMtimeMs = getFileMtimeMs(filePath);
+  if (expectedMtimeMs == null) return currentMtimeMs != null;
   if (currentMtimeMs == null) return true;
   return Math.abs(currentMtimeMs - expectedMtimeMs) > 1;
 }
@@ -291,6 +306,11 @@ function assertNoMtimeMismatches(filePaths, expectedMtimeMsByPath) {
       throw createConfigModifiedError();
     }
   }
+}
+
+function assertNoExpectedMtimeMismatches(expectedMtimeMsByPath) {
+  if (!isPlainObject(expectedMtimeMsByPath)) return;
+  assertNoMtimeMismatches(Object.keys(expectedMtimeMsByPath), expectedMtimeMsByPath);
 }
 
 function removeKnownOrchestrationEntries(entries) {
@@ -363,6 +383,7 @@ function setAgentOrchestrationMode(input = {}) {
     ...(mode === MODE_SLIM ? [tuiTarget] : []),
   ]));
 
+  assertNoExpectedMtimeMismatches(input.expectedMtimeMsByPath);
   assertNoMtimeMismatches(pathsToWrite, input.expectedMtimeMsByPath);
 
   for (const filePath of existingPathsToClean) {

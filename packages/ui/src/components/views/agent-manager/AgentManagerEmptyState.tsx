@@ -357,8 +357,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
 
       await onCreateGroup?.({
         name: groupName.trim(),
-        prompt: prompt.trim(),
-        models,
+        groups: [{ prompt: prompt.trim(), models }],
         agent: selectedAgent || undefined,
         worktreeBaseBranch: baseBranch,
         files,

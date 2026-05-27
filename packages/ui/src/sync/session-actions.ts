@@ -13,16 +13,15 @@ import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
-import { partitionMessagesByRevert } from "./revert-filter"
 import { materializeSessionSnapshots } from "./materialization"
 import { stripMessageDiffSnapshots } from "./sanitize"
-import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import { sessionEvents } from "@/lib/sessionEvents"
-import { formatMessage, useI18nStore, type I18nKey, type I18nParams } from "@/lib/i18n/store"
-import type { CheckpointChangedFile, CheckpointRecord } from "@/lib/api/types"
+import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
+const UNREVERT_REFETCH_ATTEMPTS = 3
+const UNREVERT_REFETCH_RETRY_MS = 150
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
 let _sdk: OpencodeClient | null = null
@@ -30,6 +29,8 @@ let _childStores: ChildStoreManager | null = null
 let _getDirectory: () => string = () => ""
 let _optimisticAdd: ((input: { sessionID: string; message: Message; parts: Part[] }) => void) | null = null
 let _optimisticRemove: ((input: { sessionID: string; messageID: string }) => void) | null = null
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function setActionRefs(
   sdk: OpencodeClient,
@@ -96,172 +97,14 @@ export async function waitForConnectionOrThrow(): Promise<void> {
   throw connectionLostError()
 }
 
+export async function cleanupSessionCheckpointsIfAvailable(sessionId: string): Promise<void> {
+  const checkpoints = getRegisteredRuntimeAPIs()?.checkpoints
+  if (!checkpoints?.cleanupSession) return
+  await checkpoints.cleanupSession(sessionId)
+}
+
 function getSessionDirectory(sessionId: string): string | undefined {
   return useSessionUIStore.getState().getDirectoryForSession(sessionId) || dir()
-}
-
-function t(key: I18nKey, params?: I18nParams): string {
-  return formatMessage(useI18nStore.getState().dictionary, key, params)
-}
-
-export async function createMessageCheckpointIfAvailable(sessionId: string, messageId: string): Promise<void> {
-  const runtime = getRegisteredRuntimeAPIs()
-  const checkpoints = runtime?.checkpoints
-  if (!runtime?.runtime.isVSCode || !checkpoints) return
-
-  const directory = getSessionDirectory(sessionId)
-  if (!directory) return
-
-  try {
-    await checkpoints.create({
-      sessionId,
-      messageId,
-      directory,
-      label: t("chat.checkpoint.label.beforeMessage"),
-      phase: "before-message",
-    })
-  } catch (error) {
-    console.warn("[session-actions] failed to create message checkpoint", error)
-  }
-}
-
-export async function cleanupSessionCheckpointsIfAvailable(sessionId: string): Promise<void> {
-  const runtime = getRegisteredRuntimeAPIs()
-  const checkpoints = runtime?.checkpoints
-  if (!runtime?.runtime.isVSCode || !checkpoints?.cleanupSession) return
-
-  try {
-    await checkpoints.cleanupSession(sessionId)
-  } catch (error) {
-    console.warn("[session-actions] failed to cleanup session checkpoints", error)
-  }
-}
-
-async function findRevertCheckpoint(
-  sessionId: string,
-  messageId: string,
-  targetMessage?: Message,
-): Promise<CheckpointRecord | null> {
-  const runtime = getRegisteredRuntimeAPIs()
-  const checkpoints = runtime?.checkpoints
-  if (!runtime?.runtime.isVSCode || !checkpoints) return null
-
-  const directory = getSessionDirectory(sessionId)
-  if (!directory) return null
-
-  const candidates = new Set<string>([messageId])
-  const parentId = typeof (targetMessage as { parentID?: unknown } | undefined)?.parentID === "string"
-    ? ((targetMessage as { parentID: string }).parentID || "").trim()
-    : ""
-  if (parentId) {
-    candidates.add(parentId)
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const checkpoint = await checkpoints.getForMessage({ sessionId, messageId: candidate, directory })
-      if (checkpoint) return checkpoint
-    } catch (error) {
-      console.warn("[session-actions] failed to lookup checkpoint", error)
-    }
-  }
-
-  return null
-}
-
-function pickDiffPreviewFile(files: CheckpointChangedFile[]): CheckpointChangedFile | null {
-  return files.find((file) => file.type !== "deleted") ?? files[0] ?? null
-}
-
-type CheckpointRestoreChoice = {
-  checkpoint: CheckpointRecord | null
-  cancelRevert?: boolean
-}
-
-async function chooseCheckpointRestore(
-  sessionId: string,
-  messageId: string,
-  targetMessage?: Message,
-): Promise<CheckpointRestoreChoice> {
-  const runtime = getRegisteredRuntimeAPIs()
-  const checkpoints = runtime?.checkpoints
-  if (!runtime?.runtime.isVSCode || !checkpoints) return { checkpoint: null }
-
-  const checkpoint = await findRevertCheckpoint(sessionId, messageId, targetMessage)
-  if (!checkpoint) return { checkpoint: null }
-
-  if (checkpoints.reviewRestore) {
-    try {
-      const review = await checkpoints.reviewRestore({ sessionId, checkpointId: checkpoint.id })
-      if (review.cancelled) {
-        return { checkpoint: null, cancelRevert: true }
-      }
-      return { checkpoint: review.restore ? checkpoint : null }
-    } catch (error) {
-      console.warn("[session-actions] failed to review checkpoint restore", error)
-    }
-  }
-
-  let changedFiles: CheckpointChangedFile[] = []
-  let diffLoaded = false
-  try {
-    changedFiles = (await checkpoints.diff({ sessionId, checkpointId: checkpoint.id })).files
-    diffLoaded = true
-  } catch (error) {
-    console.warn("[session-actions] failed to diff checkpoint", error)
-  }
-
-  if (diffLoaded && changedFiles.length === 0) {
-    return { checkpoint: null }
-  }
-
-  if (changedFiles.length > 0) {
-    const preview = pickDiffPreviewFile(changedFiles)
-    if (preview && typeof window !== "undefined") {
-      const shouldOpenDiff = window.confirm(t("chat.checkpoint.confirm.viewDiff", { count: changedFiles.length }))
-      if (shouldOpenDiff) {
-        try {
-          await checkpoints.openFileDiff({ sessionId, checkpointId: checkpoint.id, filePath: preview.path })
-        } catch (error) {
-          console.warn("[session-actions] failed to open checkpoint diff", error)
-        }
-      }
-    }
-  }
-
-  if (typeof window !== "undefined") {
-    const count = diffLoaded ? changedFiles.length : checkpoint.fileCount
-    const shouldRestore = window.confirm(t("chat.checkpoint.confirm.restore", { count }))
-    return { checkpoint: shouldRestore ? checkpoint : null }
-  }
-
-  return { checkpoint: null }
-}
-
-async function restoreCheckpointAfterRevert(sessionId: string, checkpoint: CheckpointRecord): Promise<void> {
-  const runtime = getRegisteredRuntimeAPIs()
-  const checkpoints = runtime?.checkpoints
-  if (!runtime?.runtime.isVSCode || !checkpoints) return
-
-  try {
-    const result = await checkpoints.restore({
-      sessionId,
-      checkpointId: checkpoint.id,
-      createSafetyCheckpoint: true,
-    })
-    if (!result.success) {
-      throw new Error("Checkpoint restore failed")
-    }
-    if (checkpoint.directory) {
-      sessionEvents.requestGitRefresh({ directory: checkpoint.directory })
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error("[session-actions] failed to restore checkpoint", error)
-    if (typeof window !== "undefined") {
-      window.alert(t("chat.checkpoint.alert.restoreFailed", { message }))
-    }
-  }
 }
 
 function getDirectoryStore(directory?: string) {
@@ -279,6 +122,18 @@ function getSessionReplyClient(sessionId?: string): OpencodeClient {
     return opencodeClient.getScopedSdkClient(directory)
   }
   return sdk()
+}
+
+function restoreFilePartsToInput(fileParts: Array<Record<string, unknown>>): void {
+  useInputStore.getState().clearAttachedFiles()
+  for (const filePart of fileParts) {
+    const url = typeof filePart.url === "string" ? filePart.url : ""
+    const mime = typeof filePart.mime === "string" ? filePart.mime : "application/octet-stream"
+    const filename = typeof filePart.filename === "string" ? filePart.filename : "attachment"
+    if (url) {
+      useInputStore.getState().addRestoredAttachment({ url, mimeType: mime, filename })
+    }
+  }
 }
 
 function resolveDirectoryForBlockingRequest(
@@ -413,7 +268,6 @@ export async function deleteSession(sessionId: string, _options?: Record<string,
   }
   try {
     await sdk().session.delete({ sessionID: sessionId, directory: sessionDirectory })
-    await cleanupSessionCheckpointsIfAvailable(sessionId)
     useGlobalSessionsStore.getState().removeSessions([sessionId])
     return true
   } catch (error) {
@@ -446,7 +300,6 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
   if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
   try {
     await sdk().session.delete({ sessionID: sessionId, directory })
-    await cleanupSessionCheckpointsIfAvailable(sessionId)
     useGlobalSessionsStore.getState().removeSessions([sessionId])
     return true
   } catch (error) {
@@ -539,10 +392,6 @@ function ascendingId(prefix: string): string {
   return `${prefix}_${hex}${rand}`
 }
 
-export function createLocalMessageId(): string {
-  return ascendingId("msg")
-}
-
 /**
  * Wraps an async send operation with optimistic user-message insertion.
  * Uses useSync()'s optimistic infrastructure — message + parts are inserted
@@ -609,7 +458,6 @@ export async function optimisticSend(input: {
   })
 
   try {
-    await createMessageCheckpointIfAvailable(input.sessionId, messageID)
     await input.send(messageID)
   } catch (error) {
     // Rollback via optimistic infrastructure
@@ -753,6 +601,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const messages = state.message[sessionId] ?? []
   const targetMsg = messages.find((m) => m.id === messageId)
   let messageText = ""
+  let submittedFileParts: Array<Record<string, unknown>> = []
   if (targetMsg && targetMsg.role === "user") {
     const parts = state.part[messageId] ?? []
     const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
@@ -760,15 +609,16 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       .map((p: Record<string, unknown>) => (p as { text?: string }).text || (p as { content?: string }).content || "")
       .join("\n")
       .trim()
+    // Snapshot file parts for later restoration to the input.
+    // Exclude synthetic file parts (server-generated file content that should
+    // not be restored to the composer).
+    submittedFileParts = parts.filter((p) => p.type === "file" && !isSyntheticPart(p)) as Array<Record<string, unknown>>
   }
 
-  const checkpointChoice = await chooseCheckpointRestore(sessionId, messageId, targetMsg)
-  if (checkpointChoice.cancelRevert) {
-    return
-  }
-  const checkpointToRestore = checkpointChoice.checkpoint
-
-  // Optimistically remove reverted messages + set marker
+  // Optimistically set only the revert marker. Keep messages and parts in the
+  // local store; visible-message selectors derive the displayed timeline from
+  // session.revert. This matches the server model and preserves reverted
+  // messages for the restore dock without maintaining a separate shadow copy.
   const prevRevert = (() => {
     const s = state.session.find((s) => s.id === sessionId)
     return (s as Session & { revert?: unknown })?.revert
@@ -776,20 +626,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const sessions = [...state.session]
   const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
 
-  // Remove the target message and its later descendants from the store.
-  // Message ids are not a reliable chronological boundary, so use the same
-  // revert-aware filtering as the render path.
-  const prevMessages = state.message[sessionId] ?? []
-  const prevPart = { ...state.part }
-  const { kept: keptMessages, removed: removedMessages } = partitionMessagesByRevert(prevMessages, messageId)
-  for (const m of removedMessages) {
-    delete prevPart[m.id]
-  }
-
-  const patch: Record<string, unknown> = {
-    message: { ...state.message, [sessionId]: keptMessages },
-    part: prevPart,
-  }
+  const patch: Record<string, unknown> = {}
 
   if (sessionIdx >= 0) {
     sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: messageId } } as Session
@@ -798,7 +635,13 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
 
   store.setState(patch)
 
-  // Restore reverted message text to input
+  // Save input store state before mutations — if the API fails we need to
+  // roll back both text and attachments to their previous values.
+  const prevInputAttachments = [...useInputStore.getState().attachedFiles]
+  const prevInputText = useInputStore.getState().pendingInputText
+  const prevInputMode = useInputStore.getState().pendingInputMode
+
+  // Restore reverted message text and file attachments to input
   if (messageText) {
     useInputStore.setState({
       pendingInputText: messageText,
@@ -806,9 +649,15 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     })
   }
 
+  // Restore file/image attachments from the target message.
+  // Clear existing attachments first — previous revert's attachments
+  // must not carry over, even when the current message has no files.
+  restoreFilePartsToInput(submittedFileParts)
+
   // Call SDK and merge authoritative result into store
   try {
-    const result = await sdk().session.revert({ sessionID: sessionId, directory: dir(), messageID: messageId })
+    const directory = dir()
+    const result = await sdk().session.revert({ sessionID: sessionId, directory, messageID: messageId })
     if (result.data) {
       const current = store.getState()
       const updated = [...current.session]
@@ -818,8 +667,8 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
         store.setState({ session: updated })
       }
     }
-    if (checkpointToRestore) {
-      await restoreCheckpointAfterRevert(sessionId, checkpointToRestore)
+    if (directory) {
+      sessionEvents.requestGitRefresh({ directory })
     }
   } catch (err) {
     // Rollback: restore removed messages + revert marker
@@ -831,8 +680,12 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     }
     store.setState({
       session: rollback,
-      message: { ...current.message, [sessionId]: prevMessages },
-      part: { ...current.part, ...Object.fromEntries(removedMessages.map((m) => [m.id, state.part[m.id] ?? []])) },
+    })
+    // Rollback input store: restore previous text and attachments
+    useInputStore.setState({
+      pendingInputText: prevInputText,
+      pendingInputMode: prevInputMode,
+      attachedFiles: prevInputAttachments,
     })
     throw err
   }
@@ -865,6 +718,7 @@ export async function refetchSessionMessages(sessionId: string): Promise<void> {
 export async function unrevertSession(sessionId: string): Promise<void> {
   const store = dirStore()
   const state = store.getState()
+  const previousMessageCount = state.message[sessionId]?.length ?? 0
 
   // Abort if busy
   const status = state.session_status[sessionId]
@@ -886,7 +740,12 @@ export async function unrevertSession(sessionId: string): Promise<void> {
       store.setState({ session: sessions })
     }
   }
-  await refetchSessionMessages(sessionId)
+  for (let attempt = 0; attempt < UNREVERT_REFETCH_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await wait(UNREVERT_REFETCH_RETRY_MS)
+    await refetchSessionMessages(sessionId)
+    const nextMessageCount = store.getState().message[sessionId]?.length ?? 0
+    if (nextMessageCount > previousMessageCount) return
+  }
 }
 
 /**
@@ -901,8 +760,10 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
   const store = dirStore()
   const state = store.getState()
 
-  // Extract message text for input restoration (only non-synthetic text parts —
-  // the server adds file content as synthetic text parts that should not be restored)
+  // Extract message text and file attachments for input restoration.
+  // Only non-synthetic text parts — the server adds file content as synthetic
+  // text parts that should not be restored. File parts (images, pasted
+  // screenshots) are user-originated and must be restored.
   const parts = state.part[messageId] ?? []
   let messageText = ""
   const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
@@ -910,6 +771,7 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
     .map((p: Part) => ((p as Record<string, unknown>).text as string) || ((p as Record<string, unknown>).content as string) || "")
     .join("\n")
     .trim()
+  const fileParts = parts.filter((p) => p.type === "file" && !isSyntheticPart(p)) as Array<Record<string, unknown>>
 
   const result = await sdk().session.fork({ sessionID: sessionId, directory: dir(), messageID: messageId })
   if (!result.data) return
@@ -928,11 +790,13 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
   // Switch to new session
   useSessionUIStore.getState().setCurrentSession(forkedSession.id)
 
-  // Restore forked message text to input
+  // Restore forked message text and file attachments to input
   if (messageText) {
     useInputStore.setState({
       pendingInputText: messageText,
       pendingInputMode: "replace" as const,
     })
   }
+  // Clear existing attachments and restore file parts from the forked message.
+  restoreFilePartsToInput(fileParts)
 }

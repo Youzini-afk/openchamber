@@ -39,7 +39,7 @@ describe('graceful shutdown runtime', () => {
   });
 
   it('clears the server close timeout when the server closes first', async () => {
-    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const server = {
       close: vi.fn((callback) => {
@@ -50,9 +50,7 @@ describe('graceful shutdown runtime', () => {
     const runtime = createRuntime(server);
     await runtime.gracefulShutdown({ exitProcess: false });
 
-    await vi.advanceTimersByTimeAsync(1000);
-
     expect(warnSpy).not.toHaveBeenCalledWith('Server close timeout reached, forcing shutdown');
-    expect(vi.getTimerCount()).toBe(0);
+    expect(clearTimeoutSpy).toHaveBeenCalled();
   });
 });

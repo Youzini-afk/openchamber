@@ -1,21 +1,13 @@
 import React from 'react';
-import { RiInformationLine, RiRestartLine } from '@remixicon/react';
 import { useUIStore } from '@/stores/useUIStore';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
-import { useDeviceInfo } from '@/lib/device';
-import { updateDesktopSettings } from '@/lib/persistence';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { Input } from '@/components/ui/input';
-import { NumberInput } from '@/components/ui/number-input';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import type { MobileDevice, MobilePairStartResult } from '@/lib/api/types';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
   completion: {
@@ -43,16 +35,8 @@ const TEMPLATE_EVENT_LABEL_KEYS = {
   question: 'settings.notifications.page.template.event.question',
 } as const satisfies Record<NotificationTemplateEvent, string>;
 
-const UTILITY_PREFERRED_MODEL_ID = 'big-pickle';
-const UTILITY_NOT_SELECTED_VALUE = '__not_selected__';
-
-const DEFAULT_SUMMARY_THRESHOLD = 200;
-const DEFAULT_SUMMARY_LENGTH = 100;
-const DEFAULT_MAX_LAST_MESSAGE_LENGTH = 250;
-
 export const NotificationSettings: React.FC = () => {
   const { t } = useI18n();
-  const { isMobile } = useDeviceInfo();
   const isDesktop = React.useMemo(() => isDesktopShell(), []);
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const isBrowser = !isDesktop && !isVSCode;
@@ -70,95 +54,11 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
   const notificationTemplates = useUIStore(state => state.notificationTemplates);
   const setNotificationTemplates = useUIStore(state => state.setNotificationTemplates);
-  const summarizeLastMessage = useUIStore(state => state.summarizeLastMessage);
-  const setSummarizeLastMessage = useUIStore(state => state.setSummarizeLastMessage);
-  const summaryThreshold = useUIStore(state => state.summaryThreshold);
-  const setSummaryThreshold = useUIStore(state => state.setSummaryThreshold);
-  const summaryLength = useUIStore(state => state.summaryLength);
-  const setSummaryLength = useUIStore(state => state.setSummaryLength);
-  const maxLastMessageLength = useUIStore(state => state.maxLastMessageLength);
-  const setMaxLastMessageLength = useUIStore(state => state.setMaxLastMessageLength);
-  const settingsZenModel = useConfigStore((state) => state.settingsZenModel);
-  const setSettingsZenModel = useConfigStore((state) => state.setSettingsZenModel);
 
   const [notificationPermission, setNotificationPermission] = React.useState<NotificationPermission>('default');
   const [pushSupported, setPushSupported] = React.useState(false);
   const [pushSubscribed, setPushSubscribed] = React.useState(false);
   const [pushBusy, setPushBusy] = React.useState(false);
-  const [fetchedZenModels, setFetchedZenModels] = React.useState<Array<{ id: string; name: string }>>([]);
-  const [mobileDevices, setMobileDevices] = React.useState<MobileDevice[]>([]);
-  const [mobileBusy, setMobileBusy] = React.useState(false);
-  const [mobilePairing, setMobilePairing] = React.useState<MobilePairStartResult | null>(null);
-
-  React.useEffect(() => {
-    const controller = new AbortController();
-    void fetch('/api/zen/models', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          return [] as Array<{ id: string; name: string }>;
-        }
-        const payload = await response.json().catch(() => ({}));
-        const models = Array.isArray(payload?.models) ? payload.models : [];
-        return models
-          .map((entry: unknown) => {
-            const id = typeof (entry as { id?: unknown })?.id === 'string'
-              ? (entry as { id: string }).id.trim()
-              : '';
-            if (!id) {
-              return null;
-            }
-            return { id, name: id };
-          })
-          .filter((entry: { id: string; name: string } | null): entry is { id: string; name: string } => entry !== null);
-      })
-      .then((models) => {
-        setFetchedZenModels(models);
-      })
-      .catch((error) => {
-        if (error?.name !== 'AbortError') {
-          console.warn('Failed to load zen utility models:', error);
-        }
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, []);
-
-  const utilityModelOptions = React.useMemo(() => {
-    return fetchedZenModels;
-  }, [fetchedZenModels]);
-
-  const utilitySelectedModelId = React.useMemo(() => {
-    if (settingsZenModel && utilityModelOptions.some((model) => model.id === settingsZenModel)) {
-      return settingsZenModel;
-    }
-    if (utilityModelOptions.some((model) => model.id === UTILITY_PREFERRED_MODEL_ID)) {
-      return UTILITY_PREFERRED_MODEL_ID;
-    }
-    return utilityModelOptions[0]?.id ?? '';
-  }, [settingsZenModel, utilityModelOptions]);
-
-  const handleUtilityModelChange = React.useCallback(
-    async (value: string) => {
-      const modelId = value === UTILITY_NOT_SELECTED_VALUE ? undefined : value;
-      setSettingsZenModel(modelId);
-      try {
-        await updateDesktopSettings({
-          zenModel: modelId ?? '',
-          gitProviderId: '',
-          gitModelId: '',
-        });
-      } catch (error) {
-        console.warn('Failed to save utility model setting:', error);
-      }
-    },
-    [setSettingsZenModel]
-  );
 
   React.useEffect(() => {
     if (!isBrowser) {
@@ -198,20 +98,6 @@ export const NotificationSettings: React.FC = () => {
 
     void refresh();
   }, [isBrowser]);
-
-  const refreshMobileDevices = React.useCallback(async () => {
-    const apis = getRegisteredRuntimeAPIs();
-    if (!apis?.mobile) {
-      setMobileDevices([]);
-      return;
-    }
-    const result = await apis.mobile.listDevices();
-    setMobileDevices(Array.isArray(result?.devices) ? result.devices : []);
-  }, []);
-
-  React.useEffect(() => {
-    void refreshMobileDevices();
-  }, [refreshMobileDevices]);
 
   const handleToggleChange = async (checked: boolean) => {
     if (isDesktop) {
@@ -551,64 +437,6 @@ export const NotificationSettings: React.FC = () => {
     }
   };
 
-  const handleStartMobilePairing = async () => {
-    const apis = getRegisteredRuntimeAPIs();
-    if (!apis?.mobile) {
-      toast.error('Mobile API is unavailable');
-      return;
-    }
-    setMobileBusy(true);
-    try {
-      const result = await apis.mobile.startPairing({
-        serverUrl: typeof window !== 'undefined' ? window.location.origin : undefined,
-      });
-      if (!result?.pairingToken) {
-        toast.error('Failed to create mobile pairing code');
-        return;
-      }
-      setMobilePairing(result);
-      toast.success('Mobile pairing code created');
-    } finally {
-      setMobileBusy(false);
-    }
-  };
-
-  const handleTestMobilePush = async (deviceId: string) => {
-    const apis = getRegisteredRuntimeAPIs();
-    if (!apis?.mobile) {
-      toast.error('Mobile API is unavailable');
-      return;
-    }
-    setMobileBusy(true);
-    try {
-      const result = await apis.mobile.sendTestPush(deviceId);
-      if (result?.ok) {
-        toast.success('Mobile test push sent');
-        void refreshMobileDevices();
-      } else {
-        toast.error('Mobile test push failed');
-      }
-    } finally {
-      setMobileBusy(false);
-    }
-  };
-
-  const handleDeleteMobileDevice = async (deviceId: string) => {
-    const apis = getRegisteredRuntimeAPIs();
-    if (!apis?.mobile) {
-      toast.error('Mobile API is unavailable');
-      return;
-    }
-    setMobileBusy(true);
-    try {
-      await apis.mobile.deleteDevice(deviceId);
-      await refreshMobileDevices();
-      toast.success('Mobile device removed');
-    } finally {
-      setMobileBusy(false);
-    }
-  };
-
   return (
     <div className="space-y-8">
 
@@ -708,65 +536,6 @@ export const NotificationSettings: React.FC = () => {
             </div>
           )}
         </div>
-
-        {isBrowser && (
-          <div className="mb-8">
-            <div className="mb-1 px-1">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                Mobile App
-              </h3>
-              <p className="typography-meta text-muted-foreground mt-0.5">
-                Pair a single-server mobile WebView app for native push notifications and direct session deep links.
-              </p>
-            </div>
-
-            <section className="px-2 pb-2 pt-0 space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" disabled={mobileBusy} onClick={() => void handleStartMobilePairing()}>
-                  Create pairing code
-                </Button>
-                <Button type="button" variant="ghost" size="sm" disabled={mobileBusy} onClick={() => void refreshMobileDevices()}>
-                  Refresh devices
-                </Button>
-              </div>
-
-              {mobilePairing && (
-                <div className="rounded-md border border-border/60 bg-surface-muted px-3 py-2">
-                  <p className="typography-ui-label text-foreground">Pairing payload</p>
-                  <p className="typography-meta text-muted-foreground mt-1">
-                    Expires at {new Date(mobilePairing.expiresAt).toLocaleTimeString()}.
-                  </p>
-                  <code className="mt-2 block max-h-32 overflow-auto rounded bg-surface px-2 py-1 typography-code text-foreground">
-                    {JSON.stringify(mobilePairing.qrPayload)}
-                  </code>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                {mobileDevices.length === 0 ? (
-                  <p className="typography-meta text-muted-foreground/70">No mobile devices paired.</p>
-                ) : mobileDevices.map((device) => (
-                  <div key={device.id} className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="typography-ui-label text-foreground">{device.name}</p>
-                      <p className="typography-meta text-muted-foreground/70">
-                        {device.platform} · Push {device.pushEnabled ? 'enabled' : 'not registered'}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" size="sm" disabled={mobileBusy || !device.pushEnabled} onClick={() => void handleTestMobilePush(device.id)}>
-                        Test push
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={mobileBusy} onClick={() => void handleDeleteMobileDevice(device.id)}>
-                        Remove
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
 
         {nativeNotificationsEnabled && canShowNotifications && (
           <>
@@ -898,165 +667,6 @@ export const NotificationSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* --- Summarization --- */}
-            <div className="mb-8">
-              <div className="mb-1 px-1">
-                <h3 className="typography-ui-header font-medium text-foreground">
-                  {t('settings.notifications.page.summary.title')}
-                </h3>
-              </div>
-
-              <section className="px-2 pb-2 pt-0 space-y-0.5">
-                <div
-                  className="group flex cursor-pointer items-center gap-2 py-1.5"
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={summarizeLastMessage}
-                  onClick={() => setSummarizeLastMessage(!summarizeLastMessage)}
-                  onKeyDown={(event) => {
-                    if (event.key === ' ' || event.key === 'Enter') {
-                      event.preventDefault();
-                      setSummarizeLastMessage(!summarizeLastMessage);
-                    }
-                  }}
-                >
-                  <Checkbox
-                    checked={summarizeLastMessage}
-                    onChange={setSummarizeLastMessage}
-                    ariaLabel={t('settings.notifications.page.summary.toggleAria')}
-                  />
-                  <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.toggleLabel')}</span>
-                </div>
-                <div className="pl-6 pb-1">
-                  <span className="typography-meta text-muted-foreground">
-                    {t('settings.notifications.page.summary.requiresTemplateVariable')}
-                    {' '}
-                    <code className="text-[var(--primary-base)]">{'{last_message}'}</code>.
-                  </span>
-                </div>
-
-                <div className={cn("flex flex-col gap-2 py-1 sm:flex-row sm:items-center sm:gap-8")}>
-                  <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.modelLabel')}</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent sideOffset={8} className="max-w-xs">
-                          {t('settings.notifications.page.summary.modelTooltip')}
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-fit sm:flex-initial">
-                    <Select
-                      value={utilitySelectedModelId || UTILITY_NOT_SELECTED_VALUE}
-                      onValueChange={handleUtilityModelChange}
-                    >
-                      <SelectTrigger className="w-fit min-w-[220px]">
-                        <SelectValue placeholder={t('settings.notifications.page.summary.notSelected')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={UTILITY_NOT_SELECTED_VALUE}>{t('settings.notifications.page.summary.notSelected')}</SelectItem>
-                        {utilityModelOptions.map((model) => (
-                          <SelectItem key={model.id} value={model.id}>
-                            {model.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {summarizeLastMessage ? (
-                  <>
-                    <div className="flex items-center gap-8 py-1.5 mt-1 border-t border-[var(--surface-subtle)]">
-                      <div className="flex min-w-0 flex-col w-56 shrink-0">
-                        <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.thresholdLabel')}</span>
-                        <span className="typography-meta text-muted-foreground">{t('settings.notifications.page.summary.thresholdHint')}</span>
-                      </div>
-                      <div className="flex items-center gap-2 w-fit">
-                        <NumberInput
-                          value={summaryThreshold}
-                          onValueChange={setSummaryThreshold}
-                          min={50}
-                          max={2000}
-                          step={50}
-                          className="w-20 tabular-nums"
-                        />
-                        <Button size="sm"
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setSummaryThreshold(DEFAULT_SUMMARY_THRESHOLD)}
-                          disabled={summaryThreshold === DEFAULT_SUMMARY_THRESHOLD}
-                          className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                          aria-label={t('settings.notifications.page.summary.resetThresholdAria')}
-                          title={t('settings.common.actions.reset')}
-                        >
-                          <RiRestartLine className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-8 py-1.5">
-                      <div className="flex min-w-0 flex-col w-56 shrink-0">
-                        <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.lengthLabel')}</span>
-                        <span className="typography-meta text-muted-foreground">{t('settings.notifications.page.summary.lengthHint')}</span>
-                      </div>
-                      <div className="flex items-center gap-2 w-fit">
-                        <NumberInput
-                          value={summaryLength}
-                          onValueChange={setSummaryLength}
-                          min={20}
-                          max={500}
-                          step={10}
-                          className="w-20 tabular-nums"
-                        />
-                        <Button size="sm"
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setSummaryLength(DEFAULT_SUMMARY_LENGTH)}
-                          disabled={summaryLength === DEFAULT_SUMMARY_LENGTH}
-                          className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                          aria-label={t('settings.notifications.page.summary.resetLengthAria')}
-                          title={t('settings.common.actions.reset')}
-                        >
-                          <RiRestartLine className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className={cn("py-1.5 mt-1 border-t border-[var(--surface-subtle)]", isMobile ? "flex flex-col gap-3" : "flex items-center gap-8")}>
-                    <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "w-56 shrink-0")}>
-                      <span className="typography-ui-label text-foreground">{t('settings.notifications.page.summary.maxLengthLabel')}</span>
-                      <span className="typography-meta text-muted-foreground">{t('settings.notifications.page.summary.maxLengthHint')}</span>
-                    </div>
-                    <div className={cn("flex items-center gap-2", isMobile ? "w-full" : "w-fit")}>
-                      <NumberInput
-                        value={maxLastMessageLength}
-                        onValueChange={setMaxLastMessageLength}
-                        min={50}
-                        max={1000}
-                        step={10}
-                        className="w-20 tabular-nums"
-                      />
-                      <Button size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setMaxLastMessageLength(DEFAULT_MAX_LAST_MESSAGE_LENGTH)}
-                        disabled={maxLastMessageLength === DEFAULT_MAX_LAST_MESSAGE_LENGTH}
-                        className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                        aria-label={t('settings.notifications.page.summary.resetMaxLengthAria')}
-                        title={t('settings.common.actions.reset')}
-                      >
-                        <RiRestartLine className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </div>
           </>
         )}
 

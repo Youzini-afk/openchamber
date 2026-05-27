@@ -222,8 +222,8 @@ const saveMetadata = async (
 };
 
 const toPublicRecord = (record: CheckpointRecord): PublicCheckpointRecord => {
-  const { fileHashes: _fileHashes, ...rest } = record;
-  return { ...rest, hasFileHashes: true };
+  const { fileHashes, ...rest } = record;
+  return { ...rest, hasFileHashes: Boolean(fileHashes) };
 };
 
 const getWorkspaceDirectory = (directory?: string): string => {

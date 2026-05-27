@@ -42,6 +42,18 @@ interface DirectoryTreeProps {
   disabledPaths?: Iterable<string>;
 }
 
+const areStringSetsEqual = (left: Set<string>, right: Set<string>) => {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+};
+
 export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
   currentPath,
   onSelectPath,
@@ -244,7 +256,10 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
           const normalizedPath = path.replace(/\\/g, '/');
           return (stripTrailingSlashes(normalizedPath) as string) ?? normalizedPath;
         });
-      setPinnedPaths(new Set(normalized));
+      setPinnedPaths((prev) => {
+        const next = new Set(normalized);
+        return areStringSetsEqual(prev, next) ? prev : next;
+      });
     };
 
     const loadFromLocalStorage = () => {
@@ -326,7 +341,8 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
       const filtered = Array.from(prev)
         .map((path) => (stripTrailingSlashes(path.replace(/\\/g, '/')) as string) ?? path)
         .filter((path) => isPathWithinHome(path));
-      return new Set(filtered);
+      const next = new Set(filtered);
+      return areStringSetsEqual(prev, next) ? prev : next;
     });
   }, [effectiveRoot, isPathWithinHome, stripTrailingSlashes]);
 
@@ -815,13 +831,12 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
                     value={newDirName}
                     onChange={(e) => setNewDirName(e.target.value)}
                     onKeyDown={(e) => {
+                      e.stopPropagation();
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        e.stopPropagation();
                         createDirectory();
                       } else if (e.key === 'Escape') {
                         e.preventDefault();
-                        e.stopPropagation();
                         cancelCreatingDirectory();
                       }
                     }}
@@ -904,13 +919,12 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
                   value={newDirName}
                   onChange={(e) => setNewDirName(e.target.value)}
                   onKeyDown={(e) => {
+                    e.stopPropagation();
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      e.stopPropagation();
                       createDirectory();
                     } else if (e.key === 'Escape') {
                       e.preventDefault();
-                      e.stopPropagation();
                       cancelCreatingDirectory();
                     }
                   }}

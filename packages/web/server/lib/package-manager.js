@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import * as childProcess from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -13,6 +13,18 @@ const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CHANGELOG_URL = 'https://raw.githubusercontent.com/btriapitsyn/openchamber/main/CHANGELOG.md';
 let cachedDetectedPm = null;
+let spawnSyncOverride = null;
+
+function spawnSync(...args) {
+  if (typeof spawnSyncOverride === 'function') {
+    return spawnSyncOverride(...args);
+  }
+  return childProcess.spawnSync(...args);
+}
+
+export function setPackageManagerSpawnSyncForTest(fn) {
+  spawnSyncOverride = typeof fn === 'function' ? fn : null;
+}
 
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};

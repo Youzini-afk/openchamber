@@ -46,7 +46,7 @@ function useRightSidebarGitSync(directory: string | undefined, isSidebarOpen: bo
   }, [directory, git, isSidebarOpen, ensureStatus]);
 }
 
-const ContextSidebarPanel: React.FC = () => {
+export const ProjectContextPanel: React.FC = () => {
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const projects = useProjectsStore((state) => state.projects);
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
@@ -222,7 +222,7 @@ export const RightSidebarTabs: React.FC = () => {
       <div className="min-h-0 flex-1 overflow-hidden">
         {rightSidebarTab === 'git' && <RightSidebarGitPanel />}
         {rightSidebarTab === 'files' && <WorkspaceFilesPanel />}
-        {rightSidebarTab === 'context' && <ContextSidebarPanel />}
+        {rightSidebarTab === 'context' && <ProjectContextPanel />}
       </div>
     </div>
   );

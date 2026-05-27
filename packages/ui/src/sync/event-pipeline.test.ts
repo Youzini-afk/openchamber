@@ -74,7 +74,7 @@ describe("createEventPipeline", () => {
       ], resolveStreamFinished),
       onEvent: (_directory, payload) => {
         delivered.push(payload)
-        if (delivered.length === 3) {
+        if (delivered.length === 2 || delivered.length === 3) {
           resolveDelivered()
         }
       },
@@ -94,6 +94,45 @@ describe("createEventPipeline", () => {
         return `delta:${(event.properties as { delta: string }).delta}`
       }
       return `updated:${((event.properties as { part: { text: string } }).part).text}`
-    })).toEqual(["updated:a", "delta:b", "updated:ab"])
+    })).toEqual(["updated:ab", "delta:b"])
+  })
+
+  test("normalizes openchamber session status events", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: (event: Event) => void
+    const deliveredEvent = new Promise<Event>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "openchamber:session-status",
+          properties: {
+            sessionID: "ses_1",
+            status: "idle",
+          },
+        } as unknown as Event,
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        resolveDelivered(payload)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      const delivered = await Promise.race([deliveredEvent, failAfter(500)])
+      expect(delivered.type).toBe("session.status")
+      expect(delivered.properties).toEqual({
+        sessionID: "ses_1",
+        status: { type: "idle" },
+      })
+    } finally {
+      pipeline.cleanup()
+    }
   })
 })

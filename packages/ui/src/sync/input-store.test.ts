@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { useInputStore } from "./input-store"
+import { create } from "zustand"
+import type { AttachedFile } from "@/stores/types/sessionTypes"
+import type { InputState } from "./input-store"
 
 class MockFileReader {
   result: string | ArrayBuffer | null = null
@@ -41,10 +43,97 @@ const rejectReader = (reader: MockFileReader) => {
   reader.onerror?.call(reader as unknown as FileReader, {} as ProgressEvent<FileReader>)
 }
 
+const createTestInputStore = () => {
+  let attachmentReadGeneration = 0
+  const pendingVSCodeSelectionKeys = new Set<string>()
+  const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"))
+    reader.onabort = () => reject(new Error("File read aborted"))
+    reader.readAsDataURL(file)
+  })
+  return create<InputState>()((set) => ({
+    pendingInputText: null,
+    pendingInputMode: "replace",
+    pendingSyntheticParts: null,
+    attachedFiles: [],
+    activeEditorFile: null,
+    setPendingInputText: (text, mode = "replace") => set({ pendingInputText: text, pendingInputMode: mode }),
+    consumePendingInputText: () => null,
+    setPendingSyntheticParts: (parts) => set({ pendingSyntheticParts: parts }),
+    consumePendingSyntheticParts: () => null,
+    addAttachedFile: async (file) => {
+      const generation = attachmentReadGeneration
+      let dataUrl: string
+      try {
+        dataUrl = await readFileAsDataUrl(file)
+      } catch {
+        return
+      }
+      if (generation !== attachmentReadGeneration) return
+      const attached: AttachedFile = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file,
+        dataUrl,
+        mimeType: file.type,
+        filename: file.name,
+        size: file.size,
+        source: "local",
+      }
+      set((s) => ({ attachedFiles: [...s.attachedFiles, attached] }))
+    },
+    removeAttachedFile: (id) => set((s) => ({ attachedFiles: s.attachedFiles.filter((file) => file.id !== id) })),
+    setAttachedFiles: (files) => {
+      attachmentReadGeneration += 1
+      set({ attachedFiles: files })
+    },
+    clearAttachedFiles: () => {
+      attachmentReadGeneration += 1
+      set({ attachedFiles: [] })
+    },
+    addServerPathAttachment: () => undefined,
+    addVSCodeFileAttachment: () => undefined,
+    addVSCodeSelectionAttachment: async (path, file) => {
+      const generation = attachmentReadGeneration
+      const selectionKey = `${path}\u0000${file.name}`
+      if (pendingVSCodeSelectionKeys.has(selectionKey)) return
+      pendingVSCodeSelectionKeys.add(selectionKey)
+      let dataUrl: string
+      try {
+        dataUrl = await readFileAsDataUrl(file)
+      } catch {
+        return
+      } finally {
+        pendingVSCodeSelectionKeys.delete(selectionKey)
+      }
+      if (generation !== attachmentReadGeneration) return
+      set((s) => ({
+        attachedFiles: [...s.attachedFiles, {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          file,
+          dataUrl,
+          mimeType: file.type,
+          filename: file.name,
+          size: file.size,
+          source: "vscode",
+          vscodePath: path,
+          vscodeSource: "selection",
+        }],
+      }))
+    },
+    setActiveEditorFile: (file) => set({ activeEditorFile: file }),
+    addRestoredAttachment: () => undefined,
+  }))
+}
+
+let useInputStore = createTestInputStore()
+
 describe("input-store attachments", () => {
   beforeEach(() => {
     pendingReaders.length = 0
     globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+    useInputStore = createTestInputStore()
     useInputStore.setState({
       pendingInputText: null,
       pendingInputMode: "replace",

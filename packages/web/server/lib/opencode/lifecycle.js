@@ -1,5 +1,18 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn as importedSpawn, spawnSync as importedSpawnSync } from 'node:child_process';
 import net from 'node:net';
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const HEALTH_CHECK_TIMEOUT_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_TIMEOUT_MS, 5000);
+const HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES = parsePositiveInt(
+  process.env.OPENCHAMBER_OPENCODE_HEALTH_CONSECUTIVE_FAILURES,
+  20
+);
+const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_INTERVAL_MS, 0);
+const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_CACHE_MS, 750);
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -27,19 +40,21 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getManagedOpenCodeShellEnvSnapshot,
     getActiveSessionCount = () => 0,
     globalEventHub = null,
+    spawnProcess = importedSpawn,
+    spawnSyncProcess = importedSpawnSync,
   } = deps;
 
   const killProcessOnPort = (port) => {
     if (!port || process.platform === 'win32') return;
     try {
-      const result = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+      const result = spawnSyncProcess('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
       const output = result.stdout || '';
       const myPid = process.pid;
       for (const pidStr of output.split(/\s+/)) {
         const pid = parseInt(pidStr.trim(), 10);
         if (pid && pid !== myPid) {
           try {
-            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: 2000 });
+            spawnSyncProcess('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: 2000 });
           } catch {
           }
         }
@@ -49,6 +64,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const hasChildProcessExited = (child) => !child || child.exitCode !== null || child.signalCode !== null;
+
+  const isManagedOpenCodeProcessAlive = () => {
+    const child = state.openCodeProcess;
+    if (!child || hasChildProcessExited(child)) return false;
+    if (!child.pid) return true;
+    try {
+      process.kill(child.pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const waitForChildProcessClose = (child, timeoutMs) => new Promise((resolve) => {
     if (!child || hasChildProcessExited(child)) {
@@ -139,7 +166,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
 
       try {
-        spawnSync('taskkill', ['/pid', String(pid), '/t'], {
+        spawnSyncProcess('taskkill', ['/pid', String(pid), '/t'], {
           stdio: 'ignore',
           timeout: 3000,
           windowsHide: true,
@@ -152,7 +179,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
 
       try {
-        spawnSync('taskkill', ['/pid', String(pid), '/f', '/t'], {
+        spawnSyncProcess('taskkill', ['/pid', String(pid), '/f', '/t'], {
           stdio: 'ignore',
           timeout: 5000,
           windowsHide: true,
@@ -247,7 +274,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     };
     console.log('[OpenCode] Launching managed server', state.lastOpenCodeLaunchDiagnostics);
 
-    const child = spawn(binary, args, {
+    const child = spawnProcess(binary, args, {
       cwd,
       env: processEnv,
       windowsHide: true,
@@ -364,7 +391,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           Accept: 'application/json',
           ...getOpenCodeAuthHeaders(),
         },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
       });
       if (!response.ok) return false;
       const body = await response.json().catch(() => null);
@@ -825,6 +852,37 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
    */
   const STALE_BUSY_GRACE_MS = 2 * 60 * 1000;
   let lastUnhealthyWithBusySessionsAt = 0;
+  let consecutiveHealthFailures = 0;
+  let healthProbePromise = null;
+  let healthCheckCyclePromise = null;
+  let lastHealthProbeResult = null;
+
+  const resetHealthFailureState = () => {
+    consecutiveHealthFailures = 0;
+    lastUnhealthyWithBusySessionsAt = 0;
+  };
+
+  const probeOpenCodeHealth = async () => {
+    const now = Date.now();
+    if (lastHealthProbeResult && now - lastHealthProbeResult.at < HEALTH_CHECK_RESULT_CACHE_MS) {
+      return lastHealthProbeResult.healthy;
+    }
+
+    if (healthProbePromise) {
+      return healthProbePromise;
+    }
+
+    healthProbePromise = isOpenCodeProcessHealthy()
+      .then((healthy) => {
+        lastHealthProbeResult = { at: Date.now(), healthy };
+        return healthy;
+      })
+      .finally(() => {
+        healthProbePromise = null;
+      });
+
+    return healthProbePromise;
+  };
 
   const shouldSkipRestartForBusySessions = () => {
     const activeCount = getActiveSessionCount();
@@ -850,18 +908,43 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return true;
   };
 
-  const triggerHealthCheck = async () => {
+  const runHealthCheckCycle = async (source) => {
     if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
+    if (healthCheckCyclePromise) return healthCheckCyclePromise;
 
-    try {
-      const healthy = await isOpenCodeProcessHealthy();
+    healthCheckCyclePromise = (async () => {
+      const healthy = await probeOpenCodeHealth();
       if (!healthy) {
+        if (!isManagedOpenCodeProcessAlive()) {
+          console.log(`[lifecycle] ${source} health check: OpenCode process exited, restarting...`);
+          consecutiveHealthFailures = 0;
+          lastHealthProbeResult = null;
+          await restartOpenCode();
+          return;
+        }
+        consecutiveHealthFailures += 1;
+        console.warn(
+          `[lifecycle] ${source} health check failed (${consecutiveHealthFailures}/${HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES})`
+        );
+        if (consecutiveHealthFailures < HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES) return;
         if (shouldSkipRestartForBusySessions()) return;
-        console.log('[lifecycle] immediate health check: OpenCode not healthy, restarting...');
+        console.log(`[lifecycle] ${source} health check failure threshold reached, restarting OpenCode...`);
+        consecutiveHealthFailures = 0;
+        lastHealthProbeResult = null;
         await restartOpenCode();
       } else {
-        lastUnhealthyWithBusySessionsAt = 0;
+        resetHealthFailureState();
       }
+    })().finally(() => {
+      healthCheckCyclePromise = null;
+    });
+
+    return healthCheckCyclePromise;
+  };
+
+  const triggerHealthCheck = async () => {
+    try {
+      await runHealthCheckCycle('immediate');
     } catch (error) {
       console.error(`[lifecycle] immediate health check error: ${error.message}`);
     }
@@ -872,22 +955,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       clearInterval(state.healthCheckInterval);
     }
 
-    state.healthCheckInterval = setInterval(async () => {
-      if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
+    const effectiveIntervalMs = HEALTH_CHECK_INTERVAL_OVERRIDE_MS || healthCheckIntervalMs;
 
+    state.healthCheckInterval = setInterval(async () => {
       try {
-        const healthy = await isOpenCodeProcessHealthy();
-        if (!healthy) {
-          if (shouldSkipRestartForBusySessions()) return;
-          console.log('OpenCode process not running, restarting...');
-          await restartOpenCode();
-        } else {
-          lastUnhealthyWithBusySessionsAt = 0;
-        }
+        await runHealthCheckCycle('periodic');
       } catch (error) {
         console.error(`Health check error: ${error.message}`);
       }
-    }, healthCheckIntervalMs);
+    }, effectiveIntervalMs);
   };
 
   return {

@@ -512,11 +512,14 @@ interface ConfigStore {
     openaiVoice: string;
     openaiApiKey: string;
     openaiCompatibleUrl: string;
+    openaiCompatibleApiKey: string;
     openaiCompatibleVoice: string;
     openaiCompatibleTtsModel: string;
     // STT (speech-to-text) settings
-    sttProvider: 'browser' | 'server';
+    sttProvider: 'browser' | 'server' | 'wasm';
     sttServerUrl: string;
+    wasmSttModel: string;
+    sttApiKey: string;
     sttModel: string;
     sttLanguage: string;
     sttSilenceThresholdDb: number;
@@ -536,11 +539,14 @@ interface ConfigStore {
     setOpenaiVoice: (voice: string) => void;
     setOpenaiApiKey: (apiKey: string) => void;
     setOpenaiCompatibleUrl: (url: string) => void;
+    setOpenaiCompatibleApiKey: (apiKey: string) => void;
     setOpenaiCompatibleVoice: (voice: string) => void;
     setOpenaiCompatibleTtsModel: (model: string) => void;
-    setSttProvider: (provider: 'browser' | 'server') => void;
+    setSttProvider: (provider: 'browser' | 'server' | 'wasm') => void;
     setSttServerUrl: (url: string) => void;
+    setSttApiKey: (apiKey: string) => void;
     setSttModel: (model: string) => void;
+    setWasmSttModel: (model: string) => void;
     setSttLanguage: (lang: string) => void;
     setSttSilenceThresholdDb: (db: number) => void;
     setSttSilenceHoldMs: (ms: number) => void;
@@ -710,6 +716,14 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return '';
                 })(),
+                // OpenAI-compatible custom server API key
+                openaiCompatibleApiKey: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('openaiCompatibleApiKey');
+                        if (saved) return saved;
+                    }
+                    return '';
+                })(),
                 // OpenAI-compatible custom server voice
                 openaiCompatibleVoice: (() => {
                     if (typeof window !== 'undefined') {
@@ -726,11 +740,11 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 'kokoro';
                 })(),
-                // STT provider: 'browser' (Web Speech API) or 'server' (OpenAI-compat)
+                // STT provider: 'browser' (Web Speech API), 'server' (OpenAI-compat), or 'wasm' (in-browser Whisper)
                 sttProvider: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('sttProvider');
-                        if (saved === 'browser' || saved === 'server') return saved;
+                        if (saved === 'browser' || saved === 'server' || saved === 'wasm') return saved;
                     }
                     return 'browser' as const;
                 })(),
@@ -741,12 +755,26 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 'http://localhost:8001/v1';
                 })(),
+                sttApiKey: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('sttApiKey');
+                        if (saved) return saved;
+                    }
+                    return '';
+                })(),
                 sttModel: (() => {
                     if (typeof window !== 'undefined') {
                         const saved = localStorage.getItem('sttModel');
                         if (saved) return saved;
                     }
                     return 'deepdml/faster-whisper-large-v3-turbo-ct2';
+                })(),
+                wasmSttModel: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('wasmSttModel');
+                        if (saved) return saved;
+                    }
+                    return 'Xenova/whisper-tiny.en';
                 })(),
                 sttLanguage: (() => {
                     if (typeof window !== 'undefined') {
@@ -1688,6 +1716,20 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         };
 
+                        // Prefer the selected agent's configured model when switching agents.
+                        const agent = agents.find((candidate) => candidate.name === agentName);
+                        const agentModelSelection = agent?.model;
+                        if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
+                            const { providerID, modelID } = agentModelSelection;
+                            const agentProvider = providers.find((provider) => provider.id === providerID);
+                            const agentModel = agentProvider?.models.find((model) => model.id === modelID);
+
+                            if (agentModel) {
+                                applyResolvedModelSelection(providerID, modelID, undefined);
+                                return;
+                            }
+                        }
+
                         if (currentSessionId) {
                             const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
                             if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
@@ -1708,11 +1750,7 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                         }
 
-                        if (hasProviderModel(providers, currentProviderId, currentModelId)) {
-                            return;
-                        }
-
-                        // If settings has a default model, use it instead of agent's preferred
+                        // If the agent has no preferred model, use settings default.
                         if (settingsDefaultModel) {
                             const parsed = parseModelString(settingsDefaultModel);
                             if (parsed) {
@@ -1732,18 +1770,7 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                         }
 
-                        // Fall back to agent's preferred model
-                        const agent = agents.find((candidate) => candidate.name === agentName);
-                        const agentModelSelection = agent?.model;
-                        if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
-                            const { providerID, modelID } = agentModelSelection;
-                            const agentProvider = providers.find((provider) => provider.id === providerID);
-                            const agentModel = agentProvider?.models.find((model) => model.id === modelID);
-
-                            if (agentModel) {
-                                applyResolvedModelSelection(providerID, modelID, undefined);
-                            }
-                        }
+                        // Otherwise keep the current valid model selection unchanged.
                     }
                 },
 
@@ -1857,6 +1884,13 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
+                setOpenaiCompatibleApiKey: (apiKey: string) => {
+                    set({ openaiCompatibleApiKey: apiKey });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('openaiCompatibleApiKey', apiKey);
+                    }
+                },
+
                 setOpenaiCompatibleVoice: (voice: string) => {
                     set({ openaiCompatibleVoice: voice });
                     if (typeof window !== 'undefined') {
@@ -1871,7 +1905,7 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                setSttProvider: (provider: 'browser' | 'server') => {
+                setSttProvider: (provider: 'browser' | 'server' | 'wasm') => {
                     set({ sttProvider: provider });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sttProvider', provider);
@@ -1885,10 +1919,24 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
+                setSttApiKey: (apiKey: string) => {
+                    set({ sttApiKey: apiKey });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('sttApiKey', apiKey);
+                    }
+                },
+
                 setSttModel: (model: string) => {
                     set({ sttModel: model });
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sttModel', model);
+                    }
+                },
+
+                setWasmSttModel: (model: string) => {
+                    set({ wasmSttModel: model });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('wasmSttModel', model);
                     }
                 },
 

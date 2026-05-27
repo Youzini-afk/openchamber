@@ -28,14 +28,24 @@ type SystemRuntimeDeps = {
   clientReloadDelayMs: number;
 };
 
-type NotificationBridgePayload = {
-  title?: string;
-  body?: string;
-  tag?: string;
-};
+const NOTIFICATION_CLAIM_TTL_MS = 10_000;
+const notificationClaims = new Map<string, number>();
 
-type NotificationsNotifyRequestPayload = {
-  payload?: NotificationBridgePayload;
+const claimNotification = (key: string): boolean => {
+  const now = Date.now();
+  for (const [claimKey, claimedAt] of notificationClaims) {
+    if (now - claimedAt > NOTIFICATION_CLAIM_TTL_MS) {
+      notificationClaims.delete(claimKey);
+    }
+  }
+
+  const existing = notificationClaims.get(key);
+  if (existing && now - existing <= NOTIFICATION_CLAIM_TTL_MS) {
+    return false;
+  }
+
+  notificationClaims.set(key, now);
+  return true;
 };
 
 const normalizeBridgeString = (value: unknown): string => (
@@ -111,11 +121,6 @@ const VIRTUAL_DIFF_SCHEME = 'openchamber-diff';
 const virtualDiffContents = new Map<string, string>();
 let virtualDiffCounter = 0;
 let virtualDiffProviderDisposable: vscode.Disposable | null = null;
-
-const asObject = (value: unknown): Record<string, unknown> | null =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 
 const ensureVirtualDiffProviderRegistered = (ctx?: BridgeContext): void => {
   if (virtualDiffProviderDisposable) {
@@ -231,48 +236,36 @@ const fetchFreeZenModels = async (): Promise<Array<{ id: string; owned_by?: stri
     return cachedZenModels.models;
   }
 
-  const signal = AbortSignal.timeout(8_000);
-  const [response, metadataResponse] = await Promise.all([
-    fetch(ZEN_MODELS_URL, {
-      headers: { Accept: 'application/json' },
-      signal,
-    }),
-    fetch('https://models.dev/api.json', {
-      headers: { Accept: 'application/json' },
-      signal,
-    }),
-  ]);
-
+  const response = await fetch(ZEN_MODELS_URL, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!response.ok) {
-    throw new Error(`zen models request failed (${response.status})`);
-  }
-  if (!metadataResponse.ok) {
-    throw new Error(`models.dev request failed (${metadataResponse.status})`);
+    throw new Error(`Failed to fetch Zen models (${response.status})`);
   }
 
-  const rawPayload = await response.json().catch(() => null);
-  const rawMetadata = await metadataResponse.json().catch(() => null);
-  const payload = asObject(rawPayload);
-  const metadata = asObject(rawMetadata);
-  const metadataProvider = asObject(metadata?.opencode);
-  const metadataModels = asObject(metadataProvider?.models);
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  const models = rows
+  const data = await response.json().catch(() => null) as unknown;
+  const rawModels = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { models?: unknown } | null)?.models)
+      ? (data as { models: unknown[] }).models
+      : [];
+  const models = rawModels
     .map((entry) => {
-      const id = typeof (entry as { id?: unknown })?.id === 'string'
-        ? (entry as { id: string }).id.trim()
-        : '';
-      const ownedBy = typeof (entry as { owned_by?: unknown })?.owned_by === 'string'
-        ? (entry as { owned_by: string }).owned_by
-        : undefined;
-      const metadataModel = asObject(metadataModels?.[id]);
-      const cost = asObject(metadataModel?.cost);
-      if (!id || cost?.input !== 0 || cost?.output !== 0) return null;
-      return ownedBy ? { id, owned_by: ownedBy } : { id };
+      if (!entry || typeof entry !== 'object') return null;
+      const candidate = entry as { id?: unknown; owned_by?: unknown; ownedBy?: unknown };
+      const id = normalizeBridgeString(candidate.id);
+      if (!id) return null;
+      const ownedBy = normalizeBridgeString(candidate.owned_by) || normalizeBridgeString(candidate.ownedBy);
+      return {
+        id,
+        ...(ownedBy ? { owned_by: ownedBy } : {}),
+      };
     })
     .filter((entry): entry is { id: string; owned_by?: string } => entry !== null);
 
-  cachedZenModels = { models, at: Date.now() };
+  cachedZenModels = { models, at: now };
   return models;
 };
 
@@ -313,17 +306,16 @@ export async function handleSystemBridgeMessage(
       return { id, type, success: true, data: getSessionActivitySnapshot() };
     }
 
+    case 'api:notifications:claim': {
+      const key = typeof (payload as { key?: unknown } | undefined)?.key === 'string'
+        ? (payload as { key: string }).key.trim()
+        : '';
+      return { id, type, success: true, data: { claimed: key ? claimNotification(key) : false } };
+    }
+
     case 'api:zen:models': {
-      try {
-        const models = await fetchFreeZenModels();
-        return { id, type, success: true, data: { models } };
-      } catch (error) {
-        if (cachedZenModels) {
-          return { id, type, success: true, data: { models: cachedZenModels.models } };
-        }
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
-      }
+      const models = await fetchFreeZenModels();
+      return { id, type, success: true, data: { models } };
     }
 
     case 'api:openchamber:update-check': {
@@ -679,26 +671,13 @@ export async function handleSystemBridgeMessage(
       }
     }
 
-    case 'notifications:can-notify': {
-      return { id, type, success: true, data: true };
-    }
-
-    case 'notifications:notify': {
-      const request = (payload || {}) as NotificationsNotifyRequestPayload;
-      const notification = request.payload || {};
-      const title = typeof notification.title === 'string' ? notification.title.trim() : '';
-      const body = typeof notification.body === 'string' ? notification.body.trim() : '';
-
-      const message = title && body
-        ? `${title}: ${body}`
-        : title || body;
-
-      if (!message) {
-        return { id, type, success: true, data: { shown: false } };
+    case 'api:notifications/auto-accept': {
+      const request = (payload || {}) as { sessionId?: unknown; enabled?: unknown };
+      const sessionId = typeof request.sessionId === 'string' ? request.sessionId.trim() : '';
+      if (!sessionId) {
+        return { id, type, success: false, error: 'sessionId is required' };
       }
-
-      void vscode.window.showInformationMessage(message);
-      return { id, type, success: true, data: { shown: true } };
+      return { id, type, success: true, data: { success: true } };
     }
 
     default:

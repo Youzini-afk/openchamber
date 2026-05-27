@@ -4,7 +4,6 @@ import {
   RiLoader4Line,
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Checkbox } from '@/components/ui/checkbox';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import type { GitStatus } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
@@ -43,26 +42,33 @@ function describeChange(file: GitStatus['files'][number]): ChangeDescriptor {
 
 interface ChangeRowProps {
   file: GitStatus['files'][number];
-  checked: boolean;
-  onToggle: () => void;
+  actionLabel: string;
+  actionSymbol: '+' | '-';
+  onAction: () => void;
   onViewDiff: () => void;
   onRevert: () => void;
   isReverting: boolean;
   stats?: { insertions: number; deletions: number };
   rowPaddingClassName?: string;
   indentPx?: number;
+  /** Place the stage/unstage action at the row start (flat view) instead of the end (tree view). */
+  actionAtStart?: boolean;
+  showRevert?: boolean;
 }
 
 export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
   file,
-  checked,
-  onToggle,
+  actionLabel,
+  actionSymbol,
+  onAction,
   onViewDiff,
   onRevert,
   isReverting,
   stats,
   rowPaddingClassName,
   indentPx = 0,
+  actionAtStart = false,
+  showRevert = true,
 }) {
   const descriptor = useMemo(() => describeChange(file), [file]);
   const { t } = useI18n();
@@ -74,13 +80,22 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
     (event: React.KeyboardEvent) => {
       if (event.key === ' ') {
         event.preventDefault();
-        onToggle();
+        onAction();
       } else if (event.key === 'Enter') {
         event.preventDefault();
         onViewDiff();
       }
     },
-    [onToggle, onViewDiff]
+    [onAction, onViewDiff]
+  );
+
+  const handleActionClick = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAction();
+    },
+    [onAction]
   );
 
   const handleRevertClick = useCallback(
@@ -92,6 +107,18 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
     [onRevert]
   );
 
+  const actionButton = (
+    <button
+      type="button"
+      onClick={handleActionClick}
+      className="flex size-5 shrink-0 items-center justify-center rounded typography-micro font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+      aria-label={actionLabel}
+      title={actionLabel}
+    >
+      {actionSymbol}
+    </button>
+  );
+
   return (
     <div
       className={`group flex items-center gap-2 py-1.5 hover:bg-sidebar/40 cursor-pointer ${rowPaddingClassName ?? 'px-3'}`}
@@ -101,14 +128,7 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
       onKeyDown={handleKeyDown}
       style={indentPx > 0 ? { paddingLeft: `${indentPx}px` } : undefined}
     >
-        <div className="flex size-5 shrink-0 items-center justify-center" onClick={(e) => { e.stopPropagation(); }}>
-          <Checkbox
-            size="sm"
-            checked={checked}
-            onChange={() => onToggle()}
-            ariaLabel={t('gitView.changes.selectFileAria', { path: file.path })}
-          />
-        </div>
+        {actionAtStart ? actionButton : null}
         <span
           className="typography-micro font-semibold w-4 text-center uppercase"
           style={{ color: descriptor.color }}
@@ -150,24 +170,27 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
           <span className="text-muted-foreground mx-0.5">/</span>
           <span style={{ color: 'var(--status-error)' }}>-{deletions}</span>
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={handleRevertClick}
-              disabled={isReverting}
-              className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label={t('gitView.changes.revertFileAria', { path: file.path })}
-            >
-              {isReverting ? (
-                <RiLoader4Line className="size-3.5 animate-spin" />
-              ) : (
-                <RiArrowGoBackLine className="size-3.5" />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent sideOffset={8}>{t('gitView.changes.revertFileTooltip')}</TooltipContent>
-        </Tooltip>
+        {showRevert ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleRevertClick}
+                disabled={isReverting}
+                className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={t('gitView.changes.revertFileAria', { path: file.path })}
+              >
+                {isReverting ? (
+                  <RiLoader4Line className="size-3.5 animate-spin" />
+                ) : (
+                  <RiArrowGoBackLine className="size-3.5" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent sideOffset={8}>{t('gitView.changes.revertFileTooltip')}</TooltipContent>
+          </Tooltip>
+        ) : null}
+        {actionAtStart ? null : actionButton}
     </div>
   );
 });

@@ -438,7 +438,6 @@ function parseSkillRepoSource(input: string, subpath?: string) {
   if (!raw) {
     return { ok: false as const, error: { kind: 'invalidSource' as const, message: 'Repository source is required' } };
   }
-
   const explicitSubpath = subpath?.trim() ? subpath.trim() : null;
 
   const sshMatch = raw.match(/^git@github\.com:([^/\s]+)\/([^\s#]+)$/i);

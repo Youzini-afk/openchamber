@@ -1,3 +1,5 @@
+import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+
 export const registerSkillRoutes = (app, dependencies) => {
   const {
     fs,
@@ -114,31 +116,23 @@ export const registerSkillRoutes = (app, dependencies) => {
 
   const fetchOpenCodeDiscoveredSkills = async (workingDirectory) => {
     if (!getOpenCodePort()) {
-      return null;
+      return [];
     }
 
     try {
-      const url = new URL(buildOpenCodeUrl('/skill', ''));
-      if (workingDirectory) {
-        url.searchParams.set('directory', workingDirectory);
-      }
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(8_000),
+      const client = createOpencodeClient({
+        baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+        directory: workingDirectory || undefined,
+        headers: getOpenCodeAuthHeaders(),
+        fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
       });
 
-      if (!response.ok) {
-        return null;
-      }
-
-      const payload = await response.json();
+      const response = await client.app.skills(
+        workingDirectory ? { directory: workingDirectory } : undefined,
+      );
+      const payload = response?.data;
       if (!Array.isArray(payload)) {
-        return null;
+        return [];
       }
 
       return payload
@@ -146,21 +140,37 @@ export const registerSkillRoutes = (app, dependencies) => {
           const name = typeof item?.name === 'string' ? item.name.trim() : '';
           const location = typeof item?.location === 'string' ? item.location : '';
           const description = typeof item?.description === 'string' ? item.description : '';
+          const content = typeof item?.content === 'string' ? item.content : '';
           if (!name || !location) {
             return null;
           }
+          if (location === '<built-in>') {
+            return {
+              name,
+              path: location,
+              scope: SKILL_SCOPE.USER,
+              source: 'opencode',
+              description,
+              content,
+            };
+          }
           const inferred = inferSkillScopeAndSourceFromPath(location, workingDirectory);
-          return {
+          const skill = {
             name,
             path: location,
             scope: inferred.scope,
             source: inferred.source,
             description,
           };
+          if (content) {
+            skill.content = content;
+          }
+          return skill;
         })
         .filter(Boolean);
-    } catch {
-      return null;
+    } catch (error) {
+      console.error('Failed to list OpenCode skills:', error);
+      return [];
     }
   };
 
@@ -678,7 +688,7 @@ export const registerSkillRoutes = (app, dependencies) => {
       console.log(`[Server] Updating skill: ${skillName}`);
       console.log('[Server] Working directory:', directory);
 
-      updateSkill(skillName, updates, directory);
+      updateSkill(skillName, updates, directory, updates?.targetPath);
       await refreshOpenCodeAfterConfigChange('skill update');
 
       res.json({

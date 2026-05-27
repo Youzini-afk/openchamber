@@ -112,6 +112,13 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   }
 };
 
+const dispatchSettingsSynced = (settings: DesktopSettings): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
+};
+
 type PersistApi = {
   hasHydrated?: () => boolean;
   onFinishHydration?: (callback: () => void) => (() => void) | undefined;
@@ -334,6 +341,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
 
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
     store.setShowReasoningTraces(settings.showReasoningTraces);
+  }
+  if (typeof settings.collapsibleThinkingBlocks === 'boolean' && settings.collapsibleThinkingBlocks !== store.collapsibleThinkingBlocks) {
+    store.setCollapsibleThinkingBlocks(settings.collapsibleThinkingBlocks);
   }
   if (typeof settings.autoDeleteEnabled === 'boolean' && settings.autoDeleteEnabled !== store.autoDeleteEnabled) {
     store.setAutoDeleteEnabled(settings.autoDeleteEnabled);
@@ -609,6 +619,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.showReasoningTraces === 'boolean') {
     result.showReasoningTraces = candidate.showReasoningTraces;
   }
+  if (typeof candidate.collapsibleThinkingBlocks === 'boolean') {
+    result.collapsibleThinkingBlocks = candidate.collapsibleThinkingBlocks;
+  }
   if (typeof candidate.autoDeleteEnabled === 'boolean') {
     result.autoDeleteEnabled = candidate.autoDeleteEnabled;
   }
@@ -748,6 +761,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (candidate.usageDisplayMode === 'usage' || candidate.usageDisplayMode === 'remaining') {
     result.usageDisplayMode = candidate.usageDisplayMode;
+  }
+  if (typeof candidate.usageShowPredValues === 'boolean') {
+    result.usageShowPredValues = candidate.usageShowPredValues;
   }
   if (Array.isArray(candidate.usageDropdownProviders)) {
     result.usageDropdownProviders = candidate.usageDropdownProviders.filter(
@@ -1113,9 +1129,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
       console.warn('applyDesktopUiPreferences failed:', error);
     }
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
-    }
+    dispatchSettingsSynced(settings);
   };
 
   try {
@@ -1146,6 +1160,7 @@ const _flushSettingsUpdate = async (): Promise<void> => {
       if (updated) {
         persistToLocalStorage(updated);
         applyDesktopUiPreferences(updated);
+        dispatchSettingsSynced(updated);
       }
       return;
     } catch (error) {
@@ -1172,6 +1187,7 @@ const _flushSettingsUpdate = async (): Promise<void> => {
     if (updated) {
       persistToLocalStorage(updated);
       applyDesktopUiPreferences(updated);
+      dispatchSettingsSynced(updated);
       // Invalidate GET cache so next read sees the fresh data
       _settingsCache = null;
     }

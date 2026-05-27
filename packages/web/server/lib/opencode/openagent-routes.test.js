@@ -25,6 +25,7 @@ const createConfigPayload = (overrides = {}) => ({
   raw: {
     agents: {},
     categories: {},
+    disabled_hooks: [],
   },
   ...overrides,
 });
@@ -81,6 +82,7 @@ describe('oh-my-openagent config routes', () => {
       expectedMtimeMs: 123,
       agents: { sisyphus: { model: 'openai/gpt-5.5' } },
       categories: {},
+      disabled_hooks: [],
     });
     expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('oh-my-openagent config updated');
     expect(response.body).toMatchObject({

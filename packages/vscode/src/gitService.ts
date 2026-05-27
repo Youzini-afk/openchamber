@@ -279,6 +279,31 @@ async function execGit(args: string[], cwd: string): Promise<{ stdout: string; s
   });
 }
 
+function isValidCommitHash(hash: string): boolean {
+  return /^[0-9a-fA-F]{7,40}$/.test(hash);
+}
+
+function extractGitStatusPath(status: string, pathPart: string): string {
+  if ((status === 'R' || status === 'C') && pathPart.includes('\t')) {
+    return pathPart.split('\t').pop() || pathPart;
+  }
+  return pathPart;
+}
+
+function extractGitNumstatDestinationPath(filePath: string): string {
+  if (!filePath.includes(' => ')) {
+    return filePath;
+  }
+
+  const braceMatch = filePath.match(/^(.*)\{([^{}]*)\s=>\s([^{}]*)\}(.*)$/);
+  if (braceMatch) {
+    const [, prefix, , destination, suffix] = braceMatch;
+    return `${prefix}${destination}${suffix}`.replace(/\/+/g, '/');
+  }
+
+  return filePath.split(' => ').pop()?.trim() || filePath;
+}
+
 // ============== Repository Operations ==============
 
 /**
@@ -492,6 +517,10 @@ async function computeDiffStats(
   return Object.fromEntries(diffStats.entries());
 }
 
+function getRepositoryRelativePath(repo: Repository, uri: vscode.Uri): string {
+  return path.relative(repo.rootUri.fsPath, uri.fsPath).replace(/\\/g, '/');
+}
+
 /**
  * Get git status for a directory
  */
@@ -511,7 +540,7 @@ export async function getGitStatus(directory: string, options?: GitStatusOptions
   
   // Process index changes (staged)
   for (const change of state.indexChanges) {
-    const relativePath = vscode.workspace.asRelativePath(change.uri, false);
+    const relativePath = getRepositoryRelativePath(repo, change.uri);
     files.push({
       path: relativePath,
       index: mapStatus(change.status),
@@ -521,7 +550,7 @@ export async function getGitStatus(directory: string, options?: GitStatusOptions
   
   // Process working tree changes (unstaged)
   for (const change of state.workingTreeChanges) {
-    const relativePath = vscode.workspace.asRelativePath(change.uri, false);
+    const relativePath = getRepositoryRelativePath(repo, change.uri);
     const existing = files.find(f => f.path === relativePath);
     if (existing) {
       existing.working_dir = mapStatus(change.status);
@@ -2183,10 +2212,15 @@ export async function getGitFileDiff(
         }
       }
       
-      // Read the current file content
-      const fileUri = vscode.Uri.file(path.join(directory, filePath));
-      const modifiedBytes = await vscode.workspace.fs.readFile(fileUri);
-      const modified = Buffer.from(modifiedBytes).toString('utf8');
+      let modified: string;
+      if (staged) {
+        const stagedResult = await execGit(['show', `:${filePath}`], directory);
+        modified = stagedResult.exitCode === 0 ? stagedResult.stdout : '';
+      } else {
+        const fileUri = vscode.Uri.file(path.join(directory, filePath));
+        const modifiedBytes = await vscode.workspace.fs.readFile(fileUri);
+        modified = Buffer.from(modifiedBytes).toString('utf8');
+      }
       
       return { original, modified, path: filePath };
     } catch (error) {
@@ -2201,9 +2235,14 @@ export async function getGitFileDiff(
 /**
  * Revert a file to its last committed state
  */
-export async function revertGitFile(directory: string, filePath: string): Promise<void> {
+export async function revertGitFile(
+  directory: string,
+  filePath: string,
+  options: { scope?: 'all' | 'working' } = {},
+): Promise<void> {
   const normalizedDirectory = normalizeDirectoryPath(directory);
   const normalizedFilePath = filePath.trim();
+  const scope = options.scope === 'working' ? 'working' : 'all';
 
   if (!normalizedFilePath) {
     throw new Error('path is required to revert git changes');
@@ -2236,6 +2275,20 @@ export async function revertGitFile(directory: string, filePath: string): Promis
     return;
   }
 
+  if (scope === 'working') {
+    const restoreWorkingResult = await execGit(['restore', '--worktree', '--', normalizedFilePath], normalizedDirectory);
+    if (restoreWorkingResult.exitCode === 0) {
+      return;
+    }
+
+    const checkoutWorkingResult = await execGit(['checkout', '--', normalizedFilePath], normalizedDirectory);
+    if (checkoutWorkingResult.exitCode === 0) {
+      return;
+    }
+
+    throw new Error(checkoutWorkingResult.stderr || restoreWorkingResult.stderr || 'Failed to revert git changes');
+  }
+
   const restoreResult = await execGit(['restore', '--staged', '--worktree', '--', normalizedFilePath], normalizedDirectory);
   if (restoreResult.exitCode === 0) {
     return;
@@ -2248,6 +2301,65 @@ export async function revertGitFile(directory: string, filePath: string): Promis
   }
 
   throw new Error(checkoutResult.stderr || restoreResult.stderr || 'Failed to revert git changes');
+}
+
+export async function stageGitFile(directory: string, filePath: string): Promise<void> {
+  await stageGitFiles(directory, [filePath]);
+}
+
+export async function stageGitFiles(directory: string, filePaths: string[]): Promise<void> {
+  const paths = filePaths.map((path) => path.trim()).filter(Boolean);
+
+  if (paths.length === 0) {
+    throw new Error('path is required');
+  }
+  const result = await execGit(['add', '--', ...paths], directory);
+  if (result.exitCode === 0) {
+    return;
+  }
+
+  const isPathspecError =
+    /pathspec/.test(result.stderr) && /did not match any files/.test(result.stderr);
+  if (!isPathspecError) {
+    throw new Error(result.stderr || 'Failed to stage git file');
+  }
+
+  // During rapid stage/unstage toggling the optimistic UI can request staging a
+  // path that a prior queued mutation already staged (most visibly a deletion,
+  // whose file is gone from the working tree). `git add` aborts the whole batch on
+  // a single unmatched pathspec, so retry per-path and skip the ones already in
+  // their target state rather than failing the entire "stage all".
+  for (const path of paths) {
+    const perPath = await execGit(['add', '--', path], directory);
+    if (perPath.exitCode === 0) {
+      continue;
+    }
+    const perPathIsPathspecError =
+      /pathspec/.test(perPath.stderr) && /did not match any files/.test(perPath.stderr);
+    if (!perPathIsPathspecError) {
+      throw new Error(perPath.stderr || 'Failed to stage git file');
+    }
+  }
+}
+
+export async function unstageGitFile(directory: string, filePath: string): Promise<void> {
+  await unstageGitFiles(directory, [filePath]);
+}
+
+export async function unstageGitFiles(directory: string, filePaths: string[]): Promise<void> {
+  const paths = filePaths.map((path) => path.trim()).filter(Boolean);
+
+  if (paths.length === 0) {
+    throw new Error('path is required');
+  }
+  const result = await execGit(['restore', '--staged', '--', ...paths], directory);
+  if (result.exitCode === 0) {
+    return;
+  }
+  const fallback = await execGit(['reset', 'HEAD', '--', ...paths], directory);
+  if (fallback.exitCode !== 0) {
+    throw new Error(fallback.stderr || result.stderr || 'Failed to unstage git file');
+  }
 }
 
 // ============== Commit Operations ==============
@@ -2269,8 +2381,49 @@ export interface GitCommitResult {
 export async function createGitCommit(
   directory: string,
   message: string,
-  options?: { addAll?: boolean; files?: string[] }
+  options?: { addAll?: boolean; files?: string[]; stageFiles?: string[] }
 ): Promise<GitCommitResult> {
+  if (options?.files?.length && options.stageFiles) {
+    const selectedFiles = new Set(options.files);
+    const stagedResult = await execGit(['diff', '--cached', '--name-only'], directory);
+    const temporarilyUnstagedFiles = stagedResult.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((filePath) => filePath && !selectedFiles.has(filePath));
+
+    try {
+      if (temporarilyUnstagedFiles.length > 0) {
+        await execGit(['restore', '--staged', '--', ...temporarilyUnstagedFiles], directory);
+      }
+      if (options.stageFiles.length > 0) {
+        await execGit(['add', '--', ...options.stageFiles], directory);
+      }
+
+      const result = await execGit(['commit', '-m', message], directory);
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          commit: '',
+          branch: '',
+          summary: { changes: 0, insertions: 0, deletions: 0 },
+        };
+      }
+
+      const hashResult = await execGit(['rev-parse', 'HEAD'], directory);
+      const branchResult = await execGit(['rev-parse', '--abbrev-ref', 'HEAD'], directory);
+      return {
+        success: true,
+        commit: hashResult.stdout.trim(),
+        branch: branchResult.stdout.trim(),
+        summary: { changes: 0, insertions: 0, deletions: 0 },
+      };
+    } finally {
+      if (temporarilyUnstagedFiles.length > 0) {
+        await execGit(['add', '--', ...temporarilyUnstagedFiles], directory);
+      }
+    }
+  }
+
   const repo = await getRepository(directory);
   
   if (repo) {
@@ -2278,7 +2431,10 @@ export async function createGitCommit(
       if (options?.addAll) {
         await repo.add(['.']);
       } else if (options?.files?.length) {
-        await repo.add(options.files);
+        const filesToStage = options.stageFiles ?? options.files;
+        if (filesToStage.length > 0) {
+          await repo.add(filesToStage);
+        }
       }
       
       await repo.commit(message);
@@ -2299,7 +2455,10 @@ export async function createGitCommit(
   if (options?.addAll) {
     await execGit(['add', '-A'], directory);
   } else if (options?.files?.length) {
-    await execGit(['add', ...options.files], directory);
+    const filesToStage = options.stageFiles ?? options.files;
+    if (filesToStage.length > 0) {
+      await execGit(['add', ...filesToStage], directory);
+    }
   }
 
   const result = await execGit(['commit', '-m', message], directory);
@@ -2605,6 +2764,13 @@ export async function stashGitChanges(directory: string, options: { message?: st
 
 export async function applyGitStash(directory: string, options: { ref: string }): Promise<{ success: boolean; ref: string }> {
   const ref = options.ref || 'stash@{0}';
+  // Prefer --index so the staged/unstaged split captured in the stash is restored
+  // faithfully. Fall back to a plain apply when the index can't be reinstated
+  // cleanly (e.g. conflicts), which is the prior behavior.
+  const withIndex = await execGit(['stash', 'apply', '--index', ref], directory);
+  if (withIndex.exitCode === 0) {
+    return { success: true, ref };
+  }
   const result = await execGit(['stash', 'apply', ref], directory);
   if (result.exitCode !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || 'Failed to apply stash');
   return { success: true, ref };
@@ -2664,6 +2830,35 @@ export interface GitLogEntry {
   filesChanged: number;
   insertions: number;
   deletions: number;
+  parents: string[];
+}
+
+/**
+ * Resolve a log base ref using local-first semantics (mirrors web service.js).
+ *
+ * - Returns undefined when `from` is falsy/whitespace.
+ * - Returns `from` unchanged when the local ref resolves.
+ * - Returns `origin/<from>` when local is absent but the remote-tracking ref exists.
+ * - Returns `from` unchanged when neither resolves (lets git surface the error).
+ */
+async function resolveBaseRefForLog(
+  from: string | undefined,
+  directory: string
+): Promise<string | undefined> {
+  const normalized = typeof from === 'string' ? from.trim() : undefined;
+  if (!normalized) return undefined;
+
+  const checkRef = async (ref: string): Promise<boolean> => {
+    const result = await execGit(['rev-parse', '--verify', ref], directory);
+    return result.exitCode === 0 && Boolean(result.stdout.trim());
+  };
+
+  if (await checkRef(normalized)) return normalized;
+
+  const originRef = `refs/remotes/origin/${normalized}`;
+  if (await checkRef(originRef)) return `origin/${normalized}`;
+
+  return normalized;
 }
 
 /**
@@ -2671,64 +2866,156 @@ export interface GitLogEntry {
  */
 export async function getGitLog(
   directory: string,
-  options?: { maxCount?: number; from?: string; to?: string; file?: string }
+  options?: { maxCount?: number; from?: string; to?: string; file?: string; all?: boolean }
 ): Promise<{ all: GitLogEntry[]; latest: GitLogEntry | null; total: number }> {
   const maxCount = options?.maxCount || 50;
+
+  if (options?.all) {
+    const logArgs = [
+      'log',
+      `--max-count=${maxCount}`,
+      '--all',
+      '--topo-order',
+      '--date=iso',
+      '--pretty=format:%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D',
+      '--shortstat',
+    ];
+
+    const result = await execGit(logArgs, directory);
+
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || result.stdout.trim() || 'Failed to get git log');
+    }
+
+    const records = result.stdout
+      .split('\x1e')
+      .map((e) => e.trim())
+      .filter(Boolean);
+
+    const entries: GitLogEntry[] = [];
+    for (const record of records) {
+      const lines = record.split('\n').filter((l) => l.trim().length > 0);
+      const header = lines.shift() || '';
+      const [hash, parentsRaw, author_name, author_email, date, message, refsRaw] =
+        header.split('\x1f');
+      if (!hash) continue;
+
+      const parents = parentsRaw ? parentsRaw.trim().split(' ').filter(Boolean) : [];
+      const refs = refsRaw ? refsRaw.trim() : '';
+
+      let filesChanged = 0;
+      let insertions = 0;
+      let deletions = 0;
+      for (const line of lines) {
+        const filesMatch = line.match(/(\d+)\s+files?\s+changed/);
+        const insertMatch = line.match(/(\d+)\s+insertions?\(\+\)/);
+        const deleteMatch = line.match(/(\d+)\s+deletions?\(-\)/);
+        if (filesMatch) filesChanged = parseInt(filesMatch[1], 10);
+        if (insertMatch) insertions = parseInt(insertMatch[1], 10);
+        if (deleteMatch) deletions = parseInt(deleteMatch[1], 10);
+      }
+
+      entries.push({
+        hash,
+        date: date || '',
+        message: message || '',
+        refs,
+        body: '',
+        author_name: author_name || '',
+        author_email: author_email || '',
+        filesChanged,
+        insertions,
+        deletions,
+        parents,
+      });
+    }
+
+    return { all: entries, latest: entries[0] || null, total: entries.length };
+  }
+
+  // Prefer the local ref; fall back to origin/<from> only when the local ref
+  // cannot be resolved (e.g. user has never checked out the base branch).
+  const resolvedFrom = await resolveBaseRefForLog(options?.from, directory);
+
   const args = [
     'log',
     `--max-count=${maxCount}`,
-    '--format=%H|%aI|%s|%D|%b|%an|%ae',
+    '--date=iso',
+    '--pretty=format:%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D',
     '--shortstat',
   ];
-  
-  if (options?.from && options?.to) {
-    args.push(`${options.from}..${options.to}`);
+
+  if (resolvedFrom && options?.to) {
+    args.push(`${resolvedFrom}..${options.to}`);
+  } else if (resolvedFrom) {
+    args.push(`${resolvedFrom}..HEAD`);
+  } else if (options?.to) {
+    args.push(options.to);
   }
-  
+
   if (options?.file) {
     args.push('--', options.file);
   }
 
   const result = await execGit(args, directory);
-  
+
   if (result.exitCode !== 0) {
-    return { all: [], latest: null, total: 0 };
+    throw new Error(result.stderr.trim() || result.stdout.trim() || 'Failed to get git log');
+  }
+
+  const records = result.stdout
+    .split('\x1e')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const statsMap = new Map<string, { filesChanged: number; insertions: number; deletions: number; parents: string[] }>();
+
+  for (const record of records) {
+    const lines = record.split('\n').filter((line) => line.trim().length > 0);
+    const header = lines.shift() || '';
+    const [hash, parentsRaw] = header.split('\x1f');
+    const parents = parentsRaw ? parentsRaw.trim().split(' ').filter(Boolean) : [];
+    if (!hash) continue;
+
+    let filesChanged = 0;
+    let insertions = 0;
+    let deletions = 0;
+
+    for (const line of lines) {
+      const filesMatch = line.match(/(\d+)\s+files?\s+changed/);
+      const insertMatch = line.match(/(\d+)\s+insertions?\(\+\)/);
+      const deleteMatch = line.match(/(\d+)\s+deletions?\(-\)/);
+      if (filesMatch) filesChanged = parseInt(filesMatch[1], 10);
+      if (insertMatch) insertions = parseInt(insertMatch[1], 10);
+      if (deleteMatch) deletions = parseInt(deleteMatch[1], 10);
+    }
+
+    statsMap.set(hash, { filesChanged, insertions, deletions, parents });
   }
 
   const entries: GitLogEntry[] = [];
-  const lines = result.stdout.split('\n');
-  let current: Partial<GitLogEntry> | null = null;
-
-  for (const line of lines) {
-    if (line.includes('|') && !line.startsWith(' ')) {
-      if (current?.hash) {
-        entries.push(current as GitLogEntry);
-      }
-      const parts = line.split('|');
-      current = {
-        hash: parts[0] || '',
-        date: parts[1] || '',
-        message: parts[2] || '',
-        refs: parts[3] || '',
-        body: parts[4] || '',
-        author_name: parts[5] || '',
-        author_email: parts[6] || '',
-        filesChanged: 0,
-        insertions: 0,
-        deletions: 0,
-      };
-    } else if (current && line.includes('file')) {
-      const statsMatch = line.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?)?(?:,\s+(\d+)\s+deletions?)?/);
-      if (statsMatch) {
-        current.filesChanged = parseInt(statsMatch[1] || '0', 10);
-        current.insertions = parseInt(statsMatch[2] || '0', 10);
-        current.deletions = parseInt(statsMatch[3] || '0', 10);
-      }
-    }
-  }
-
-  if (current?.hash) {
-    entries.push(current as GitLogEntry);
+  for (const record of records) {
+    const header = record.split('\n').filter((l) => l.trim().length > 0)[0] || '';
+    const [hash] = header.split('\x1f');
+    if (!hash) continue;
+    const stats = statsMap.get(hash) || { filesChanged: 0, insertions: 0, deletions: 0, parents: [] };
+    // Need to re-parse header fields for the final entries array
+    const lines = record.split('\n').filter((l) => l.trim().length > 0);
+    const lineHeader = lines.shift() || '';
+    const [, , author_name, author_email, date, message, refs] = lineHeader.split('\x1f');
+    entries.push({
+      hash,
+      date: date || '',
+      message: message || '',
+      refs: refs?.trim() || '',
+      body: '',
+      author_name: author_name || '',
+      author_email: author_email || '',
+      filesChanged: stats.filesChanged,
+      insertions: stats.insertions,
+      deletions: stats.deletions,
+      parents: stats.parents,
+    });
   }
 
   return {
@@ -2745,29 +3032,82 @@ export async function getCommitFiles(
   directory: string,
   hash: string
 ): Promise<{ files: Array<{ path: string; insertions: number; deletions: number; isBinary: boolean; changeType: string }> }> {
-  const result = await execGit(['show', '--numstat', '--format=', hash], directory);
-  
-  if (result.exitCode !== 0) {
+  const numstatResult = await execGit(['show', '--numstat', '--format=', hash], directory);
+
+  if (numstatResult.exitCode !== 0) {
     return { files: [] };
   }
 
   const files: Array<{ path: string; insertions: number; deletions: number; isBinary: boolean; changeType: string }> = [];
-  
-  for (const line of result.stdout.trim().split('\n').filter(Boolean)) {
+  const lines = numstatResult.stdout.trim().split('\n').filter(Boolean);
+
+  for (const line of lines) {
     const parts = line.split('\t');
-    if (parts.length >= 3) {
-      const isBinary = parts[0] === '-' && parts[1] === '-';
-      files.push({
-        path: parts[2] || '',
-        insertions: isBinary ? 0 : parseInt(parts[0] || '0', 10),
-        deletions: isBinary ? 0 : parseInt(parts[1] || '0', 10),
-        isBinary,
-        changeType: 'M', // Would need additional parsing for actual change type
-      });
+    if (parts.length < 3) continue;
+
+    const [insertionsRaw, deletionsRaw, ...pathParts] = parts;
+    const filePath = pathParts.join('\t');
+    if (!filePath) continue;
+
+    const isBinary = insertionsRaw === '-' && deletionsRaw === '-';
+    const insertions = isBinary ? 0 : (parseInt(insertionsRaw, 10) || 0);
+    const deletions = isBinary ? 0 : (parseInt(deletionsRaw, 10) || 0);
+
+    let changeType = 'M';
+    if (filePath.includes(' => ')) {
+      changeType = 'R';
+    }
+
+    files.push({ path: filePath, insertions, deletions, isBinary, changeType });
+  }
+
+  // Get accurate change types from --name-status
+  const nameStatusResult = await execGit(['show', '--name-status', '--format=', hash], directory);
+  if (nameStatusResult.exitCode === 0) {
+    const statusMap = new Map<string, string>();
+    for (const line of nameStatusResult.stdout.trim().split('\n').filter(Boolean)) {
+      const match = line.match(/^([AMDRC])\d*\t(.+)$/);
+      if (match) {
+        const [, status, pathPart] = match;
+        statusMap.set(extractGitStatusPath(status, pathPart), status);
+      }
+    }
+    for (const file of files) {
+      const basePath = extractGitNumstatDestinationPath(file.path);
+      const status = statusMap.get(basePath) ?? statusMap.get(file.path);
+      if (status) {
+        file.changeType = status;
+      }
     }
   }
 
   return { files };
+}
+
+export async function getCommitFileDiff(
+  directory: string,
+  hash: string,
+  filePath: string,
+  isBinary: boolean
+): Promise<{ original: string; modified: string; isBinary: boolean }> {
+  if (isBinary) {
+    return { original: '', modified: '', isBinary: true };
+  }
+
+  const [originalResult, modifiedResult] = await Promise.all([
+    execGit(['show', `${hash}^:${filePath}`], directory),
+    execGit(['show', `${hash}:${filePath}`], directory),
+  ]);
+
+  if (originalResult.exitCode !== 0 && modifiedResult.exitCode !== 0) {
+    throw new Error(`Failed to read file content at commit ${hash}`);
+  }
+
+  return {
+    original: originalResult.exitCode === 0 ? originalResult.stdout : '',
+    modified: modifiedResult.exitCode === 0 ? modifiedResult.stdout : '',
+    isBinary: false,
+  };
 }
 
 // ============== Git Identity Operations ==============
@@ -3099,6 +3439,99 @@ export async function continueMerge(directory: string): Promise<{ success: boole
   }
 
   throw new Error(result.stderr || 'Continue merge failed');
+}
+
+// ============== Commit Actions ==============
+
+export async function checkoutCommit(directory: string, hash: string): Promise<{ success: boolean }> {
+  if (!isValidCommitHash(hash)) {
+    throw new Error('Invalid commit hash');
+  }
+  const result = await execGit(['checkout', hash], directory);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || 'Failed to checkout commit');
+  }
+  return { success: true };
+}
+
+export async function cherryPick(directory: string, hash: string): Promise<{ success: boolean; conflict: boolean; conflictFiles?: string[] }> {
+  if (!isValidCommitHash(hash)) {
+    throw new Error('Invalid commit hash');
+  }
+  const result = await execGit(['cherry-pick', hash], directory);
+
+  if (result.exitCode === 0) {
+    return { success: true, conflict: false };
+  }
+
+  const output = (result.stdout + result.stderr).toLowerCase();
+  const isConflict =
+    output.includes('conflict') ||
+    output.includes('patch does not apply');
+
+  if (isConflict) {
+    const statusResult = await execGit(['status', '--porcelain'], directory);
+    const conflictFiles = statusResult.stdout
+      .split('\n')
+      .filter((line) => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
+      .map((line) => line.slice(3).trim());
+
+    return { success: false, conflict: true, conflictFiles };
+  }
+
+  throw new Error(result.stderr || 'Cherry-pick failed');
+}
+
+export async function revertCommit(directory: string, hash: string): Promise<{ success: boolean; conflict: boolean; conflictFiles?: string[] }> {
+  if (!isValidCommitHash(hash)) {
+    throw new Error('Invalid commit hash');
+  }
+  const result = await execGit(['revert', '--no-commit', hash], directory);
+
+  if (result.exitCode === 0) {
+    return { success: true, conflict: false };
+  }
+
+  const output = (result.stdout + result.stderr).toLowerCase();
+  const isConflict =
+    output.includes('conflict') ||
+    output.includes('revert failed');
+
+  if (isConflict) {
+    const statusResult = await execGit(['status', '--porcelain'], directory);
+    const conflictFiles = statusResult.stdout
+      .split('\n')
+      .filter((line) => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
+      .map((line) => line.slice(3).trim());
+
+    return { success: false, conflict: true, conflictFiles };
+  }
+
+  throw new Error(result.stderr || 'Revert failed');
+}
+
+export async function resetToCommit(
+  directory: string,
+  hash: string,
+  mode: 'soft' | 'mixed' | 'hard',
+  force = false
+): Promise<{ success: boolean }> {
+  if (!isValidCommitHash(hash)) {
+    throw new Error('Invalid commit hash');
+  }
+  if (mode === 'hard' && !force) {
+    const statusResult = await execGit(['status', '--porcelain'], directory);
+    const isDirty = statusResult.stdout.trim().length > 0;
+    if (isDirty) {
+      throw new Error('Cannot hard reset: uncommitted changes in working tree. Stash or commit first, or use force.');
+    }
+  }
+
+  const result = await execGit(['reset', `--${mode}`, hash], directory);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || 'Reset failed');
+  }
+  return { success: true };
 }
 
 // ============== Stash Operations ==============

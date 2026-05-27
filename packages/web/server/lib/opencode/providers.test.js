@@ -9,6 +9,8 @@ import { registerOpenCodeRoutes } from './routes.js';
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const originalOpenCodeConfig = process.env.OPENCODE_CONFIG;
+const originalOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
+const originalOpenCodeAuthDir = process.env.OPENCODE_AUTH_DIR;
 
 let tempHome;
 
@@ -21,6 +23,8 @@ describe('provider config helpers', () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-provider-test-'));
     process.env.HOME = tempHome;
     process.env.USERPROFILE = tempHome;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tempHome, '.config', 'opencode');
+    process.env.OPENCODE_AUTH_DIR = path.join(tempHome, '.local', 'share', 'opencode');
     delete process.env.OPENCODE_CONFIG;
   });
 
@@ -41,6 +45,16 @@ describe('provider config helpers', () => {
       delete process.env.OPENCODE_CONFIG;
     } else {
       process.env.OPENCODE_CONFIG = originalOpenCodeConfig;
+    }
+    if (originalOpenCodeConfigDir === undefined) {
+      delete process.env.OPENCODE_CONFIG_DIR;
+    } else {
+      process.env.OPENCODE_CONFIG_DIR = originalOpenCodeConfigDir;
+    }
+    if (originalOpenCodeAuthDir === undefined) {
+      delete process.env.OPENCODE_AUTH_DIR;
+    } else {
+      process.env.OPENCODE_AUTH_DIR = originalOpenCodeAuthDir;
     }
     if (tempHome) {
       fs.rmSync(tempHome, { recursive: true, force: true });
@@ -764,8 +778,10 @@ describe('provider routes', () => {
     const routeTempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-provider-auth-route-test-'));
     const previousHome = process.env.HOME;
     const previousUserProfile = process.env.USERPROFILE;
+    const previousOpenCodeAuthDir = process.env.OPENCODE_AUTH_DIR;
     process.env.HOME = routeTempHome;
     process.env.USERPROFILE = routeTempHome;
+    process.env.OPENCODE_AUTH_DIR = path.join(routeTempHome, '.local', 'share', 'opencode');
 
     const app = express();
     app.use(express.json());
@@ -802,6 +818,11 @@ describe('provider routes', () => {
         delete process.env.USERPROFILE;
       } else {
         process.env.USERPROFILE = previousUserProfile;
+      }
+      if (previousOpenCodeAuthDir === undefined) {
+        delete process.env.OPENCODE_AUTH_DIR;
+      } else {
+        process.env.OPENCODE_AUTH_DIR = previousOpenCodeAuthDir;
       }
       fs.rmSync(routeTempHome, { recursive: true, force: true });
     }

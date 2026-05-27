@@ -2,15 +2,33 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
+const resolveOpenCodeDataDir = () => {
+  const envAuthDir = typeof process.env.OPENCODE_AUTH_DIR === 'string' ? process.env.OPENCODE_AUTH_DIR.trim() : '';
+  if (envAuthDir) {
+    return path.resolve(envAuthDir);
+  }
+
+  const envDataDir = typeof process.env.OPENCODE_DATA_DIR === 'string' ? process.env.OPENCODE_DATA_DIR.trim() : '';
+  if (envDataDir) {
+    return path.resolve(envDataDir);
+  }
+
+  return path.join(os.homedir(), '.local', 'share', 'opencode');
+};
+const OPENCODE_DATA_DIR = resolveOpenCodeDataDir();
 const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
 
+function getAuthFilePath() {
+  return path.join(resolveOpenCodeDataDir(), 'auth.json');
+}
+
 function readAuthFile() {
-  if (!fs.existsSync(AUTH_FILE)) {
+  const authFile = getAuthFilePath();
+  if (!fs.existsSync(authFile)) {
     return {};
   }
   try {
-    const content = fs.readFileSync(AUTH_FILE, 'utf8');
+    const content = fs.readFileSync(authFile, 'utf8');
     const trimmed = content.trim();
     if (!trimmed) {
       return {};
@@ -24,17 +42,19 @@ function readAuthFile() {
 
 function writeAuthFile(auth) {
   try {
-    if (!fs.existsSync(OPENCODE_DATA_DIR)) {
-      fs.mkdirSync(OPENCODE_DATA_DIR, { recursive: true });
+    const authFile = getAuthFilePath();
+    const dataDir = path.dirname(authFile);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    if (fs.existsSync(AUTH_FILE)) {
-      const backupFile = `${AUTH_FILE}.openchamber.backup`;
-      fs.copyFileSync(AUTH_FILE, backupFile);
+    if (fs.existsSync(authFile)) {
+      const backupFile = `${authFile}.openchamber.backup`;
+      fs.copyFileSync(authFile, backupFile);
       console.log(`Created auth backup: ${backupFile}`);
     }
 
-    fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), 'utf8');
+    fs.writeFileSync(authFile, JSON.stringify(auth, null, 2), 'utf8');
     console.log('Successfully wrote auth file');
   } catch (error) {
     console.error('Failed to write auth file:', error);
@@ -96,5 +116,7 @@ export {
   getProviderAuth,
   listProviderAuths,
   AUTH_FILE,
-  OPENCODE_DATA_DIR
+  OPENCODE_DATA_DIR,
+  getAuthFilePath,
+  resolveOpenCodeDataDir,
 };

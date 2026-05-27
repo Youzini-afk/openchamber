@@ -311,6 +311,10 @@ export function NewWorktreeDialog({
   const existingBranchMobileListWrapperRef = React.useRef<HTMLDivElement | null>(null);
   const sourceBranchMobileListWrapperRef = React.useRef<HTMLDivElement | null>(null);
 
+  const stopDropdownTypeahead = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+  }, []);
+
   const findScrollableContainer = React.useCallback((startNode: HTMLElement | null): HTMLElement | null => {
     let node: HTMLElement | null = startNode;
     while (node && node !== document.body) {
@@ -1608,6 +1612,7 @@ export function NewWorktreeDialog({
                           placeholder={t('session.newWorktree.searchBranches')}
                           value={existingBranchQuery}
                           onValueChange={setExistingBranchQuery}
+                          onKeyDown={stopDropdownTypeahead}
                         />
                         <CommandList disableHorizontal>
                           {isLoadingBranches ? (
@@ -1848,6 +1853,7 @@ export function NewWorktreeDialog({
                           placeholder={t('session.newWorktree.searchBranches')}
                           value={sourceBranchQuery}
                           onValueChange={setSourceBranchQuery}
+                          onKeyDown={stopDropdownTypeahead}
                         />
                         <CommandList disableHorizontal>
                           {isLoadingBranches ? (

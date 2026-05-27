@@ -1,28 +1,12 @@
 import React from 'react';
 import QRCode from 'qrcode';
-import {
-  RiAddLine,
-  RiArrowDownSLine,
-  RiArrowRightSLine,
-  RiCheckboxBlankCircleFill,
-  RiCheckLine,
-  RiCloseLine,
-  RiCloudLine,
-  RiDeleteBinLine,
-  RiErrorWarningLine,
-  RiExternalLinkLine,
-  RiFileCopyLine,
-  RiFolderLine,
-  RiInformationLine,
-  RiLoader4Line,
-  RiRestartLine,
-} from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Icon } from "@/components/icon/Icon";
 import { requestFileAccess } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useI18n } from '@/lib/i18n';
@@ -165,16 +149,20 @@ const getProviderLabel = (provider: string): string => {
   if (provider === 'cloudflare') {
     return 'Cloudflare';
   }
+  if (provider === 'ngrok') {
+    return 'Ngrok';
+  }
   return provider;
 };
 
 const ProviderOptionLabel: React.FC<{ provider: string }> = ({ provider }) => {
   const label = getProviderLabel(provider);
   const isCloudflare = provider === 'cloudflare';
+  const isNgrok = provider === 'ngrok';
 
   return (
     <span className="flex items-center gap-2">
-      <RiCloudLine className={cn('size-4 shrink-0', isCloudflare ? 'text-[var(--status-warning)]' : 'text-muted-foreground')} />
+      <Icon name="cloud" className={cn('size-4 shrink-0', isCloudflare || isNgrok ? 'text-[var(--status-warning)]' : 'text-muted-foreground')} />
       <span>{label}</span>
     </span>
   );
@@ -196,6 +184,11 @@ const toUiTunnelMode = (mode: string | null | undefined): TunnelMode => {
 const ttlOptionValue = (options: TtlOption[], ttlMs: number | null, fallback: string) => {
   const matched = options.find((entry) => entry.ms === ttlMs);
   return matched?.value || fallback;
+};
+
+const ttlOptionLabel = (options: TtlOption[], ttlMs: number | null, fallback: string) => {
+  const value = ttlOptionValue(options, ttlMs, fallback);
+  return options.find((entry) => entry.value === value)?.label || value;
 };
 
 const formatRemaining = (remainingMs: number): string => {
@@ -377,6 +370,27 @@ export const TunnelSettings: React.FC = () => {
     }
     return null;
   }, [localPort]);
+  const selectedProviderCapability = React.useMemo(() => {
+    return providerCapabilities.find((capability) => capability.provider === tunnelProvider) ?? null;
+  }, [providerCapabilities, tunnelProvider]);
+  const tunnelModeOptions = React.useMemo(() => {
+    const supportedModes = new Set(
+      selectedProviderCapability?.modes
+        ?.map((mode) => mode.key)
+        .filter((mode): mode is TunnelMode => mode === 'quick' || mode === 'managed-remote' || mode === 'managed-local')
+    );
+    if (supportedModes.size === 0) {
+      return TUNNEL_MODE_OPTIONS;
+    }
+    return TUNNEL_MODE_OPTIONS.filter((option) => supportedModes.has(option.value));
+  }, [selectedProviderCapability]);
+  const providerSupportsManagedModes = React.useMemo(
+    () => tunnelModeOptions.some((option) => option.value === 'managed-remote' || option.value === 'managed-local'),
+    [tunnelModeOptions],
+  );
+  const installCommand = tunnelProvider === 'ngrok'
+    ? 'brew install ngrok'
+    : 'brew install cloudflared';
   const openExternal = React.useCallback(async (url: string) => {
     await openExternalUrl(url);
   }, []);
@@ -707,8 +721,12 @@ export const TunnelSettings: React.FC = () => {
   const handleProviderChange = React.useCallback(async (provider: string) => {
     setManagedRemoteValidationError(null);
     setErrorMessage(null);
-    await saveTunnelSettings({ tunnelProvider: provider });
-  }, [saveTunnelSettings]);
+    const capability = providerCapabilities.find((entry) => entry.provider === provider);
+    const defaultMode = capability?.modes?.some((mode) => mode.key === tunnelMode)
+      ? tunnelMode
+      : toUiTunnelMode(capability?.modes?.[0]?.key);
+    await saveTunnelSettings({ tunnelProvider: provider, tunnelMode: defaultMode });
+  }, [providerCapabilities, saveTunnelSettings, tunnelMode]);
 
   const handleBrowseManagedLocalConfig = React.useCallback(async () => {
     const result = await requestFileAccess({
@@ -1109,7 +1127,7 @@ export const TunnelSettings: React.FC = () => {
         <section className="space-y-2 px-2 pb-2 pt-0">
           <div className="rounded-lg border border-[var(--status-info-border)] bg-[var(--status-info-background)]/30 p-3">
             <div className="mb-2 flex items-center gap-2">
-              <RiInformationLine className="size-4 text-[var(--status-info)]" />
+              <Icon name="information" className="size-4 text-[var(--status-info)]" />
               <p className="typography-ui-label text-foreground">{t('settings.openchamber.tunnel.section.redeemedAccessLinks')}</p>
             </div>
             <div className="space-y-1">
@@ -1135,7 +1153,7 @@ export const TunnelSettings: React.FC = () => {
                     key={record.sessionId}
                     className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-[var(--surface-subtle)] bg-[var(--surface-elevated)] px-2 py-1.5"
                   >
-                    <RiCheckboxBlankCircleFill className={cn('size-2.5 shrink-0', statusDotClass)} />
+                    <Icon name="checkbox-blank-circle-fill" className={cn('size-2.5 shrink-0', statusDotClass)} />
                     <span className={cn('typography-micro rounded border px-1.5 py-0.5 uppercase', modeBadgeClass)}>
                       {modeLabel}
                     </span>
@@ -1160,19 +1178,19 @@ export const TunnelSettings: React.FC = () => {
       {state === 'not-available' && (
         <section className="space-y-2 px-2 pb-2 pt-0">
           <div className="flex items-start gap-2 rounded-lg border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/5 p-3">
-            <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+            <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
             <div className="space-y-1">
-              <p className="typography-meta font-medium text-foreground">{t('settings.openchamber.tunnel.notAvailable.cloudflaredNotFound')}</p>
+              <p className="typography-meta font-medium text-foreground">{getProviderLabel(tunnelProvider)} tunnel dependency was not found.</p>
               <p className="typography-meta text-muted-foreground/70">{t('settings.openchamber.tunnel.notAvailable.installHint')}</p>
               <code className="typography-code block rounded bg-muted/50 px-2 py-1 text-xs text-foreground">
-                brew install cloudflared
+                {installCommand}
               </code>
             </div>
           </div>
         </section>
       )}
 
-      {state !== 'not-available' && (
+      {(
         <section className="space-y-4 px-2 pb-2 pt-0">
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -1209,7 +1227,7 @@ export const TunnelSettings: React.FC = () => {
             <div className="space-y-1.5">
               <p className="typography-ui-label text-foreground">{t('settings.openchamber.tunnel.field.tunnelType')}</p>
               <div className="flex flex-wrap items-center gap-1">
-                {TUNNEL_MODE_OPTIONS.map((option) => (
+                {tunnelModeOptions.map((option) => (
                   <Tooltip key={option.value}>
                     <TooltipTrigger asChild>
                       <Button
@@ -1245,7 +1263,9 @@ export const TunnelSettings: React.FC = () => {
                 disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
               >
                 <SelectTrigger className="max-w-[11rem] min-w-0">
-                  <SelectValue className="truncate" />
+                  <SelectValue className="truncate">
+                    {ttlOptionLabel(BOOTSTRAP_TTL_OPTIONS, bootstrapTtlMs, '1800000')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {BOOTSTRAP_TTL_OPTIONS.map((option) => (
@@ -1265,7 +1285,9 @@ export const TunnelSettings: React.FC = () => {
                 disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
               >
                 <SelectTrigger className="max-w-[11rem] min-w-0">
-                  <SelectValue className="truncate" />
+                  <SelectValue className="truncate">
+                    {ttlOptionLabel(SESSION_TTL_OPTIONS, sessionTtlMs, '28800000')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {SESSION_TTL_OPTIONS.map((option) => (
@@ -1279,14 +1301,16 @@ export const TunnelSettings: React.FC = () => {
           {tunnelMode === 'quick' && (
             <div className="rounded-lg border border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10 p-3">
               <div className="flex items-start gap-2">
-                <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+                <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
                 <div>
                   <p className="typography-meta text-[var(--status-warning)]">
                     {t('settings.openchamber.tunnel.option.mode.quick.tooltip')}
                   </p>
-                  <p className="typography-meta mt-1 text-[var(--status-warning)]">
-                    {t('settings.openchamber.tunnel.warning.quickModeReliability')}
-                  </p>
+                  {providerSupportsManagedModes && (
+                    <p className="typography-meta mt-1 text-[var(--status-warning)]">
+                      {t('settings.openchamber.tunnel.warning.quickModeReliability')}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1311,7 +1335,7 @@ export const TunnelSettings: React.FC = () => {
                   onClick={() => setIsAddingPreset((prev) => !prev)}
                   disabled={state === 'starting' || state === 'stopping' || isSavingMode}
                 >
-                  <RiAddLine className="h-3.5 w-3.5" />
+                  <Icon name="add" className="h-3.5 w-3.5" />
                   {t('settings.common.actions.create')}
                 </Button>
               </div>
@@ -1345,8 +1369,8 @@ export const TunnelSettings: React.FC = () => {
                               disabled={state === 'starting' || state === 'stopping' || isSavingMode}
                             >
                               {isOpen
-                                ? <RiArrowDownSLine className="h-4 w-4 text-muted-foreground" />
-                                : <RiArrowRightSLine className="h-4 w-4 text-muted-foreground" />}
+                                ? <Icon name="arrow-down-s" className="h-4 w-4 text-muted-foreground" />
+                                : <Icon name="arrow-right-s" className="h-4 w-4 text-muted-foreground" />}
                               <span className="typography-ui-label min-w-0 flex-1 truncate text-foreground">{preset.name}</span>
                             </CollapsibleTrigger>
 
@@ -1360,7 +1384,7 @@ export const TunnelSettings: React.FC = () => {
                               }}
                               disabled={state === 'starting' || state === 'stopping' || isSavingMode}
                             >
-                              <RiDeleteBinLine className="h-3.5 w-3.5" />
+                              <Icon name="delete-bin" className="h-3.5 w-3.5" />
                             </Button>
                           </div>
 
@@ -1488,7 +1512,7 @@ export const TunnelSettings: React.FC = () => {
                       className="rounded p-0.5 text-muted-foreground/70 hover:text-foreground"
                       aria-label={t('settings.openchamber.tunnel.field.managedRemoteTokenInfoAria')}
                     >
-                      <RiInformationLine className="h-3.5 w-3.5" />
+                      <Icon name="information" className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent sideOffset={8} className="max-w-xs">
@@ -1539,7 +1563,7 @@ export const TunnelSettings: React.FC = () => {
                     }}
                     disabled={state === 'starting' || state === 'stopping' || isSavingMode}
                   >
-                    <RiFolderLine className="size-3.5" />
+                    <Icon name="folder" className="size-3.5" />
                   </Button>
                   {managedLocalConfigPath && (
                     <Button
@@ -1552,7 +1576,7 @@ export const TunnelSettings: React.FC = () => {
                       }}
                       disabled={state === 'starting' || state === 'stopping' || isSavingMode}
                     >
-                      <RiCloseLine className="size-3.5" />
+                      <Icon name="close" className="size-3.5" />
                     </Button>
                   )}
                 </div>
@@ -1572,7 +1596,7 @@ export const TunnelSettings: React.FC = () => {
             <div className="space-y-6">
               <div className="rounded-lg border border-[var(--status-info-border)] bg-[var(--status-info-background)] p-3">
                 <div className="flex items-start gap-2">
-                  <RiInformationLine className="mt-0.5 size-4 shrink-0 text-[var(--status-info)]" />
+                  <Icon name="information" className="mt-0.5 size-4 shrink-0 text-[var(--status-info)]" />
                   <div className="space-y-1">
                     {tunnelMode === 'managed-remote' && (
                       <>
@@ -1587,7 +1611,7 @@ export const TunnelSettings: React.FC = () => {
                           }}
                         >
                           {t('settings.openchamber.tunnel.actions.openManagedRemoteDocs')}
-                          <RiExternalLinkLine className="size-3.5" />
+                          <Icon name="external-link" className="size-3.5" />
                         </button>
                       </>
                     )}
@@ -1604,7 +1628,7 @@ export const TunnelSettings: React.FC = () => {
                           }}
                         >
                           {t('settings.openchamber.tunnel.actions.openManagedLocalDocs')}
-                          <RiExternalLinkLine className="size-3.5" />
+                          <Icon name="external-link" className="size-3.5" />
                         </button>
                       </>
                     )}
@@ -1649,7 +1673,7 @@ export const TunnelSettings: React.FC = () => {
               {willReplaceActiveTunnel && (
                 <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3">
                   <div className="flex items-start gap-2">
-                    <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+                    <Icon name="error-warning" className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
                     <p className="typography-meta text-[var(--status-warning)]">
                       {t('settings.openchamber.tunnel.warning.replacesActiveTunnel')}
                     </p>
@@ -1669,7 +1693,7 @@ export const TunnelSettings: React.FC = () => {
                 className={cn(primaryCtaClass, state === 'starting' && 'opacity-70')}
               >
                 {state === 'starting'
-                  ? <><RiLoader4Line className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.actions.startingTunnel')}</>
+                  ? <><Icon name="loader-4" className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.actions.startingTunnel')}</>
                   : t('settings.openchamber.tunnel.actions.startTunnel')}
               </Button>
             </div>
@@ -1703,8 +1727,8 @@ export const TunnelSettings: React.FC = () => {
                     </code>
                     <Button size="sm" variant="ghost" onClick={handleCopyUrl} className="shrink-0 gap-1.5">
                       {copied
-                        ? <RiCheckLine className="size-3.5 text-[var(--status-success)]" />
-                        : <RiFileCopyLine className="size-3.5" />}
+                        ? <Icon name="check" className="size-3.5 text-[var(--status-success)]" />
+                        : <Icon name="file-copy" className="size-3.5" />}
                       {copied ? t('settings.openchamber.tunnel.actions.copied') : t('settings.common.actions.copyAll')}
                     </Button>
                   </div>
@@ -1731,7 +1755,7 @@ export const TunnelSettings: React.FC = () => {
                 disabled={state === 'stopping' || isSavingMode || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)}
                 className={primaryCtaClass}
               >
-                <RiRestartLine className="size-3.5" />
+                <Icon name="restart" className="size-3.5" />
                 {t('settings.openchamber.tunnel.actions.newConnectLink')}
               </Button>
 
@@ -1742,7 +1766,7 @@ export const TunnelSettings: React.FC = () => {
                 className="gap-2 text-[var(--status-error)]"
               >
                 {state === 'stopping'
-                  ? <><RiLoader4Line className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.actions.stopping')}</>
+                  ? <><Icon name="loader-4" className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.actions.stopping')}</>
                   : t('settings.openchamber.tunnel.actions.stopTunnel')}
               </Button>
             </div>

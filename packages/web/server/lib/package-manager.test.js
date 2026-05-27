@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock child_process to prevent real spawnSync calls that would hang in tests
-vi.mock('node:child_process', () => ({
-  spawn: vi.fn(),
-  spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })),
-}));
-
-const { checkForUpdates } = await import('./package-manager.js');
+const { checkForUpdates, setPackageManagerSpawnSyncForTest } = await import('./package-manager.js');
 
 /** Helper: create a fetch mock that routes by URL pattern */
 function createFetchMock() {
@@ -40,10 +34,12 @@ describe('checkForUpdates', () => {
     fetchMock = createFetchMock();
     originalFetch = globalThis.fetch;
     globalThis.fetch = fetchMock;
+    setPackageManagerSpawnSyncForTest(vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })));
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    setPackageManagerSpawnSyncForTest(null);
   });
 
   // --- Scenario: API says update available, npm confirms ---

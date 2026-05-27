@@ -3,8 +3,8 @@ import { toast } from '@/components/ui';
 import { isWebRuntime } from '@/lib/desktop';
 import { usePwaDetection } from '@/hooks/usePwaDetection';
 import { useI18n } from '@/lib/i18n';
-import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
-import { isMobileAppRuntime } from '@/lib/mobileAppRuntime';
+import { getSafeSessionStorage, getSafeStorage } from '@/stores/utils/safeStorage';
+import { shouldShowPwaInstallToast } from '@/components/update/openCodeUpdateDedup';
 
 type InstallPromptOutcome = 'accepted' | 'dismissed';
 
@@ -14,6 +14,7 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const INSTALL_TOAST_SESSION_KEY = 'pwa-install-toast-shown';
+const INSTALL_TOAST_DISMISSED_KEY = 'pwa-install-toast-dismissed';
 
 export const usePwaInstallPrompt = () => {
   const { browserTab } = usePwaDetection();
@@ -25,7 +26,7 @@ export const usePwaInstallPrompt = () => {
   }, [t]);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !isWebRuntime() || !browserTab || isMobileAppRuntime()) {
+    if (typeof window === 'undefined' || !isWebRuntime() || !browserTab) {
       return;
     }
 
@@ -65,12 +66,14 @@ export const usePwaInstallPrompt = () => {
       installEvent.preventDefault();
       deferredPrompt = installEvent;
 
+      const localStorage = getSafeStorage();
       const sessionStorage = getSafeSessionStorage();
-      if (sessionStorage.getItem(INSTALL_TOAST_SESSION_KEY) === 'true') {
-        return;
-      }
-
-      if (installToastId !== null) {
+      const decision = shouldShowPwaInstallToast({
+        dismissed: localStorage.getItem(INSTALL_TOAST_DISMISSED_KEY),
+        sessionShown: sessionStorage.getItem(INSTALL_TOAST_SESSION_KEY),
+        hasActiveToast: installToastId !== null,
+      });
+      if (!decision) {
         return;
       }
 
@@ -82,6 +85,13 @@ export const usePwaInstallPrompt = () => {
           label: tRef.current('pwa.installPrompt.action'),
           onClick: () => {
             void triggerInstall();
+          },
+        },
+        cancel: {
+          label: tRef.current('pwa.installPrompt.dismiss'),
+          onClick: () => {
+            getSafeStorage().setItem(INSTALL_TOAST_DISMISSED_KEY, 'true');
+            dismissInstallToast();
           },
         },
       });

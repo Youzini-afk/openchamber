@@ -6,14 +6,19 @@ import { parse as parseJsonc } from 'jsonc-parser';
 
 // ============== PATH CONSTANTS ==============
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const resolveOpenCodeConfigDir = () => {
+  const envConfigDir = typeof process.env.OPENCODE_CONFIG_DIR === 'string' ? process.env.OPENCODE_CONFIG_DIR.trim() : '';
+  return envConfigDir ? path.resolve(envConfigDir) : path.join(os.homedir(), '.config', 'opencode');
+};
+const resolveCustomConfigFile = () => (
+  process.env.OPENCODE_CONFIG ? path.resolve(process.env.OPENCODE_CONFIG) : null
+);
+const OPENCODE_CONFIG_DIR = resolveOpenCodeConfigDir();
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
 const SKILL_DIR = path.join(OPENCODE_CONFIG_DIR, 'skills');
 const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
-const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
-  ? path.resolve(process.env.OPENCODE_CONFIG)
-  : null;
+const CUSTOM_CONFIG_FILE = resolveCustomConfigFile();
 const PROMPT_FILE_PATTERN = /^\{file:(.+)\}$/i;
 
 // ============== SCOPE TYPE CONSTANTS ==============
@@ -36,17 +41,22 @@ const SKILL_SCOPE = {
 // ============== DIRECTORY OPERATIONS ==============
 
 function ensureDirs() {
-  if (!fs.existsSync(OPENCODE_CONFIG_DIR)) {
-    fs.mkdirSync(OPENCODE_CONFIG_DIR, { recursive: true });
+  const opencodeConfigDir = resolveOpenCodeConfigDir();
+  const agentDir = path.join(opencodeConfigDir, 'agents');
+  const commandDir = path.join(opencodeConfigDir, 'commands');
+  const skillDir = path.join(opencodeConfigDir, 'skills');
+
+  if (!fs.existsSync(opencodeConfigDir)) {
+    fs.mkdirSync(opencodeConfigDir, { recursive: true });
   }
-  if (!fs.existsSync(AGENT_DIR)) {
-    fs.mkdirSync(AGENT_DIR, { recursive: true });
+  if (!fs.existsSync(agentDir)) {
+    fs.mkdirSync(agentDir, { recursive: true });
   }
-  if (!fs.existsSync(COMMAND_DIR)) {
-    fs.mkdirSync(COMMAND_DIR, { recursive: true });
+  if (!fs.existsSync(commandDir)) {
+    fs.mkdirSync(commandDir, { recursive: true });
   }
-  if (!fs.existsSync(SKILL_DIR)) {
-    fs.mkdirSync(SKILL_DIR, { recursive: true });
+  if (!fs.existsSync(skillDir)) {
+    fs.mkdirSync(skillDir, { recursive: true });
   }
 }
 
@@ -114,14 +124,15 @@ function getProjectConfigPath(workingDirectory) {
 }
 
 function getConfigPaths(workingDirectory) {
+  const opencodeConfigDir = resolveOpenCodeConfigDir();
   return {
     userPaths: [
-      path.join(OPENCODE_CONFIG_DIR, 'config.json'),
-      path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
-      path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
+      path.join(opencodeConfigDir, 'config.json'),
+      path.join(opencodeConfigDir, 'opencode.json'),
+      path.join(opencodeConfigDir, 'opencode.jsonc'),
     ],
     projectPath: getProjectConfigPath(workingDirectory),
-    customPath: CUSTOM_CONFIG_FILE
+    customPath: resolveCustomConfigFile()
   };
 }
 
@@ -132,7 +143,7 @@ function getPrimaryUserConfigPath(userPaths) {
     }
   }
 
-  return CONFIG_FILE;
+  return path.join(resolveOpenCodeConfigDir(), 'config.json');
 }
 
 function readConfigFile(filePath) {
@@ -210,7 +221,7 @@ function getConfigForPath(layers, targetPath) {
   return layers.userConfig;
 }
 
-function writeConfig(config, filePath = CONFIG_FILE) {
+function writeConfig(config, filePath = path.join(resolveOpenCodeConfigDir(), 'config.json')) {
   try {
     if (fs.existsSync(filePath)) {
       const backupFile = `${filePath}.openchamber.backup`;
@@ -318,9 +329,9 @@ function resolvePromptFilePath(reference) {
 
   if (target.startsWith('./')) {
     target = target.slice(2);
-    target = path.join(OPENCODE_CONFIG_DIR, target);
+    target = path.join(resolveOpenCodeConfigDir(), target);
   } else if (!path.isAbsolute(target)) {
-    target = path.join(OPENCODE_CONFIG_DIR, target);
+    target = path.join(resolveOpenCodeConfigDir(), target);
   }
 
   return target;
@@ -401,7 +412,7 @@ function resolveSkillSearchDirectories(workingDirectory) {
     }
   };
 
-  pushDir(OPENCODE_CONFIG_DIR);
+  pushDir(resolveOpenCodeConfigDir());
 
   if (workingDirectory) {
     const worktreeRoot = findWorktreeRoot(workingDirectory) || path.resolve(workingDirectory);

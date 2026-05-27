@@ -27,7 +27,7 @@ describe('magic-context config helpers', () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-magic-context-test-'));
     process.env.HOME = tempHome;
     process.env.USERPROFILE = tempHome;
-    delete process.env.OPENCODE_CONFIG_DIR;
+    process.env.OPENCODE_CONFIG_DIR = path.join(tempHome, '.config', 'opencode');
     delete process.env.XDG_CONFIG_HOME;
   });
 

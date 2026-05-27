@@ -1976,6 +1976,9 @@ export type SkillConfigSources = {
     scope?: SkillScope | null;
     source?: SkillSource | null;
     supportingFiles: SupportingFile[];
+    name?: string;
+    description?: string;
+    instructions?: string;
   };
   projectMd?: { exists: boolean; path: string | null };
   claudeMd?: { exists: boolean; path: string | null };
@@ -1988,6 +1991,34 @@ export type DiscoveredSkill = {
   scope: SkillScope;
   source: SkillSource;
   description?: string;
+  content?: string;
+};
+
+export const BUILT_IN_SKILL_LOCATION = '<built-in>';
+
+export const mergeDiscoveredSkills = (
+  primarySkills: DiscoveredSkill[] = [],
+  fallbackSkills: DiscoveredSkill[] = []
+): DiscoveredSkill[] => {
+  const merged: DiscoveredSkill[] = [];
+  const seenNames = new Set<string>();
+
+  const appendSkill = (skill: DiscoveredSkill | null | undefined) => {
+    if (!skill) {
+      return;
+    }
+    const name = typeof skill?.name === 'string' ? skill.name.trim() : '';
+    if (!name || seenNames.has(name)) {
+      return;
+    }
+    seenNames.add(name);
+    merged.push(skill);
+  };
+
+  for (const skill of primarySkills || []) appendSkill(skill);
+  for (const skill of fallbackSkills || []) appendSkill(skill);
+
+  return merged;
 };
 
 const addSkillFromMdFile = (
@@ -2227,6 +2258,14 @@ export const getSkillSources = (
   discoveredSkill?: DiscoveredSkill | null
 ): SkillConfigSources => {
   ensureSkillDirs();
+  const isReadableFile = (filePath: string | null): boolean => {
+    if (!filePath) return false;
+    try {
+      return fs.statSync(filePath).isFile();
+    } catch {
+      return false;
+    }
+  };
   
   // Check all possible locations
   const projectPath = workingDirectory ? getProjectSkillPath(workingDirectory, skillName) : null;
@@ -2244,6 +2283,8 @@ export const getSkillSources = (
   const matchedDiscovered = discoveredSkill?.name === skillName
     ? discoveredSkill
     : discoverSkills(workingDirectory).find((skill) => skill.name === skillName);
+  const discoveredPath = typeof matchedDiscovered?.path === 'string' ? matchedDiscovered.path : null;
+  const isBuiltInDiscovered = discoveredPath === BUILT_IN_SKILL_LOCATION;
   
   // Determine which md file to use (priority: project > claude > user)
   let mdPath: string | null = null;
@@ -2251,7 +2292,15 @@ export const getSkillSources = (
   let mdSource: SkillSource | null = null;
   let mdDir: string | null = null;
   
-  if (projectExists) {
+  if (isBuiltInDiscovered) {
+    mdScope = matchedDiscovered?.scope || SKILL_SCOPE.USER;
+    mdSource = matchedDiscovered?.source || 'opencode';
+  } else if (discoveredPath && isReadableFile(discoveredPath)) {
+    mdPath = discoveredPath;
+    mdScope = matchedDiscovered?.scope || null;
+    mdSource = matchedDiscovered?.source || null;
+    mdDir = path.dirname(discoveredPath);
+  } else if (projectExists) {
     mdPath = projectPath;
     mdScope = SKILL_SCOPE.PROJECT;
     mdSource = 'opencode';
@@ -2266,21 +2315,20 @@ export const getSkillSources = (
     mdScope = SKILL_SCOPE.USER;
     mdSource = 'opencode';
     mdDir = userDir;
-  } else if (matchedDiscovered?.path) {
-    mdPath = matchedDiscovered.path;
-    mdScope = matchedDiscovered.scope;
-    mdSource = matchedDiscovered.source;
-    mdDir = path.dirname(matchedDiscovered.path);
   }
   
-  const mdExists = !!mdPath;
-  let mdFields: string[] = [];
+  const mdExists = isBuiltInDiscovered || !!mdPath;
+  let mdFields: string[] = isBuiltInDiscovered ? ['description', 'instructions'] : [];
   let supportingFiles: SupportingFile[] = [];
+  let mdDescription = typeof matchedDiscovered?.description === 'string' ? matchedDiscovered.description : '';
+  let mdInstructions = isBuiltInDiscovered && typeof matchedDiscovered?.content === 'string' ? matchedDiscovered.content : '';
   
   if (mdExists && mdPath) {
     const { frontmatter, body } = parseMdFile(mdPath);
     mdFields = Object.keys(frontmatter);
+    mdDescription = typeof frontmatter.description === 'string' ? frontmatter.description : '';
     if (body) mdFields.push('instructions');
+    mdInstructions = body || '';
     if (mdDir) {
       supportingFiles = listSupportingFiles(mdDir);
     }
@@ -2294,7 +2342,10 @@ export const getSkillSources = (
       fields: mdFields,
       scope: mdScope,
       source: mdSource,
-      supportingFiles
+      supportingFiles,
+      name: matchedDiscovered?.name || skillName,
+      description: mdDescription,
+      instructions: mdInstructions,
     },
     projectMd: { exists: projectExists, path: projectPath },
     claudeMd: { exists: claudeExists, path: claudePath },

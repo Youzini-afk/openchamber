@@ -120,11 +120,19 @@ export interface GitRebaseInProgress {
   onto: string;
 }
 
+export interface GitRemoteComparison {
+  remote: string;
+  branch: string;
+  ahead: number;
+  behind: number;
+}
+
 export interface GitStatus {
   current: string;
   tracking: string | null;
   ahead: number;
   behind: number;
+  upstreamComparison?: GitRemoteComparison | null;
   files: GitStatusFile[];
   isClean: boolean;
   diffStats?: Record<string, { insertions: number; deletions: number }>;
@@ -230,6 +238,37 @@ export interface GitMergeResult {
   conflictFiles?: string[];
 }
 
+export interface CheckoutCommitResponse {
+  success: boolean;
+}
+
+export interface CherryPickRequest {
+  hash: string;
+}
+export interface CherryPickResponse {
+  success: boolean;
+  conflict?: boolean;
+  conflictFiles?: string[];
+}
+
+export interface RevertCommitRequest {
+  hash: string;
+}
+export interface RevertCommitResponse {
+  success: boolean;
+  conflict?: boolean;
+  conflictFiles?: string[];
+}
+
+export interface ResetToCommitRequest {
+  hash: string;
+  mode: 'soft' | 'mixed' | 'hard';
+  force?: boolean;
+}
+export interface ResetToCommitResponse {
+  success: boolean;
+}
+
 export interface GitRebaseResult {
   success: boolean;
   conflict?: boolean;
@@ -285,6 +324,7 @@ export interface GitLogEntry {
   filesChanged: number;
   insertions: number;
   deletions: number;
+  parents: string[];
 }
 
 export interface GitLogResponse {
@@ -303,6 +343,12 @@ export interface CommitFileEntry {
 
 export interface GitCommitFilesResponse {
   files: CommitFileEntry[];
+}
+
+export interface CommitFileDiffResponse {
+  original: string;
+  modified: string;
+  isBinary: boolean;
 }
 
 export interface GitWorktreeInfo {
@@ -384,6 +430,7 @@ export interface GitRemoveRemotePayload {
 export interface CreateGitCommitOptions {
   addAll?: boolean;
   files?: string[];
+  stageFiles?: string[];
 }
 
 export interface GitLogOptions {
@@ -391,6 +438,7 @@ export interface GitLogOptions {
   from?: string;
   to?: string;
   file?: string;
+  all?: boolean;
 }
 
 export interface GeneratedCommitMessage {
@@ -417,7 +465,11 @@ export interface GitAPI {
   getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus>;
   getGitDiff(directory: string, options: GetGitDiffOptions): Promise<GitDiffResponse>;
   getGitFileDiff(directory: string, options: GetGitFileDiffOptions): Promise<GitFileDiffResponse>;
-  revertGitFile(directory: string, filePath: string): Promise<void>;
+  revertGitFile(directory: string, filePath: string, options?: { scope?: 'all' | 'working' }): Promise<void>;
+  stageGitFile(directory: string, filePath: string): Promise<void>;
+  stageGitFiles?(directory: string, filePaths: string[]): Promise<void>;
+  unstageGitFile(directory: string, filePath: string): Promise<void>;
+  unstageGitFiles?(directory: string, filePaths: string[]): Promise<void>;
   isLinkedWorktree(directory: string): Promise<boolean>;
   getGitBranches(directory: string): Promise<GitBranch>;
   deleteGitBranch(directory: string, payload: GitDeleteBranchPayload): Promise<{ success: boolean }>;
@@ -449,6 +501,7 @@ export interface GitAPI {
   renameBranch(directory: string, oldName: string, newName: string): Promise<{ success: boolean; branch: string }>;
   getGitLog(directory: string, options?: GitLogOptions): Promise<GitLogResponse>;
   getCommitFiles(directory: string, hash: string): Promise<GitCommitFilesResponse>;
+  getCommitFileDiff?(directory: string, hash: string, filePath: string, isBinary: boolean): Promise<CommitFileDiffResponse>;
   getCurrentGitIdentity(directory: string): Promise<GitIdentitySummary | null>;
   hasLocalIdentity?(directory: string): Promise<boolean>;
   setGitIdentity(directory: string, profileId: string): Promise<{ success: boolean; profile: GitIdentityProfile }>;
@@ -466,6 +519,10 @@ export interface GitAPI {
   merge(directory: string, options: { branch: string }): Promise<GitMergeResult>;
   abortMerge(directory: string): Promise<{ success: boolean }>;
   continueMerge(directory: string): Promise<{ success: boolean; conflict: boolean; conflictFiles?: string[] }>;
+  checkoutCommit(directory: string, hash: string): Promise<CheckoutCommitResponse>;
+  cherryPick(directory: string, hash: string): Promise<CherryPickResponse>;
+  revertCommit(directory: string, hash: string): Promise<RevertCommitResponse>;
+  resetToCommit(directory: string, hash: string, mode: 'soft' | 'mixed' | 'hard', force?: boolean): Promise<ResetToCommitResponse>;
   stash(directory: string, options?: { message?: string; includeUntracked?: boolean }): Promise<{ success: boolean }>;
   stashPop(directory: string): Promise<{ success: boolean }>;
   getConflictDetails(directory: string): Promise<MergeConflictDetails>;
@@ -828,6 +885,7 @@ export interface SettingsPayload {
   securityScopedBookmarks?: string[];
   pinnedDirectories?: string[];
   showReasoningTraces?: boolean;
+  collapsibleThinkingBlocks?: boolean;
   showDeletionDialog?: boolean;
   nativeNotificationsEnabled?: boolean;
   notificationMode?: 'always' | 'hidden-only';

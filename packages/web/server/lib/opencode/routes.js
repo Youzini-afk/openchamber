@@ -62,6 +62,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     removeProviderConfig,
     fetchProviderModels,
     refreshOpenCodeAfterConfigChange,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
   } = dependencies;
 
   let authLibrary = null;
@@ -88,6 +90,45 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     normalizePendingString(body?.apiKey) ||
     normalizePendingString(body?.token)
   );
+
+  const fetchLatestOpenCodeVersion = async () => {
+    try {
+      const { getNpmInfo } = await import('./npm-registry.js');
+      const result = await getNpmInfo('opencode-ai');
+      return result.ok ? result.latest : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const parseVersionForComparison = (value) => {
+    const normalized = String(value || '').replace(/^v/, '').split('+')[0];
+    const prereleaseIndex = normalized.indexOf('-');
+    const core = prereleaseIndex >= 0 ? normalized.slice(0, prereleaseIndex) : normalized;
+    const parts = core.split('.').map((part) => {
+      const parsed = Number.parseInt(part || '0', 10);
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+
+    return { parts, prerelease: prereleaseIndex >= 0 };
+  };
+
+  const compareVersions = (left, right) => {
+    const a = parseVersionForComparison(left);
+    const b = parseVersionForComparison(right);
+    const length = Math.max(a.parts.length, b.parts.length);
+
+    for (let index = 0; index < length; index += 1) {
+      const diff = (a.parts[index] || 0) - (b.parts[index] || 0);
+      if (diff !== 0) return diff;
+    }
+
+    if (a.prerelease !== b.prerelease) {
+      return a.prerelease ? -1 : 1;
+    }
+
+    return 0;
+  };
 
   const pruneExpiredPendingMcpAuthContexts = () => {
     const now = Date.now();
@@ -116,6 +157,92 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to resolve OpenCode binary:', error);
       res.status(500).json({ error: 'Failed to resolve OpenCode binary' });
+    }
+  });
+
+  app.post('/api/opencode/upgrade', async (req, res) => {
+    if (typeof buildOpenCodeUrl !== 'function' || typeof getOpenCodeAuthHeaders !== 'function') {
+      return res.status(503).json({ success: false, error: 'OpenCode upgrade is unavailable' });
+    }
+
+    try {
+      const target = typeof req.body?.target === 'string' && req.body.target.trim().length > 0
+        ? req.body.target.trim()
+        : undefined;
+      const response = await fetch(buildOpenCodeUrl('/global/upgrade', ''), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...getOpenCodeAuthHeaders(),
+        },
+        body: JSON.stringify(target ? { target } : {}),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        return res.status(response.status).json({
+          success: false,
+          error: payload?.error || response.statusText || 'Failed to upgrade OpenCode',
+        });
+      }
+
+      try {
+        await refreshOpenCodeAfterConfigChange('OpenCode upgrade');
+      } catch (restartError) {
+        return res.status(500).json({
+          success: false,
+          upgraded: true,
+          error: restartError instanceof Error
+            ? `OpenCode upgraded, but restart failed: ${restartError.message}`
+            : 'OpenCode upgraded, but restart failed',
+        });
+      }
+
+      return res.json({ ...(payload ?? { success: true }), restarted: true });
+    } catch (error) {
+      console.error('Failed to upgrade OpenCode:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to upgrade OpenCode',
+      });
+    }
+  });
+
+  app.get('/api/opencode/upgrade-status', async (_req, res) => {
+    if (typeof buildOpenCodeUrl !== 'function' || typeof getOpenCodeAuthHeaders !== 'function') {
+      return res.status(503).json({ available: null, error: 'OpenCode upgrade status is unavailable' });
+    }
+
+    try {
+      const [healthResponse, latestVersion] = await Promise.all([
+        fetch(buildOpenCodeUrl('/global/health', ''), {
+          method: 'GET',
+          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+        }),
+        fetchLatestOpenCodeVersion(),
+      ]);
+      const health = await healthResponse.json().catch(() => null);
+      if (!healthResponse.ok) {
+        return res.status(healthResponse.status).json({
+          available: null,
+          error: health?.error || healthResponse.statusText || 'Failed to read OpenCode version',
+        });
+      }
+      const currentVersion = typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null;
+      if (!currentVersion || !latestVersion) {
+        return res.json({ available: null, currentVersion, latestVersion: latestVersion || null });
+      }
+      const available = compareVersions(latestVersion, currentVersion) > 0;
+      return res.json({
+        available,
+        currentVersion,
+        latestVersion,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        available: null,
+        error: error instanceof Error ? error.message : 'Failed to check OpenCode upgrade status',
+      });
     }
   });
 

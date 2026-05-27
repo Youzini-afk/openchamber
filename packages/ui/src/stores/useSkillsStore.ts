@@ -56,6 +56,8 @@ export interface SkillSources {
   projectMd?: { exists: boolean; path: string | null };
   claudeMd?: { exists: boolean; path: string | null };
   userMd?: { exists: boolean; path: string | null };
+  userClaudeMd?: { exists: boolean; path: string | null };
+  userAgentsMd?: { exists: boolean; path: string | null };
 }
 
 export interface DiscoveredSkill {
@@ -66,26 +68,6 @@ export interface DiscoveredSkill {
   description?: string;
   /** Domain folder parsed from file path, e.g. "automation-ai", "lark-ecosystem" */
   group?: string;
-}
-
-export interface SkillsDiscoveryMeta {
-  source?: string;
-  contractVersion?: number;
-  userSkillDirs?: string[];
-  projectSkillDirs?: string[];
-  userSkillDirStatus?: Array<{ path: string; exists: boolean; readable: boolean; skillMdCount: number; error?: string | null }>;
-  projectSkillDirStatus?: Array<{ path: string; exists: boolean; readable: boolean; skillMdCount: number; error?: string | null }>;
-  home?: string;
-  opencodeConfigDir?: string;
-  envOpenCodeConfigDir?: string | null;
-}
-
-export interface SkillsLoadError {
-  message: string;
-  status?: number;
-  url?: string;
-  responseShape?: string;
-  responseSnippet?: string;
 }
 
 /** Parse the domain group folder from a skill file path.
@@ -116,12 +98,36 @@ interface RawSkillResponse {
   };
 }
 
+export interface SkillDiscoveryDirectoryStatus {
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  skillMdCount: number;
+  error?: string | null;
+}
+
+export interface SkillDiscoveryMeta {
+  userSkillDirs?: string[];
+  projectSkillDirs?: string[];
+  userSkillDirStatus?: SkillDiscoveryDirectoryStatus[];
+  projectSkillDirStatus?: SkillDiscoveryDirectoryStatus[];
+}
+
+export interface SkillLoadError {
+  message: string;
+  status?: number;
+  url?: string;
+  responseShape?: string;
+  responseSnippet?: string;
+}
+
 export interface SkillConfig {
   name: string;
   description: string;
   instructions?: string;
   scope?: SkillScope;
   source?: SkillSource;
+  targetPath?: string;
   supportingFiles?: Array<{ path: string; content: string }>;
 }
 
@@ -149,10 +155,10 @@ export interface SkillDetail {
 interface SkillsStore {
   selectedSkillName: string | null;
   skills: DiscoveredSkill[];
-  discoveryMeta: SkillsDiscoveryMeta | null;
-  lastLoadError: SkillsLoadError | null;
   isLoading: boolean;
   skillDraft: SkillDraft | null;
+  discoveryMeta: SkillDiscoveryMeta | null;
+  lastLoadError: SkillLoadError | null;
 
   setSelectedSkill: (name: string | null) => void;
   setSkillDraft: (draft: SkillDraft | null) => void;
@@ -186,21 +192,6 @@ const getSkillsCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_SKILLS_CACHE_KEY;
 };
 
-const getResponseShape = (value: unknown): string => {
-  if (Array.isArray(value)) return 'array';
-  if (value === null) return 'null';
-  return typeof value;
-};
-
-const getResponseSnippet = (text: string): string | undefined => {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  return normalized ? normalized.slice(0, 240) : undefined;
-};
-
-const parseJsonResponse = (text: string): unknown => {
-  if (!text.trim()) return null;
-  return JSON.parse(text);
-};
 const MAX_HEALTH_WAIT_MS = 20000;
 const FAST_HEALTH_POLL_INTERVAL_MS = 300;
 const FAST_HEALTH_POLL_ATTEMPTS = 4;
@@ -214,10 +205,10 @@ export const useSkillsStore = create<SkillsStore>()(
       (set, get) => ({
         selectedSkillName: null,
         skills: [],
-        discoveryMeta: null,
-        lastLoadError: null,
         isLoading: false,
         skillDraft: null,
+        discoveryMeta: null,
+        lastLoadError: null,
 
         setSelectedSkill: (name: string | null) => {
           set({ selectedSkillName: name });
@@ -246,59 +237,39 @@ export const useSkillsStore = create<SkillsStore>()(
           const request = (async () => {
             set({ isLoading: true });
             const previousSkills = get().skills;
-            let lastError: SkillsLoadError | null = null;
+            let lastError: unknown = null;
 
             for (let attempt = 0; attempt < 3; attempt++) {
               try {
                 const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';
 
-                const url = `/api/config/skills${queryParams}`;
-                const response = await fetch(url, {
-                  cache: 'no-store',
-                  headers: { Accept: 'application/json' },
-                });
-                const responseText = await response.text();
-                let data: unknown = null;
-                try {
-                  data = parseJsonResponse(responseText);
-                } catch (parseError) {
-                  throw {
-                    message: parseError instanceof Error ? parseError.message : 'Failed to parse skills response as JSON',
-                    status: response.status,
-                    url,
-                    responseShape: 'invalid-json',
-                    responseSnippet: getResponseSnippet(responseText),
-                  } satisfies SkillsLoadError;
-                }
-
+                const response = await fetch(`/api/config/skills${queryParams}`);
                 if (!response.ok) {
-                  const bodyMessage = data && typeof data === 'object' && 'error' in data
-                    ? String((data as { error?: unknown }).error || '')
-                    : '';
-                  throw {
-                    message: bodyMessage || `Failed to list skills: HTTP ${response.status}`,
+                  const responseText = await response.text().catch(() => '');
+                  const error = new Error(`Failed to list skills: ${response.status}`) as Error & { loadError?: SkillLoadError };
+                  error.loadError = {
+                    message: error.message,
                     status: response.status,
-                    url,
-                    responseShape: getResponseShape(data),
-                    responseSnippet: getResponseSnippet(responseText),
-                  } satisfies SkillsLoadError;
+                    url: response.url,
+                    responseSnippet: responseText.slice(0, 500),
+                  };
+                  throw error;
                 }
 
-                if (!data || typeof data !== 'object' || Array.isArray(data)) {
-                  throw {
-                    message: 'Skills API returned an unexpected response shape',
+                const data = await response.json();
+                if (!data || typeof data !== 'object' || !Array.isArray(data.skills)) {
+                  const error = new Error('Unexpected skills response') as Error & { loadError?: SkillLoadError };
+                  error.loadError = {
+                    message: error.message,
                     status: response.status,
-                    url,
-                    responseShape: getResponseShape(data),
-                    responseSnippet: getResponseSnippet(responseText),
-                  } satisfies SkillsLoadError;
+                    url: response.url,
+                    responseShape: Array.isArray(data) ? 'array' : typeof data,
+                    responseSnippet: JSON.stringify(data)?.slice(0, 500),
+                  };
+                  throw error;
                 }
-
-                const responseRecord = data as { skills?: unknown; meta?: unknown };
-                const rawSkills: RawSkillResponse[] = Array.isArray(responseRecord.skills)
-                  ? responseRecord.skills as RawSkillResponse[]
-                  : [];
-                const skills: DiscoveredSkill[] = rawSkills.map((s) => ({
+                const rawSkills: RawSkillResponse[] = data.skills || [];
+                const configSkills: DiscoveredSkill[] = rawSkills.map((s) => ({
                   name: s.name,
                   path: s.path,
                   scope: s.scope ?? 'user',
@@ -307,32 +278,21 @@ export const useSkillsStore = create<SkillsStore>()(
                   group: parseSkillGroup(s.path),
                 }));
 
-                const meta = responseRecord.meta && typeof responseRecord.meta === 'object' && !Array.isArray(responseRecord.meta)
-                  ? responseRecord.meta as SkillsDiscoveryMeta
-                  : null;
-
-                const missingMetaError: SkillsLoadError | null = meta ? null : {
-                  message: 'Skills API response did not include discovery metadata',
-                  status: response.status,
-                  url,
-                  responseShape: getResponseShape(data),
-                  responseSnippet: getResponseSnippet(responseText),
-                };
-
-                set({ skills, discoveryMeta: meta, lastLoadError: missingMetaError, isLoading: false });
+                set({ skills: configSkills, isLoading: false, discoveryMeta: (data.meta ?? null) as SkillDiscoveryMeta | null, lastLoadError: null });
                 skillsLastLoadedAt.set(cacheKey, Date.now());
                 return true;
               } catch (error) {
-                lastError = error && typeof error === 'object' && 'message' in error
-                  ? error as SkillsLoadError
-                  : { message: error instanceof Error ? error.message : String(error) };
+                lastError = error;
                 const waitMs = 200 * (attempt + 1);
                 await new Promise((resolve) => setTimeout(resolve, waitMs));
               }
             }
 
             console.error("Failed to load skills:", lastError);
-            set({ skills: previousSkills, lastLoadError: lastError, isLoading: false });
+            const loadError = lastError instanceof Error && 'loadError' in lastError
+              ? (lastError as Error & { loadError?: SkillLoadError }).loadError ?? { message: lastError.message }
+              : { message: lastError instanceof Error ? lastError.message : 'Failed to load skills' };
+            set({ skills: previousSkills, isLoading: false, lastLoadError: loadError });
             return false;
           })();
 
@@ -422,6 +382,7 @@ export const useSkillsStore = create<SkillsStore>()(
             if (config.description !== undefined) skillConfig.description = config.description;
             if (config.instructions !== undefined) skillConfig.instructions = config.instructions;
             if (config.supportingFiles !== undefined) skillConfig.supportingFiles = config.supportingFiles;
+            if (config.targetPath !== undefined) skillConfig.targetPath = config.targetPath;
 
             const currentDirectory = getCurrentDirectory();
             const queryParams = currentDirectory ? `?directory=${encodeURIComponent(currentDirectory)}` : '';

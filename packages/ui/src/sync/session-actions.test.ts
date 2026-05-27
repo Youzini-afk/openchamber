@@ -63,30 +63,70 @@ mock.module("@/stores/useConfigStore", () => ({
 
 // Mock useSessionUIStore
 mock.module("./session-ui-store", () => ({
+  routeMessage: mock(() => Promise.resolve()),
   useSessionUIStore: {
+    setState: () => undefined,
     getState: () => ({
       getDirectoryForSession: (sessionId: string) => {
         if (sessionId === "session-a") return "/test/project"
         if (sessionId === "session-b") return "/other/project"
         return null
       },
+      setCurrentSession: () => undefined,
+      markSessionAsOpenChamberCreated: () => undefined,
+      sendMessage: () => Promise.resolve(),
+      sessionAbortFlags: new Map(),
     }),
   },
 }))
 
 // Mock useInputStore (imported but not used in permission functions)
 mock.module("./input-store", () => ({
-  useInputStore: {},
+  useInputStore: {
+    setState: () => undefined,
+    getState: () => ({
+      pendingInputText: null,
+      pendingInputMode: "replace",
+      attachedFiles: [],
+      clearAttachedFiles: () => undefined,
+      addRestoredAttachment: () => undefined,
+      setAttachedFiles: () => undefined,
+      addAttachedFile: () => Promise.resolve(),
+      addVSCodeSelectionAttachment: () => Promise.resolve(),
+    }),
+  },
 }))
 
 // Mock useGlobalSessionsStore (imported but not used in permission functions)
 mock.module("@/stores/useGlobalSessionsStore", () => ({
-  useGlobalSessionsStore: {},
+  useGlobalSessionsStore: {
+    setState: () => undefined,
+    getState: () => ({
+      activeSessions: [],
+      archivedSessions: [],
+      sessionsByDirectory: new Map(),
+      hasLoaded: false,
+      status: "idle",
+      upsertSession: () => undefined,
+      removeSessions: () => undefined,
+      archiveSessions: () => undefined,
+      applySnapshot: () => undefined,
+      loadSessions: () => Promise.resolve({ activeSessions: [], archivedSessions: [] }),
+    }),
+  },
 }))
 
 // Mock sync-refs (imported but not used in permission functions)
 mock.module("./sync-refs", () => ({
+  setSyncRefs: () => {},
   registerSessionDirectory: () => {},
+  getSyncChildStores: () => ({ children: new Map(), ensureChild: () => ({ getState: () => ({}), setState: () => undefined }) }),
+  getSyncSessionStatus: () => undefined,
+  getSyncSessions: () => [],
+  getAllSyncSessions: () => [],
+  getSyncMessages: () => [],
+  getSyncParts: () => [],
+  getDirectoryState: () => undefined,
 }))
 
 import { create, type StoreApi } from "zustand"

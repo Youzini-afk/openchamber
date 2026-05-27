@@ -19,6 +19,7 @@ import type { WorktreeMetadata } from "@/types/worktree"
 import { opencodeClient } from "@/lib/opencode/client"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
+import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from "@/stores/useGlobalSessionsStore"
 import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
 import { useCommandsStore } from "@/stores/useCommandsStore"
@@ -45,8 +46,6 @@ import {
   updateSessionTitle as updateSessionTitleAction,
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
-  createLocalMessageId,
-  createMessageCheckpointIfAvailable,
   optimisticSend,
   refetchSessionMessages,
 } from "./session-actions"
@@ -62,88 +61,99 @@ export type { AttachedFile }
 // Send routing — shell mode, slash commands, or normal prompt
 // ---------------------------------------------------------------------------
 
-function routeMessage(params: {
+export function routeMessage(params: {
   sessionId: string
+  directory?: string | null
   content: string
   providerID: string
   modelID: string
   agent?: string
+  agentMentionName?: string
   variant?: string
   inputMode?: "normal" | "shell"
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   additionalParts?: Array<{ text: string; synthetic?: boolean; files?: Array<{ type: "file"; mime: string; url: string; filename: string }> }>
 }): Promise<void> {
-  if (params.inputMode === "shell") {
-    const sdk = opencodeClient.getSdkClient()
-    const dir = opencodeClient.getDirectory() || undefined
-    const messageID = createLocalMessageId()
-    return createMessageCheckpointIfAvailable(params.sessionId, messageID).then(() =>
-      sdk.session.shell({
+  const run = (): Promise<void> => {
+    if (params.inputMode === "shell") {
+      const sdk = opencodeClient.getSdkClient()
+      const dir = opencodeClient.getDirectory() || undefined
+      return sdk.session.shell({
         sessionID: params.sessionId,
         directory: dir,
-        messageID,
         agent: params.agent,
         model: { providerID: params.providerID, modelID: params.modelID },
         command: params.content,
-      }).then(() => {}),
-    )
-  }
+      }).then(() => {})
+    }
 
-  // Slash commands — fire and forget, SSE delivers messages and status
-  if (params.content.startsWith("/")) {
-    const [head, ...tail] = params.content.split(" ")
-    const cmdName = head.slice(1)
+    // Slash commands — fire and forget, SSE delivers messages and status
+    if (params.content.startsWith("/")) {
+      const [head, ...tail] = params.content.split(" ")
+      const cmdName = head.slice(1)
 
-    const dirState = getDirectoryState()
-    const syncCommands = dirState?.command ?? []
-    const storeCommands = useCommandsStore.getState().commands
+      const dirState = getDirectoryState(params.directory ?? undefined)
+      const syncCommands = dirState?.command ?? []
+      const storeCommands = useCommandsStore.getState().commands
 
-    const isCommand = syncCommands.find((c) => c.name === cmdName)
-      || storeCommands.find((c) => c.name === cmdName)
+      const isCommand = syncCommands.find((c) => c.name === cmdName)
+        || storeCommands.find((c) => c.name === cmdName)
 
-    if (isCommand) {
-      return optimisticSend({
-        sessionId: params.sessionId,
-        content: params.content,
-        providerID: params.providerID,
-        modelID: params.modelID,
-        agent: params.agent,
-        files: params.files,
-        send: (messageID) => opencodeClient.sendCommand({
-          id: params.sessionId,
+      if (isCommand) {
+        return optimisticSend({
+          sessionId: params.sessionId,
+          content: params.content,
           providerID: params.providerID,
           modelID: params.modelID,
-          command: cmdName,
-          arguments: tail.join(" "),
           agent: params.agent,
-          variant: params.variant,
           files: params.files,
-          messageId: messageID,
-        }).then(() => {}),
-      })
+          send: (messageID) => opencodeClient.sendCommand({
+            id: params.sessionId,
+            providerID: params.providerID,
+            modelID: params.modelID,
+            command: cmdName,
+            arguments: tail.join(" "),
+            agent: params.agent,
+            variant: params.variant,
+            files: params.files,
+            messageId: messageID,
+          }).then(() => {}),
+        })
+      }
     }
-  }
 
-  // Normal prompt — optimistic insert so message appears instantly
-  return optimisticSend({
-    sessionId: params.sessionId,
-    content: params.content,
-    providerID: params.providerID,
-    modelID: params.modelID,
-    agent: params.agent,
-    files: params.files,
-    send: (messageID) => opencodeClient.sendMessage({
-      id: params.sessionId,
+    // Normal prompt — optimistic insert so message appears instantly
+    return optimisticSend({
+      sessionId: params.sessionId,
+      content: params.content,
       providerID: params.providerID,
       modelID: params.modelID,
-      text: params.content,
       agent: params.agent,
-      variant: params.variant,
       files: params.files,
-      additionalParts: params.additionalParts,
-      messageId: messageID,
-    }).then(() => {}),
-  })
+      send: (messageID) => opencodeClient.sendMessage({
+        id: params.sessionId,
+        providerID: params.providerID,
+        modelID: params.modelID,
+        text: params.content,
+        agent: params.agent,
+        agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
+        variant: params.variant,
+        files: params.files,
+        additionalParts: params.additionalParts,
+        messageId: messageID,
+      }).then(() => {}),
+    })
+  }
+
+  if (params.directory !== undefined) {
+    return opencodeClient.withDirectory(params.directory, run)
+  }
+
+  return run()
+}
+
+type SendMessageOptions = {
+  sessionId?: string
 }
 
 function notifyMessageSent(sessionId: string): void {
@@ -210,10 +220,8 @@ export type SessionUIState = {
   pendingChangesBarDismissed: Map<string, string>
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
 
-  // Right sidebar Git panel: selected directory per session/scope.
-  // Missing entry means "follow the session directory".
-  rightSidebarGitDirectories: Map<string, string>
-  getRightSidebarGitDirectory: (scopeKey: string) => string | null
+  // Right sidebar Git directory overrides, scoped by session or workspace key.
+  rightSidebarGitDirectories: Map<string, string | null>
   setRightSidebarGitDirectory: (scopeKey: string, directory: string | null) => void
 
   // Actions — UI state management
@@ -248,6 +256,7 @@ export type SessionUIState = {
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
     variant?: string,
     inputMode?: "normal" | "shell",
+    options?: SendMessageOptions,
   ) => Promise<void>
 
   createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null) => Promise<Session | null>
@@ -258,10 +267,10 @@ export type SessionUIState = {
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>
-  revertToMessage: (sessionId: string, messageId: string) => Promise<void>
+  revertToMessage: (sessionId: string, messageId: string, options?: { skipRedoPush?: boolean }) => Promise<void>
   forkFromMessage: (sessionId: string, messageId: string) => Promise<void>
   handleSlashUndo: (sessionId: string) => Promise<void>
-  handleSlashRedo: (sessionId: string) => Promise<void>
+  handleSlashRedo: (sessionId: string, options?: { fullUnrevert?: boolean }) => Promise<void>
   createSessionFromAssistantMessage: (sourceMessageId: string) => Promise<void>
 
   // Data access helpers (read from sync)
@@ -495,6 +504,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       error: null,
     })
 
+    // Clear composer attachments when opening a new session draft.
+    // Attachments from the previous session (e.g. restored by revert) must
+    // not bleed into the new session's input.
+    useInputStore.getState().clearAttachedFiles()
+
     if (options?.initialPrompt) {
       useInputStore.getState().setPendingInputText(options.initialPrompt)
     }
@@ -581,22 +595,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const messages = getSyncMessages(sessionId)
     if (messages.length === 0) return null
 
-    type AssistantTokens = {
-      input?: number;
-      output?: number;
-      reasoning?: number;
-      cache?: { read?: number; write?: number };
-    }
-    const toTokenCount = (value: unknown): number => (
-      typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-    )
-    const getTokenTotal = (tokens: AssistantTokens): number => (
-      toTokenCount(tokens.input)
-      + toTokenCount(tokens.output)
-      + toTokenCount(tokens.reasoning)
-      + toTokenCount(tokens.cache?.read)
-      + toTokenCount(tokens.cache?.write)
-    )
+    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
     let lastTokens: AssistantTokens | undefined
     let lastMessageId: string | undefined
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -604,7 +603,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (msg.role !== "assistant") continue
       const tokens = (msg as { tokens?: AssistantTokens }).tokens
       if (!tokens) continue
-      const total = getTokenTotal(tokens)
+      const total = tokens.input + tokens.output + tokens.reasoning + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0)
       if (total > 0) {
         lastTokens = tokens
         lastMessageId = msg.id
@@ -614,23 +613,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     if (!lastTokens) return null
 
-    const inputTokens = toTokenCount(lastTokens.input)
-    const outputTokens = toTokenCount(lastTokens.output)
-    const reasoningTokens = toTokenCount(lastTokens.reasoning)
-    const cacheReadTokens = toTokenCount(lastTokens.cache?.read)
-    const cacheWriteTokens = toTokenCount(lastTokens.cache?.write)
-    const totalTokens = inputTokens + outputTokens + reasoningTokens + cacheReadTokens + cacheWriteTokens
+    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0)
     const thresholdLimit = contextLimit > 0 ? contextLimit : 200000
     const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0
-    const normalizedOutput = outputLimit > 0 ? Math.round((outputTokens / outputLimit) * 100) : undefined
+    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined
 
     return {
       totalTokens,
-      inputTokens,
-      outputTokens,
-      reasoningTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
       percentage,
       contextLimit: contextLimit || 0,
       outputLimit: outputLimit || undefined,
@@ -720,24 +709,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     set({ pendingChangesBarDismissed: map });
   },
 
-  getRightSidebarGitDirectory: (scopeKey) => {
-    return get().rightSidebarGitDirectories.get(scopeKey) ?? null
-  },
-
   setRightSidebarGitDirectory: (scopeKey, directory) => {
-    const normalized = normalizePath(directory)
+    const normalizedScopeKey = normalizePath(scopeKey);
+    if (!normalizedScopeKey) return;
+    const normalizedDirectory = normalizePath(directory);
     set((state) => {
-      const current = state.rightSidebarGitDirectories.get(scopeKey) ?? null
-      if (current === normalized) return state
-
-      const next = new Map(state.rightSidebarGitDirectories)
-      if (normalized) {
-        next.set(scopeKey, normalized)
+      const existing = state.rightSidebarGitDirectories.get(normalizedScopeKey) ?? null;
+      if (existing === normalizedDirectory) return {};
+      const next = new Map(state.rightSidebarGitDirectories);
+      if (normalizedDirectory) {
+        next.set(normalizedScopeKey, normalizedDirectory);
       } else {
-        next.delete(scopeKey)
+        next.delete(normalizedScopeKey);
       }
-      return { rightSidebarGitDirectories: next }
-    })
+      return { rightSidebarGitDirectories: next };
+    });
   },
 
   // ---------------------------------------------------------------------------
@@ -753,9 +739,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
     variant?: string,
     inputMode?: "normal" | "shell",
+    options?: SendMessageOptions,
   ) => {
     // Clear non-Git changed-files bar on new user message for current session
-    const sid = get().currentSessionId;
+    const sid = options?.sessionId ?? get().currentSessionId;
     if (sid) {
       const map = new Map(get().pendingChangesBarDismissed);
       map.delete(sid);
@@ -766,7 +753,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
 
     // ---- New session from draft ----
-    if (draft?.open) {
+    if (!options?.sessionId && draft?.open) {
       const draftTargetFolderId = draft.targetFolderId
       let draftDirectoryOverride = draft.bootstrapPendingDirectory ?? draft.directoryOverride ?? null
       const draftProjectId = draft.selectedProjectId ?? null
@@ -838,10 +825,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
       await routeMessage({
         sessionId: created.id,
+        directory: createdDirectory,
         content,
         providerID,
         modelID,
         agent: effectiveDraftAgent,
+        agentMentionName,
         variant,
         inputMode,
         files,
@@ -860,24 +849,24 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }
 
     // ---- Existing session ----
-    const currentSessionId = get().currentSessionId
-    const sessionAgentSelection = currentSessionId
-      ? useSelectionStore.getState().getSessionAgentSelection(currentSessionId)
+    const targetSessionId = options?.sessionId ?? get().currentSessionId
+    const sessionAgentSelection = targetSessionId
+      ? useSelectionStore.getState().getSessionAgentSelection(targetSessionId)
       : null
     const configAgentName = useConfigStore.getState().currentAgentName
     const effectiveAgent = trimmedAgent || sessionAgentSelection || configAgentName || undefined
 
-    if (currentSessionId && effectiveAgent) {
-      useSelectionStore.getState().saveSessionAgentSelection(currentSessionId, effectiveAgent)
-      useSelectionStore.getState().saveAgentModelVariantForSession(currentSessionId, effectiveAgent, providerID, modelID, variant)
+    if (targetSessionId && effectiveAgent) {
+      useSelectionStore.getState().saveSessionAgentSelection(targetSessionId, effectiveAgent)
+      useSelectionStore.getState().saveAgentModelVariantForSession(targetSessionId, effectiveAgent, providerID, modelID, variant)
     }
 
-    if (currentSessionId) {
+    if (targetSessionId) {
       const viewportState = useViewportStore.getState()
-      const memState = viewportState.sessionMemoryState.get(currentSessionId)
+      const memState = viewportState.sessionMemoryState.get(targetSessionId)
       if (!memState || !memState.lastUserMessageAt) {
         const newMemState = new Map(viewportState.sessionMemoryState)
-        newMemState.set(currentSessionId, {
+        newMemState.set(targetSessionId, {
           viewportAnchor: 0,
           isStreaming: false,
           lastAccessedAt: Date.now(),
@@ -889,19 +878,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
     }
 
-    const currentSessionDirectory = currentSessionId
-      ? normalizePath(get().getDirectoryForSession(currentSessionId))
+    const currentSessionDirectory = targetSessionId
+      ? normalizePath(get().getDirectoryForSession(targetSessionId))
       : null
     if (currentSessionDirectory) {
       await waitForWorktreeBootstrap(currentSessionDirectory)
     }
 
-    if (currentSessionId) {
-      notifyMessageSent(currentSessionId)
+    if (targetSessionId) {
+      notifyMessageSent(targetSessionId)
     }
 
-    if (currentSessionId) {
-      markPendingUserSendAnimation(currentSessionId)
+    if (targetSessionId) {
+      markPendingUserSendAnimation(targetSessionId)
     }
 
     const files = attachments?.map((a) => ({
@@ -912,11 +901,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }))
 
     await routeMessage({
-      sessionId: currentSessionId || "",
+      sessionId: targetSessionId || "",
+      directory: currentSessionDirectory,
       content,
       providerID,
       modelID,
       agent: effectiveAgent,
+      agentMentionName,
       variant,
       inputMode,
       files,
@@ -1008,12 +999,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // revertToMessage — delegates to session-actions (single implementation)
   // ---------------------------------------------------------------------------
   revertToMessage: async (sessionId, messageId) => {
+    // Ensure the complete message range is present before applying the revert
+    // marker. Reverted UI is derived from session.revert + stored messages.
+    await refetchSessionMessages(sessionId)
     const { revertToMessage: revert } = await import("./session-actions")
     await revert(sessionId, messageId)
   },
 
   // ---------------------------------------------------------------------------
-  // handleSlashUndo — reads from sync
+  // handleSlashUndo — reads from sync, records history for redo
   // ---------------------------------------------------------------------------
   handleSlashUndo: async (sessionId) => {
     const messages = getSyncMessages(sessionId)
@@ -1033,52 +1027,63 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     if (!targetMessage) return
 
+    // Read target message parts BEFORE calling revertToMessage.
+    // revertToMessage optimistically deletes messages from the sync store
+    // before the API call, so getSyncParts must run first.
     const targetParts = getSyncParts(targetMessage.id)
     const textPart = targetParts.find((p: Part) => p.type === "text") as TextPart | undefined
     const preview = textPart?.text
       ? String(textPart.text).slice(0, 50) + (textPart.text.length > 50 ? "..." : "")
       : "[No text]"
 
+    // revertToMessage handles the redo stack push internally
     await get().revertToMessage(sessionId, targetMessage.id)
 
     const { toast } = await import("sonner")
-    toast.success(`Undid to: ${preview}`)
+    const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
+    const { dictionary } = useI18nStore.getState()
+    toast.success(formatMessage(dictionary, "chat.revert.toast.undo", { preview }))
   },
 
   // ---------------------------------------------------------------------------
-  // handleSlashRedo — reads from sync
+  // handleSlashRedo — moves the authoritative revert marker forward
   // ---------------------------------------------------------------------------
-  handleSlashRedo: async (sessionId) => {
+  handleSlashRedo: async (sessionId, options) => {
+    if (options?.fullUnrevert) {
+      const { unrevertSession } = await import("./session-actions")
+      await unrevertSession(sessionId)
+      const { toast } = await import("sonner")
+      const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
+      const { dictionary } = useI18nStore.getState()
+      toast.success(formatMessage(dictionary, "chat.revert.toast.restored"))
+      return
+    }
+
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
     const revertToId = currentSession?.revert?.messageID
     if (!revertToId) return
 
     await refetchSessionMessages(sessionId)
-
     const messages = getSyncMessages(sessionId)
     const userMessages = messages.filter((m) => m.role === "user")
     const targetMessage = userMessages.find((m) => m.id > revertToId)
 
     if (targetMessage) {
-      const targetParts = getSyncParts(targetMessage.id)
-      const textPart = targetParts.find((p: Part) => p.type === "text") as TextPart | undefined
-      const preview = textPart?.text
-        ? String(textPart.text).slice(0, 50) + (textPart.text.length > 50 ? "..." : "")
-        : "[No text]"
-
-      await get().revertToMessage(sessionId, targetMessage.id)
-
+      await get().revertToMessage(sessionId, targetMessage.id, { skipRedoPush: true })
       const { toast } = await import("sonner")
-      toast.success(`Redid to: ${preview}`)
-    } else {
-      // Full unrevert
-      const { unrevertSession } = await import("./session-actions")
-      await unrevertSession(sessionId)
-
-      const { toast } = await import("sonner")
-      toast.success("Restored all messages")
+      const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
+      const { dictionary } = useI18nStore.getState()
+      toast.success(formatMessage(dictionary, "chat.revert.toast.redo"))
+      return
     }
+
+    const { unrevertSession } = await import("./session-actions")
+    await unrevertSession(sessionId)
+    const { toast } = await import("sonner")
+    const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
+    const { dictionary } = useI18nStore.getState()
+    toast.success(formatMessage(dictionary, "chat.revert.toast.restored"))
   },
 
   // ---------------------------------------------------------------------------
@@ -1169,8 +1174,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (attachmentDirectory) return attachmentDirectory
     const sessions = getAllSyncSessions()
     const session = sessions.find((s) => s.id === sessionId)
-    if (!session) return null
-    return resolveDirectoryKey(session)
+    if (session) return resolveDirectoryKey(session)
+    const globalStore = useGlobalSessionsStore.getState()
+    const globalSession = [...globalStore.activeSessions, ...globalStore.archivedSessions]
+      .find((s) => s.id === sessionId)
+    if (globalSession) return resolveGlobalSessionDirectory(globalSession)
+    return null
   },
 
   getLastUserChoice: (sessionId) => {
@@ -1238,6 +1247,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   markSessionPlanAvailable: (sessionId) => {
     set((state) => {
+      if (state.sessionPlanAvailable.get(sessionId) === true) {
+        return state
+      }
       const next = new Map(state.sessionPlanAvailable)
       next.set(sessionId, true)
       return { sessionPlanAvailable: next }
