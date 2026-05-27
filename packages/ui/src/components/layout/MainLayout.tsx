@@ -15,6 +15,7 @@ import { SessionDialogs } from '@/components/session/SessionDialogs';
 import { DiffWorkerProvider } from '@/contexts/DiffWorkerProvider';
 import { MultiRunLauncher } from '@/components/multirun';
 import { DrawerProvider } from '@/contexts/DrawerContext';
+import { WorkspaceOverlays } from '@/components/workspace/WorkspaceOverlays';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -437,6 +438,7 @@ export const MainLayout: React.FC = () => {
                 <HelpDialog />
                 <OpenCodeStatusDialog />
                 <SessionDialogs />
+                <WorkspaceOverlays />
 
                 {isMobile ? (
                 <DrawerProvider value={{
