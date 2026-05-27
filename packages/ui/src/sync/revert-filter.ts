@@ -84,3 +84,16 @@ export function getMessagesBeforeRevert<T extends RevertMessageLike>(
 ): T[] {
   return partitionMessagesByRevert(messages, revertMessageID).kept;
 }
+
+export function sortMessagesForRevert<T extends RevertMessageLike>(messages: readonly T[]): T[] {
+  return [...messages].sort((left, right) => {
+    const leftTime = getMessageTime(left);
+    const rightTime = getMessageTime(right);
+    if (typeof leftTime === 'number' && typeof rightTime === 'number' && leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+    if (typeof leftTime === 'number' && typeof rightTime !== 'number') return -1;
+    if (typeof leftTime !== 'number' && typeof rightTime === 'number') return 1;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  });
+}

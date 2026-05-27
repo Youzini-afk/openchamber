@@ -78,6 +78,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { usePermissionStore } from '@/stores/permissionStore';
+import { partitionMessagesByRevert, sortMessagesForRevert } from '@/sync/revert-filter';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';
@@ -373,19 +374,22 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
     const partsByMessage = useDirectorySync(React.useCallback((state) => state.part, []), directory);
 
     const userMessages = React.useMemo(
-        () => sessionMessages.filter((message): message is Message & { role: 'user' } => message.role === 'user'),
+        () => sortMessagesForRevert(sessionMessages.filter((message): message is Message & { role: 'user' } => message.role === 'user')),
         [sessionMessages],
+    );
+    const revertedUserMessages = React.useMemo(
+        () => revertMessageID ? partitionMessagesByRevert(userMessages, revertMessageID).removed : [],
+        [revertMessageID, userMessages],
     );
     const noTextContent = t('chat.revertPopover.noTextContent');
     const items = React.useMemo(() => {
         if (!revertMessageID) return [];
-        return userMessages
-            .filter((message) => message.id >= revertMessageID)
+        return revertedUserMessages
             .map((message) => ({
                 id: message.id,
                 text: getRevertedPreview(partsByMessage[message.id] ?? [], noTextContent),
             }));
-    }, [noTextContent, partsByMessage, revertMessageID, userMessages]);
+    }, [noTextContent, partsByMessage, revertMessageID, revertedUserMessages]);
     const firstRevertedMessageId = items[0]?.id;
 
     React.useEffect(() => {
@@ -396,7 +400,8 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
         if (!sessionId || restoringId) return;
         setRestoringId(messageId);
         try {
-            const nextMessage = userMessages.find((message) => message.id > messageId);
+            const messageIndex = revertedUserMessages.findIndex((message) => message.id === messageId);
+            const nextMessage = messageIndex >= 0 ? revertedUserMessages[messageIndex + 1] : undefined;
             if (nextMessage) {
                 await revertToMessage(sessionId, nextMessage.id, { skipRedoPush: true });
             } else {
@@ -405,7 +410,7 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
         } finally {
             setRestoringId(null);
         }
-    }, [handleSlashRedo, revertToMessage, restoringId, sessionId, userMessages]);
+    }, [handleSlashRedo, revertToMessage, revertedUserMessages, restoringId, sessionId]);
 
     const handleFork = React.useCallback(async (messageId: string) => {
         if (!sessionId || forkingId) return;

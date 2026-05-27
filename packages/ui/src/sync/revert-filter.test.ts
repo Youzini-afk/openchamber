@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getMessagesBeforeRevert, partitionMessagesByRevert } from './revert-filter';
+import { getMessagesBeforeRevert, partitionMessagesByRevert, sortMessagesForRevert } from './revert-filter';
 
 type TestMessage = {
   id: string;
@@ -45,5 +45,15 @@ describe('revert message filtering', () => {
     ];
 
     expect(ids(getMessagesBeforeRevert(messages, 'target'))).toEqual(['before']);
+  });
+
+  test('sorts messages by time before falling back to id order for revert controls', () => {
+    const messages: TestMessage[] = [
+      { id: 'z-later-id', role: 'user', time: { created: 20 } },
+      { id: 'a-earlier-id', role: 'user', time: { created: 10 } },
+      { id: 'm-no-time', role: 'user' },
+    ];
+
+    expect(ids(sortMessagesForRevert(messages))).toEqual(['a-earlier-id', 'z-later-id', 'm-no-time']);
   });
 });

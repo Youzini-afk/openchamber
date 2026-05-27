@@ -102,6 +102,12 @@ function areSessionStatusesEqual(left: SessionStatus | undefined, right: Session
   return true
 }
 
+function preserveLocalRevertMarker(nextSession: Session, currentSession: Session | undefined): Session {
+  if ((nextSession as Session & { revert?: unknown }).revert !== undefined) return nextSession
+  const currentRevert = (currentSession as (Session & { revert?: { messageID?: string } }) | undefined)?.revert
+  return currentRevert?.messageID ? { ...nextSession, revert: currentRevert } as Session : nextSession
+}
+
 // ---------------------------------------------------------------------------
 // Global events
 // ---------------------------------------------------------------------------
@@ -175,12 +181,13 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
+      const nextInfo = result.found ? preserveLocalRevertMarker(info, sessions[result.index]) : info
       if (result.found) {
-        sessions[result.index] = info
+        sessions[result.index] = nextInfo
       } else {
-        sessions.splice(result.index, 0, info)
+        sessions.splice(result.index, 0, nextInfo)
         trimSessions(draft)
-        if (!info.parentID) draft.sessionTotal += 1
+        if (!nextInfo.parentID) draft.sessionTotal += 1
       }
       return true
     }
@@ -189,18 +196,19 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
+      const nextInfo = result.found ? preserveLocalRevertMarker(info, sessions[result.index]) : info
 
-      if (info.time.archived) {
+      if (nextInfo.time.archived) {
         if (result.found) sessions.splice(result.index, 1)
-        cleanupSessionCaches(draft, info.id, callbacks?.onSetSessionTodo)
-        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+        cleanupSessionCaches(draft, nextInfo.id, callbacks?.onSetSessionTodo)
+        if (!nextInfo.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
         return true
       }
 
       if (result.found) {
-        sessions[result.index] = info
+        sessions[result.index] = nextInfo
       } else {
-        sessions.splice(result.index, 0, info)
+        sessions.splice(result.index, 0, nextInfo)
         trimSessions(draft)
       }
       return true

@@ -1759,7 +1759,7 @@ const getProviderErrorMessage = (payload: unknown): string => {
   return '';
 };
 
-const normalizeFetchedModels = (providerType: CustomProviderType, payload: unknown): Array<Record<string, string>> => {
+const normalizeFetchedModels = (providerType: CustomProviderType, payload: unknown): Array<Record<string, unknown>> => {
   const source = providerType === 'google' && isPlainObject(payload) && Array.isArray(payload.models)
     ? payload.models
     : isPlainObject(payload) && Array.isArray(payload.data)
@@ -1769,7 +1769,7 @@ const normalizeFetchedModels = (providerType: CustomProviderType, payload: unkno
         : [];
 
   return source
-    .map((entry): Record<string, string> | null => {
+    .map((entry): Record<string, unknown> | null => {
       if (!isPlainObject(entry)) {
         return null;
       }
@@ -1781,15 +1781,16 @@ const normalizeFetchedModels = (providerType: CustomProviderType, payload: unkno
       }
 
       const name = normalizeNonEmptyString(entry.display_name ?? entry.displayName ?? entry.name) || id;
-      return { id, name };
+      const limit = buildModelLimit(readContextLimit(entry), readOutputLimit(entry));
+      return { id, name, ...(limit ? { limit } : {}) };
     })
-    .filter((entry): entry is Record<string, string> => Boolean(entry));
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
 };
 
 export const fetchProviderModels = async (
   input: unknown,
   fetchImpl: FetchLike = globalThis.fetch as FetchLike,
-): Promise<{ type: CustomProviderType; baseURL: string; models: Array<Record<string, string>> }> => {
+): Promise<{ type: CustomProviderType; baseURL: string; models: Array<Record<string, unknown>> }> => {
   if (!isPlainObject(input)) {
     throw new Error('Provider model fetch configuration is required');
   }

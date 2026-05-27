@@ -54,6 +54,7 @@ import { useSelectionStore } from "./selection-store"
 import { useViewportStore } from "./viewport-store"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
+import { partitionMessagesByRevert, sortMessagesForRevert } from "./revert-filter"
 
 export type { AttachedFile }
 
@@ -1014,13 +1015,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
 
-    const userMessages = messages.filter((m) => m.role === "user")
+    const userMessages = sortMessagesForRevert(messages.filter((m) => m.role === "user"))
     if (userMessages.length === 0) return
 
     const revertToId = currentSession?.revert?.messageID
     let targetMessage: typeof messages[number] | undefined
     if (revertToId) {
-      targetMessage = [...userMessages].reverse().find((m) => m.id < revertToId)
+      targetMessage = partitionMessagesByRevert(userMessages, revertToId).kept.at(-1)
     } else {
       targetMessage = userMessages[userMessages.length - 1]
     }
@@ -1066,8 +1067,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     await refetchSessionMessages(sessionId)
     const messages = getSyncMessages(sessionId)
-    const userMessages = messages.filter((m) => m.role === "user")
-    const targetMessage = userMessages.find((m) => m.id > revertToId)
+    const userMessages = sortMessagesForRevert(messages.filter((m) => m.role === "user"))
+    const revertedMessages = partitionMessagesByRevert(userMessages, revertToId).removed
+    const targetMessage = revertedMessages.find((m) => m.id !== revertToId)
 
     if (targetMessage) {
       await get().revertToMessage(sessionId, targetMessage.id, { skipRedoPush: true })

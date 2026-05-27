@@ -40,6 +40,7 @@ import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { setSessionPrefetch } from "./session-prefetch-cache"
+import { getMessagesBeforeRevert } from "./revert-filter"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -175,6 +176,19 @@ const syncSnapshotSignature = (value: unknown): string => JSON.stringify(value)
 
 function haveEquivalentSyncSnapshots(left: unknown, right: unknown): boolean {
   return syncSnapshotSignature(left) === syncSnapshotSignature(right)
+}
+
+type RevertSession = Session & { revert?: { messageID?: string } }
+
+function getSessionRevertMessageID(session: Session | undefined): string | undefined {
+  const messageID = (session as RevertSession | undefined)?.revert?.messageID
+  return typeof messageID === "string" && messageID.length > 0 ? messageID : undefined
+}
+
+function preserveLocalRevertMarker(nextSession: Session, currentSession: Session | undefined): Session {
+  if ((nextSession as RevertSession).revert !== undefined) return nextSession
+  const currentRevert = (currentSession as RevertSession | undefined)?.revert
+  return currentRevert?.messageID ? { ...nextSession, revert: currentRevert } as Session : nextSession
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,13 +1053,14 @@ async function resyncDirectoryAfterReconnect(
       complete: !cursor,
     })
 
-    const nextSession = stripSessionDiffSnapshots(session)
     const nextMessages = records
       .filter((record) => !!record?.info?.id)
       .map((record) => stripMessageDiffSnapshots(record.info))
       .sort((a, b) => cmp(a.id, b.id))
 
     store.setState((state: DirectoryStore) => {
+      const currentSession = state.session.find((item) => item.id === sessionId)
+      const nextSession = preserveLocalRevertMarker(stripSessionDiffSnapshots(session), currentSession)
       const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
       let sessions = state.session
       let sessionChanged = false
@@ -1087,7 +1102,7 @@ async function resyncDirectoryAfterReconnect(
       }
     })
 
-    setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
+    setIndexedSessionDirectory(routingIndex, sessionId, directory)
     setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
   }))
 
@@ -1754,7 +1769,7 @@ export function useSessionRevertMessageID(sessionID: string, directory?: string)
   return useDirectorySync(
     useCallback((state: State) => {
       const session = state.session.find((s) => s.id === sessionID)
-      return (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+      return getSessionRevertMessageID(session)
     }, [sessionID]),
     directory,
   )
@@ -1783,7 +1798,7 @@ export function useVisibleSessionMessages(sessionID: string, directory?: string)
   const revertMessageID = useSessionRevertMessageID(sessionID, directory)
   return useMemo(() => {
     if (!revertMessageID) return messages
-    return messages.filter((m) => m.id < revertMessageID)
+    return getMessagesBeforeRevert(messages, revertMessageID)
   }, [messages, revertMessageID])
 }
 
@@ -2144,7 +2159,7 @@ const getReusableSessionMessageRecordsSnapshot = (
   if (!cached) return undefined
   const sourceMessages = state.message[sessionID] ?? EMPTY_MESSAGES
   const session = state.session.find((candidate) => candidate.id === sessionID)
-  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+  const revertMessageID = getSessionRevertMessageID(session)
   if (
     cached.sourceMessages === sourceMessages
     && cached.revertMessageID === revertMessageID
@@ -2163,7 +2178,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 } {
   const sourceMessages = state.message[sessionID] ?? EMPTY_MESSAGES
   const session = state.session.find((candidate) => candidate.id === sessionID)
-  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
+  const revertMessageID = getSessionRevertMessageID(session)
 
   if (
     previous
@@ -2179,7 +2194,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 
   return {
     sourceMessages,
-    visibleMessages: revertMessageID ? sourceMessages.filter((message) => message.id < revertMessageID) : sourceMessages,
+    visibleMessages: revertMessageID ? getMessagesBeforeRevert(sourceMessages, revertMessageID) : sourceMessages,
     revertMessageID,
   }
 }
