@@ -143,8 +143,60 @@ function CompactModelEditor({
 }
 
 function parseCommaList(value: string): string[] | undefined {
-  const entries = value.split(',').map((item) => item.trim()).filter(Boolean);
+  const entries = value.split(/[,;\n]+/).map((item) => item.trim()).filter(Boolean);
   return entries.length > 0 ? entries : undefined;
+}
+
+function formatCommaList(value: unknown): string {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean).join(', ') : '';
+}
+
+function DelimitedListInput({
+  value,
+  onChange,
+  placeholder,
+  title,
+  className,
+}: {
+  value: unknown;
+  onChange: (value: string[] | undefined) => void;
+  placeholder: string;
+  title?: string;
+  className?: string;
+}) {
+  const formattedValue = React.useMemo(() => formatCommaList(value), [value]);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [draftValue, setDraftValue] = React.useState(formattedValue);
+
+  React.useEffect(() => {
+    if (!isFocused) {
+      setDraftValue(formattedValue);
+    }
+  }, [formattedValue, isFocused]);
+
+  const displayedValue = isFocused ? draftValue : formattedValue;
+
+  return (
+    <Input
+      value={displayedValue}
+      onFocus={() => {
+        setIsFocused(true);
+        setDraftValue(formattedValue);
+      }}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setDraftValue(nextValue);
+        onChange(parseCommaList(nextValue));
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        setDraftValue(formatCommaList(parseCommaList(draftValue)));
+      }}
+      placeholder={placeholder}
+      title={title ?? '用逗号、分号或换行分隔'}
+      className={className}
+    />
+  );
 }
 
 function stringifyJson(value: unknown): string {
@@ -350,16 +402,17 @@ function SlimAgentRow({
           placeholder="temp"
           className="h-7 w-[70px]"
         />
-        <Input
-          value={Array.isArray(agent.skills) ? agent.skills.join(', ') : ''}
-          onChange={(event) => updatePresetAgent(item.id, { skills: parseCommaList(event.target.value) })}
+        <DelimitedListInput
+          value={agent.skills}
+          onChange={(value) => updatePresetAgent(item.id, { skills: value })}
           placeholder="skills"
           className="h-7 min-w-[100px] flex-1"
         />
-        <Input
-          value={Array.isArray(agent.mcps) ? agent.mcps.join(', ') : ''}
-          onChange={(event) => updatePresetAgent(item.id, { mcps: parseCommaList(event.target.value) })}
-          placeholder="mcps"
+        <DelimitedListInput
+          value={agent.mcps}
+          onChange={(value) => updatePresetAgent(item.id, { mcps: value })}
+          placeholder="mcps，例如：*, !context7"
+          title="用逗号、分号或换行分隔；例如：*, !context7"
           className="h-7 min-w-[100px] flex-1"
         />
         {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">fallback {fallbackCount}</Badge> : null}
@@ -493,7 +546,7 @@ function RuntimeAdvancedSection() {
           <Input value={multiplexer.main_pane_size == null ? '' : String(multiplexer.main_pane_size)} onChange={(event) => updateDraftPath(['multiplexer', 'main_pane_size'], normalizeNumberInput(event.target.value, 'mainPane'))} placeholder="60" />
         </Field>
         <Field label="disabled_mcps">
-          <Input value={Array.isArray(draft.disabled_mcps) ? draft.disabled_mcps.join(', ') : ''} onChange={(event) => updateDraftPath(['disabled_mcps'], parseCommaList(event.target.value))} placeholder="context7, websearch" />
+          <DelimitedListInput value={draft.disabled_mcps} onChange={(value) => updateDraftPath(['disabled_mcps'], value)} placeholder="context7, websearch" />
         </Field>
         <JsonObjectField label="sessionManager" path={['sessionManager']} value={draft.sessionManager} />
         <JsonObjectField label="todoContinuation" path={['todoContinuation']} value={draft.todoContinuation} />
