@@ -403,6 +403,7 @@ interface MessageListProps {
         confirmedAt?: number;
         fallbackTimestamp?: number;
     } | null;
+    retryOverlayFallbackMessage: string;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     hasMoreAbove: boolean;
@@ -1107,6 +1108,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     activeStreamingMessageId = null,
     activeStreamingPhase = null,
     retryOverlay = null,
+    retryOverlayFallbackMessage,
     onMessageContentChange,
     getAnimationHandlers,
     hasMoreAbove,
@@ -1209,11 +1211,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const displayMessages = React.useMemo(() => streamPerfMeasure('ui.message_list.retry_overlay_ms', () => {
         return applyRetryOverlay(baseDisplayMessages, {
             sessionId: retryOverlay?.sessionId ?? null,
-            message: retryOverlay?.message ?? 'Quota limit reached. Retrying automatically.',
+            message: retryOverlay?.message ?? retryOverlayFallbackMessage,
             confirmedAt: retryOverlay?.confirmedAt,
             fallbackTimestamp: retryOverlay?.fallbackTimestamp ?? 0,
         });
-    }), [baseDisplayMessages, retryOverlay]);
+    }), [baseDisplayMessages, retryOverlay, retryOverlayFallbackMessage]);
 
     const { projection, staticTurns, streamingTurn, trailingUngroupedMessageId } = useTurnRecords(displayMessages, {
         sessionKey,

@@ -2,6 +2,7 @@ import React from 'react';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { completePairing, normalizeServerUrl, parsePairingPayload } from '../api/mobileClient';
+import { t } from '../i18n';
 import { getAppVersion, getDeviceName, getDevicePlatform } from '../notifications/push';
 import type { StoredMobileConfig } from '../types';
 
@@ -26,7 +27,7 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
       const payload = parsePairingPayload(payloadText);
       const resolvedServerUrl = normalizeServerUrl(payload.serverUrl || serverUrl);
       if (!resolvedServerUrl) {
-        throw new Error('Server URL is required');
+        throw new Error(t('pairing.error.serverUrlRequired'));
       }
       const config = await completePairing({
         serverUrl: resolvedServerUrl,
@@ -37,7 +38,7 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
       });
       onPaired(config);
     } catch (pairError) {
-      setError(pairError instanceof Error ? pairError.message : 'Pairing failed');
+      setError(pairError instanceof Error ? pairError.message : t('pairing.error.failed'));
     } finally {
       setBusy(false);
     }
@@ -48,7 +49,7 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
     if (!permission?.granted) {
       const nextPermission = await requestPermission();
       if (!nextPermission.granted) {
-        setError('Camera permission is required to scan pairing QR codes.');
+        setError(t('pairing.error.cameraPermissionRequired'));
         return;
       }
     }
@@ -81,9 +82,9 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
           onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
         />
         <View style={styles.scannerOverlay}>
-          <Text style={styles.scannerTitle}>Scan OpenChamber pairing code</Text>
+          <Text style={styles.scannerTitle}>{t('pairing.scanner.title')}</Text>
           <Pressable style={styles.secondaryButton} onPress={() => setScannerOpen(false)}>
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
           </Pressable>
         </View>
       </View>
@@ -92,14 +93,14 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OpenChamber Mobile</Text>
-      <Text style={styles.subtitle}>Paste the pairing payload from Settings → Notifications → Mobile App.</Text>
+      <Text style={styles.title}>{t('pairing.title')}</Text>
+      <Text style={styles.subtitle}>{t('pairing.subtitle')}</Text>
 
       <Pressable disabled={busy} onPress={() => void openScanner()} style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>Scan QR code</Text>
+        <Text style={styles.secondaryButtonText}>{t('pairing.action.scanQrCode')}</Text>
       </Pressable>
 
-      <Text style={styles.label}>Server URL</Text>
+      <Text style={styles.label}>{t('pairing.label.serverUrl')}</Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
@@ -111,7 +112,7 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
         style={styles.input}
       />
 
-      <Text style={styles.label}>Pairing payload</Text>
+      <Text style={styles.label}>{t('pairing.label.payload')}</Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
@@ -126,7 +127,7 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
       {error && <Text style={styles.error}>{error}</Text>}
 
       <Pressable disabled={busy} onPress={() => void pair()} style={[styles.button, busy && styles.buttonDisabled]}>
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pair device</Text>}
+        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t('pairing.action.pairDevice')}</Text>}
       </Pressable>
     </View>
   );

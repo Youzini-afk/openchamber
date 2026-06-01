@@ -36,7 +36,7 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useMagicContextConfigStore, type MagicContextConfigResponse } from '@/stores/useMagicContextConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
   agentFallbackModelsToRows,
@@ -65,25 +65,25 @@ type MapRow = {
 const AGENT_DEFINITIONS: Array<{
   id: MagicAgentId;
   label: string;
-  description: string;
+  descriptionKey: I18nKey;
   defaultChain: string;
 }> = [
   {
     id: 'historian',
     label: 'Historian',
-    description: '为长会话建立可延续的历史记录：保留关键决策、约束、已完成工作和重要项目上下文，避免压缩后丢失。',
+    descriptionKey: 'settings.magicContext.agent.historian.description',
     defaultChain: 'github-copilot/claude-sonnet-4-6 -> anthropic/claude-sonnet-4-6 -> openai/gpt-5.4',
   },
   {
     id: 'dreamer',
     label: 'Dreamer',
-    description: '基于当前项目上下文提前规划：拆出下一步行动、提示潜在风险，并把模糊意图整理成可执行待办。',
+    descriptionKey: 'settings.magicContext.agent.dreamer.description',
     defaultChain: 'github-copilot/claude-sonnet-4-6 -> google/gemini-3-flash -> openai/gpt-5.4-mini',
   },
   {
     id: 'sidekick',
     label: 'Sidekick',
-    description: '在当前会话中提供轻量辅助：检索相关上下文、补齐信息缺口，减少反复解释同一背景。',
+    descriptionKey: 'settings.magicContext.agent.sidekick.description',
     defaultChain: 'cerebras/qwen-3-235b-a22b-instruct-2507 -> opencode/gpt-5-nano -> google/gemini-3-flash',
   },
 ];
@@ -91,12 +91,12 @@ const AGENT_DEFINITIONS: Array<{
 const DREAMER_TASKS = ['consolidate', 'verify', 'archive-stale', 'improve', 'maintain-docs'];
 const AGENT_MODES = ['subagent', 'primary', 'all'];
 const EMBEDDING_PROVIDERS = ['local', 'openai-compatible', 'off'];
-const VARIANT_OPTIONS = [
-  { value: 'low', label: '低' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
-  { value: 'xhigh', label: '超高' },
-  { value: 'max', label: '最大' },
+const VARIANT_OPTIONS: Array<{ value: string; labelKey: I18nKey }> = [
+  { value: 'low', labelKey: 'settings.magicContext.variant.low' },
+  { value: 'medium', labelKey: 'settings.magicContext.variant.medium' },
+  { value: 'high', labelKey: 'settings.magicContext.variant.high' },
+  { value: 'xhigh', labelKey: 'settings.magicContext.variant.xhigh' },
+  { value: 'max', labelKey: 'settings.magicContext.variant.max' },
 ];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -154,6 +154,7 @@ function BooleanOverrideSelect({
   value: unknown;
   onChange: (value: boolean | undefined) => void;
 }) {
+  const { t } = useI18n();
   const selectValue = typeof value === 'boolean' ? String(value) : INHERIT_VALUE;
 
   return (
@@ -172,12 +173,12 @@ function BooleanOverrideSelect({
           {(currentValue) => {
             if (currentValue === 'true') return 'true';
             if (currentValue === 'false') return 'false';
-            return '继承';
+            return t('settings.magicContext.common.inherit');
           }}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+        <SelectItem value={INHERIT_VALUE}>{t('settings.magicContext.common.inherit')}</SelectItem>
         <SelectItem value="true">true</SelectItem>
         <SelectItem value="false">false</SelectItem>
       </SelectContent>
@@ -214,11 +215,12 @@ function DiagnosticItem({
   ok: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div className="min-w-0 rounded-md border border-border/60 bg-background px-2.5 py-2">
       <div className="flex items-center gap-1.5">
         <Badge className={ok ? 'bg-primary/10 text-primary' : 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]'}>
-          {ok ? '正常' : '注意'}
+          {ok ? t('settings.magicContext.diagnostics.status.ok') : t('settings.magicContext.diagnostics.status.warning')}
         </Badge>
         <span className="typography-ui-label font-medium text-foreground">{label}</span>
       </div>
@@ -234,6 +236,7 @@ function DiagnosticsPanel({
   config: MagicContextConfigResponse | null;
   ignoredProjectKeys: string[];
 }) {
+  const { t } = useI18n();
   const diagnostics = config?.diagnostics;
   const activeHooks = diagnostics?.omo?.activeConflictingHooks ?? [];
   const disabledHooks = diagnostics?.omo?.disabledConflictingHooks ?? [];
@@ -244,31 +247,31 @@ function DiagnosticsPanel({
 
   return (
     <div className="grid gap-2 pt-1 md:grid-cols-2 xl:grid-cols-4">
-      <DiagnosticItem label="插件注册" ok={pluginOk}>
+      <DiagnosticItem label={t('settings.magicContext.diagnostics.pluginRegistration')} ok={pluginOk}>
         {pluginOk
-          ? `${config?.plugin.entry ?? '已注册'} @ ${config?.plugin.configPath ?? '未知路径'}`
-          : 'OpenCode 配置中没有检测到 @cortexkit/opencode-magic-context 或 @youzini/opencode-magic-context。'}
+          ? `${config?.plugin.entry ?? t('settings.magicContext.diagnostics.registered')} @ ${config?.plugin.configPath ?? t('settings.magicContext.diagnostics.unknownPath')}`
+          : t('settings.magicContext.diagnostics.pluginMissingDescription')}
       </DiagnosticItem>
-      <DiagnosticItem label="TUI sidebar" ok={tuiOk}>
-        {tuiOk ? `${diagnostics?.tui?.entry ?? '已注册'} @ ${diagnostics?.tui?.configPath ?? '未知路径'}` : '没有检测到 TUI sidebar 注册；只影响侧栏增强，不影响核心 hook。'}
+      <DiagnosticItem label={t('settings.magicContext.diagnostics.tuiSidebar')} ok={tuiOk}>
+        {tuiOk ? `${diagnostics?.tui?.entry ?? t('settings.magicContext.diagnostics.registered')} @ ${diagnostics?.tui?.configPath ?? t('settings.magicContext.diagnostics.unknownPath')}` : t('settings.magicContext.diagnostics.tuiMissingDescription')}
       </DiagnosticItem>
-      <DiagnosticItem label="OMO hooks" ok={omoOk}>
+      <DiagnosticItem label={t('settings.magicContext.diagnostics.omoHooks')} ok={omoOk}>
         {activeHooks.length > 0
-          ? `仍启用可能冲突的 hooks：${activeHooks.join(', ')}`
+          ? t('settings.magicContext.diagnostics.omoActiveConflicts', { hooks: activeHooks.join(', ') })
           : disabledHooks.length > 0
-            ? `冲突 hooks 已禁用：${disabledHooks.join(', ')}`
-            : '未检测到启用中的 OMO 冲突 hook。'}
+            ? t('settings.magicContext.diagnostics.omoDisabledConflicts', { hooks: disabledHooks.join(', ') })
+            : t('settings.magicContext.diagnostics.omoNoConflicts')}
       </DiagnosticItem>
-      <DiagnosticItem label="配置路径" ok={configPathOk}>
+      <DiagnosticItem label={t('settings.magicContext.diagnostics.configPath')} ok={configPathOk}>
         {configPathOk
-          ? diagnostics?.configPath?.uiConfigDir ?? config?.target.path ?? '路径一致'
-          : `OpenChamber 写入 ${diagnostics?.configPath?.uiConfigDir}，插件运行时读取 ${diagnostics?.configPath?.runtimeConfigDir}`}
+          ? diagnostics?.configPath?.uiConfigDir ?? config?.target.path ?? t('settings.magicContext.diagnostics.pathMatches')
+          : t('settings.magicContext.diagnostics.pathMismatch', { uiPath: diagnostics?.configPath?.uiConfigDir ?? '', runtimePath: diagnostics?.configPath?.runtimeConfigDir ?? '' })}
       </DiagnosticItem>
       {ignoredProjectKeys.length > 0 ? (
         <div className="rounded-md border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 px-2.5 py-2 md:col-span-2 xl:col-span-4">
-          <div className="typography-ui-label font-medium text-[var(--status-warning)]">项目配置中存在会被插件忽略的字段</div>
+          <div className="typography-ui-label font-medium text-[var(--status-warning)]">{t('settings.magicContext.diagnostics.ignoredProjectFieldsTitle')}</div>
           <div className="mt-1 typography-micro text-[var(--status-warning)]">
-            {ignoredProjectKeys.join(', ')} 只在用户全局配置生效；项目里写了也不会改变插件行为。
+            {t('settings.magicContext.diagnostics.ignoredProjectFieldsDescription', { keys: ignoredProjectKeys.join(', ') })}
           </div>
         </div>
       ) : null}
@@ -289,13 +292,14 @@ function RowShell({
   projectOverride: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div className="grid min-h-[54px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(220px,0.95fr)_minmax(300px,1.1fr)_minmax(280px,1fr)] lg:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate typography-ui-label font-medium text-foreground">{label}</span>
-          {overridden ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-          {projectOverride ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
+          {overridden ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+          {projectOverride ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
         </div>
         <div className="typography-micro text-muted-foreground">{description}</div>
       </div>
@@ -307,13 +311,15 @@ function RowShell({
 function CompactModelEditor({
   model,
   onChange,
-  placeholder = '继承默认',
+  placeholder,
 }: {
   model: string;
   onChange: (model: string) => void;
   placeholder?: string;
 }) {
+  const { t } = useI18n();
   const parsed = parseModelRef(model);
+  const resolvedPlaceholder = placeholder ?? t('settings.magicContext.common.inheritDefault');
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -321,7 +327,7 @@ function CompactModelEditor({
         providerId={parsed.providerId}
         modelId={parsed.modelId}
         onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         className="h-7 min-w-[120px] max-w-[260px] flex-1"
       />
       <Input
@@ -337,12 +343,13 @@ function CompactModelEditor({
 function InlineModelEditor({
   model,
   onChange,
-  placeholder = '继承默认',
+  placeholder,
 }: {
   model: string;
   onChange: (model: string) => void;
   placeholder?: string;
 }) {
+  const { t } = useI18n();
   const parsed = parseModelRef(model);
 
   return (
@@ -350,7 +357,7 @@ function InlineModelEditor({
       providerId={parsed.providerId}
       modelId={parsed.modelId}
       onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
-      placeholder={placeholder}
+      placeholder={placeholder ?? t('settings.magicContext.common.inheritDefault')}
       className="h-9 w-full"
     />
   );
@@ -369,6 +376,7 @@ function BooleanRow({
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
 }) {
+  const { t } = useI18n();
   const updateDraft = useMagicContextConfigStore((state) => state.updateDraft);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const normalized = normalizeMagicContextConfig(draft);
@@ -395,9 +403,9 @@ function BooleanRow({
           />
         </div>
         <span className="typography-meta text-muted-foreground">
-          {typeof value === 'boolean' ? (value ? '启用' : '关闭') : '继承默认'}
+          {typeof value === 'boolean' ? (value ? t('settings.magicContext.common.enabled') : t('settings.magicContext.common.disabled')) : t('settings.magicContext.common.inheritDefault')}
         </span>
-        <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(field)} title="删除覆盖">
+        <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(field)} title={t('settings.magicContext.actions.removeOverride')}>
           <RiRestartLine className="h-4 w-4" />
         </Button>
       </div>
@@ -420,6 +428,7 @@ function ScalarRow({
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
 }) {
+  const { t } = useI18n();
   const updateDraft = useMagicContextConfigStore((state) => state.updateDraft);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const normalized = normalizeMagicContextConfig(draft);
@@ -438,7 +447,7 @@ function ScalarRow({
           placeholder={placeholder}
           className="h-8 font-mono typography-meta"
         />
-        <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(field)} title="删除覆盖">
+        <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(field)} title={t('settings.magicContext.actions.removeOverride')}>
           <RiRestartLine className="h-4 w-4" />
         </Button>
       </div>
@@ -494,6 +503,7 @@ function MapEditor({
   allowScalar: boolean;
   valuePlaceholder: string;
 }) {
+  const { t } = useI18n();
   const updateDraft = useMagicContextConfigStore((state) => state.updateDraft);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const normalized = normalizeMagicContextConfig(draft);
@@ -536,7 +546,7 @@ function MapEditor({
       <div className="space-y-2">
         {rows.length === 0 ? (
           <div className="rounded-md border border-dashed border-border/70 px-3 py-3 typography-meta text-muted-foreground">
-            继承默认。添加行后可按模型覆盖。
+            {t('settings.magicContext.map.empty')}
           </div>
         ) : null}
         {rows.map((row) => (
@@ -546,7 +556,7 @@ function MapEditor({
               onChange={(event) => commitRows(rows.map((candidate) => (
                 candidate.id === row.id ? { ...candidate, key: event.target.value } : candidate
               )))}
-              placeholder="default 或 provider/model"
+              placeholder={t('settings.magicContext.map.keyPlaceholder')}
               className="h-7 font-mono typography-meta"
             />
             <Input
@@ -562,7 +572,7 @@ function MapEditor({
               size="icon"
               variant="ghost"
               onClick={() => commitRows(rows.filter((candidate) => candidate.id !== row.id))}
-              title="移除此行"
+              title={t('settings.magicContext.actions.removeRow')}
             >
               <RiDeleteBinLine className="h-4 w-4" />
             </Button>
@@ -571,11 +581,11 @@ function MapEditor({
         <div className="flex items-center gap-1.5">
           <Button type="button" size="xs" variant="outline" onClick={addRow}>
             <RiAddLine className="h-3.5 w-3.5" />
-            添加
+            {t('settings.magicContext.actions.add')}
           </Button>
           <Button type="button" size="xs" variant="ghost" onClick={() => resetKey(field)}>
             <RiRestartLine className="h-3.5 w-3.5" />
-            删除覆盖
+            {t('settings.magicContext.actions.removeOverride')}
           </Button>
         </div>
       </div>
@@ -590,6 +600,7 @@ function VariantSelect({
   value: string;
   onChange: (value: string | undefined) => void;
 }) {
+  const { t } = useI18n();
   return (
     <Select
       value={value || INHERIT_VALUE}
@@ -598,15 +609,16 @@ function VariantSelect({
       <SelectTrigger className="h-9 w-full" size="lg">
         <SelectValue>
           {(currentValue) => {
-            if (currentValue === INHERIT_VALUE) return '继承';
-            return VARIANT_OPTIONS.find((option) => option.value === currentValue)?.label ?? currentValue;
+            if (currentValue === INHERIT_VALUE) return t('settings.magicContext.common.inherit');
+            const option = VARIANT_OPTIONS.find((candidate) => candidate.value === currentValue);
+            return option ? t(option.labelKey) : currentValue;
           }}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+        <SelectItem value={INHERIT_VALUE}>{t('settings.magicContext.common.inherit')}</SelectItem>
         {VARIANT_OPTIONS.map((option) => (
-          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+          <SelectItem key={option.value} value={option.value}>{t(option.labelKey)}</SelectItem>
         ))}
         {value && !VARIANT_OPTIONS.some((option) => option.value === value) ? (
           <SelectItem value={value}>{value}</SelectItem>
@@ -639,7 +651,7 @@ function AgentSettingRow({
 function AgentCard({
   id,
   label,
-  description,
+  descriptionKey,
   defaultChain,
   draft,
   projectOverrides,
@@ -647,12 +659,13 @@ function AgentCard({
 }: {
   id: MagicAgentId;
   label: string;
-  description: string;
+  descriptionKey: I18nKey;
   defaultChain: string;
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
   onEdit: (id: MagicAgentId) => void;
 }) {
+  const { t } = useI18n();
   const updateDraft = useMagicContextConfigStore((state) => state.updateDraft);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const entry = getAgentEntry(draft, id);
@@ -690,33 +703,33 @@ function AgentCard({
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <span className="typography-ui-label font-semibold text-foreground">{label}</span>
-            {isCoreAgent ? <Badge className="bg-muted text-muted-foreground">核心</Badge> : null}
-            {!isCoreAgent && enabled ? <Badge className="bg-primary/10 text-primary">已启用</Badge> : null}
-            {!isCoreAgent && !enabled ? <Badge className="bg-muted text-muted-foreground">未启用</Badge> : null}
-            {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">fallback {fallbackCount}</Badge> : null}
+            {isCoreAgent ? <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.badge.core')}</Badge> : null}
+            {!isCoreAgent && enabled ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.common.enabled')}</Badge> : null}
+            {!isCoreAgent && !enabled ? <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.common.disabled')}</Badge> : null}
+            {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.agent.fallbackCount', { count: fallbackCount })}</Badge> : null}
           </div>
-          <p className="max-w-3xl typography-ui text-foreground/90">{description}</p>
-          <p className="truncate font-mono typography-micro text-muted-foreground">默认链：{defaultChain}</p>
+          <p className="max-w-3xl typography-ui text-foreground/90">{t(descriptionKey)}</p>
+          <p className="truncate font-mono typography-micro text-muted-foreground">{t('settings.magicContext.agent.defaultChain', { chain: defaultChain })}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {!isCoreAgent ? (
             <Switch
               checked={enabled}
               onCheckedChange={(checked) => setEnabled(Boolean(checked))}
-              aria-label={`${label} 启用开关`}
+              aria-label={t('settings.magicContext.agent.enableSwitchAria', { label })}
             />
           ) : null}
-          <Button type="button" size="icon" variant="ghost" onClick={() => onEdit(id)} title={`编辑 ${label}`}>
+          <Button type="button" size="icon" variant="ghost" onClick={() => onEdit(id)} title={t('settings.magicContext.actions.editAgent', { label })}>
             <RiEditLine className="h-4 w-4" />
           </Button>
-          <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(id)} disabled={!normalizedEntry} title="删除覆盖">
+          <Button type="button" size="icon" variant="ghost" onClick={() => resetKey(id)} disabled={!normalizedEntry} title={t('settings.magicContext.actions.removeOverride')}>
             <RiRestartLine className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       <div>
-        <AgentSettingRow label="模型" description="从已配置的提供商中选择模型；手动模型可在高级编辑里输入。">
+        <AgentSettingRow label={t('settings.magicContext.agent.model.label')} description={t('settings.magicContext.agent.model.description')}>
           <InlineModelEditor
             model={asString(entry.model)}
             onChange={(model) => updateAgent({ model })}
@@ -725,16 +738,16 @@ function AgentCard({
 
         {id === 'historian' ? (
           <>
-            <AgentSettingRow label="双阶段清理" description="Historian 完成后再运行一次编辑清理，移除低价值或重复记录。">
+            <AgentSettingRow label={t('settings.magicContext.agent.twoPass.label')} description={t('settings.magicContext.agent.twoPass.description')}>
               <div className="flex items-center justify-end">
                 <Switch
                   checked={entry.two_pass === true}
                   onCheckedChange={(checked) => updateAgent({ two_pass: checked ? true : undefined })}
-                  aria-label="Historian 双阶段清理"
+                  aria-label={t('settings.magicContext.agent.twoPass.aria')}
                 />
               </div>
             </AgentSettingRow>
-            <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，使用提供商里配置的推理档位。">
+            <AgentSettingRow label={t('settings.magicContext.agent.variant.label')} description={t('settings.magicContext.agent.variant.historianDescription')}>
               <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
             </AgentSettingRow>
           </>
@@ -742,7 +755,7 @@ function AgentCard({
 
         {id === 'dreamer' ? (
           <>
-            <AgentSettingRow label="Dreamer 运行窗口" description="后台规划的计划运行时间窗口，例如 02:00-06:00。">
+            <AgentSettingRow label={t('settings.magicContext.agent.schedule.label')} description={t('settings.magicContext.agent.schedule.description')}>
               <Input
                 value={asString(entry.schedule)}
                 onChange={(event) => updateAgent({ schedule: event.target.value })}
@@ -750,22 +763,22 @@ function AgentCard({
                 className="h-9 font-mono"
               />
             </AgentSettingRow>
-            <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，留空则继承模型或提供商默认。">
+            <AgentSettingRow label={t('settings.magicContext.agent.variant.label')} description={t('settings.magicContext.agent.variant.inheritDescription')}>
               <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
             </AgentSettingRow>
           </>
         ) : null}
 
         {id === 'sidekick' ? (
-          <AgentSettingRow label="思考等级" description="OpenCode 下写入 variant，留空则继承模型或提供商默认。">
+          <AgentSettingRow label={t('settings.magicContext.agent.variant.label')} description={t('settings.magicContext.agent.variant.inheritDescription')}>
             <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
           </AgentSettingRow>
         ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 px-4 py-2">
-        {normalizedEntry ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : <Badge className="bg-muted text-muted-foreground">继承默认</Badge>}
-        {projectOverrides.has(id) ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
+        {normalizedEntry ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.common.inheritDefault')}</Badge>}
+        {projectOverrides.has(id) ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
       </div>
     </div>
   );
@@ -782,6 +795,7 @@ function JsonTextareaField({
   onChange: (value: unknown) => void;
   placeholder?: string;
 }) {
+  const { t } = useI18n();
   const [text, setText] = React.useState(() => (
     value === undefined || value === null ? '' : JSON.stringify(value, null, 2)
   ));
@@ -803,13 +817,13 @@ function JsonTextareaField({
     try {
       const parsed = JSON.parse(trimmed);
       if (!isRecord(parsed)) {
-        setError('需要 JSON object');
+        setError(t('settings.magicContext.validation.jsonObjectRequired'));
         return;
       }
       setError(null);
       onChange(parsed);
     } catch {
-      setError('JSON 格式不正确');
+      setError(t('settings.magicContext.validation.jsonInvalid'));
     }
   };
 
@@ -835,6 +849,7 @@ function FallbackEditor({
   rows: MagicContextFallbackRow[];
   onChange: (rows: MagicContextFallbackRow[]) => void;
 }) {
+  const { t } = useI18n();
   const updateRow = (id: string, patch: Partial<MagicContextFallbackRow>) => {
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
@@ -863,17 +878,17 @@ function FallbackEditor({
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="typography-ui-label text-foreground">fallback_models</div>
-          <div className="typography-micro text-muted-foreground">Magic Context 只支持模型字符串；按顺序保存为 string[]。</div>
+          <div className="typography-micro text-muted-foreground">{t('settings.magicContext.fallback.description')}</div>
         </div>
         <Button type="button" size="xs" variant="outline" onClick={addRow}>
           <RiAddLine className="h-3.5 w-3.5" />
-          添加
+          {t('settings.magicContext.actions.add')}
         </Button>
       </div>
 
       {rows.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-center typography-meta text-muted-foreground">
-          还没有 fallback 模型。
+          {t('settings.magicContext.fallback.empty')}
         </div>
       ) : null}
 
@@ -887,7 +902,7 @@ function FallbackEditor({
                   providerId={parsed.providerId}
                   modelId={parsed.modelId}
                   onChange={(providerId, modelId) => updateRow(row.id, { model: joinModelRef(providerId, modelId) })}
-                  placeholder="选择 fallback"
+                  placeholder={t('settings.magicContext.fallback.selectPlaceholder')}
                   className="h-7 max-w-full"
                 />
                 <Input
@@ -923,6 +938,7 @@ function AgentAdvancedDialog({
   agentId: MagicAgentId | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const draft = useMagicContextConfigStore((state) => state.draft);
   const updateDraft = useMagicContextConfigStore((state) => state.updateDraft);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
@@ -982,16 +998,16 @@ function AgentAdvancedDialog({
     <Dialog open={Boolean(agentId)} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="h-[calc(100dvh-2rem)] max-w-3xl gap-0 overflow-hidden p-0 sm:ml-auto sm:mr-0 sm:rounded-l-xl sm:rounded-r-none">
         <DialogHeader className="border-b border-border/70 px-5 py-4">
-          <DialogTitle>{definition?.label ?? 'Agent'}: {agentId}</DialogTitle>
+          <DialogTitle>{definition?.label ?? t('settings.magicContext.agentDialog.agentFallback')}: {agentId}</DialogTitle>
           <DialogDescription>
-            空字段保存时会删除 override，回到 Magic Context 默认值。
+            {t('settings.magicContext.agentDialog.emptyFieldsDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-5">
             <section className="grid gap-3 md:grid-cols-2">
-              <Field label="model" hint="统一保存为 provider/model，也可以手动输入旧模型。">
+              <Field label="model" hint={t('settings.magicContext.agentDialog.modelHint')}>
                 <CompactModelEditor
                   model={asString(entry.model)}
                   onChange={(model) => updateAgent({ model })}
@@ -1002,7 +1018,7 @@ function AgentAdvancedDialog({
                 <Input value={asString(entry.variant)} onChange={(event) => updateAgent({ variant: event.target.value })} placeholder="custom variant" className="h-8" />
               </Field>
 
-              <Field label="thinking_level" hint="Pi 专用；OpenCode 下通常用 variant，留空则不写。">
+              <Field label="thinking_level" hint={t('settings.magicContext.agentDialog.thinkingLevelHint')}>
                 <Input value={asString(entry.thinking_level)} onChange={(event) => updateAgent({ thinking_level: event.target.value })} placeholder="off / low / medium / high" className="h-8" />
               </Field>
 
@@ -1014,8 +1030,8 @@ function AgentAdvancedDialog({
                 <Input value={asString(entry.top_p)} onChange={(event) => updateAgent({ top_p: event.target.value })} placeholder="0..1" className="h-8" />
               </Field>
 
-              <Field label="maxTokens" hint="留空表示不写输出上限。">
-                <Input value={asString(entry.maxTokens)} onChange={(event) => updateAgent({ maxTokens: event.target.value })} placeholder="不传" className="h-8" />
+              <Field label="maxTokens" hint={t('settings.magicContext.agentDialog.maxTokensHint')}>
+                <Input value={asString(entry.maxTokens)} onChange={(event) => updateAgent({ maxTokens: event.target.value })} placeholder={t('settings.magicContext.agentDialog.omitPlaceholder')} className="h-8" />
               </Field>
 
               <Field label="maxSteps">
@@ -1028,10 +1044,10 @@ function AgentAdvancedDialog({
                   onValueChange={(value) => updateAgent({ mode: value === INHERIT_VALUE ? undefined : value })}
                 >
                   <SelectTrigger className="h-8 w-full" size="lg">
-                    <SelectValue>{(value) => value === INHERIT_VALUE ? '继承' : value}</SelectValue>
+                    <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.magicContext.common.inherit') : value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                    <SelectItem value={INHERIT_VALUE}>{t('settings.magicContext.common.inherit')}</SelectItem>
                     {AGENT_MODES.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -1140,7 +1156,7 @@ function AgentAdvancedDialog({
                       rows={4}
                       outerClassName="min-h-[112px]"
                       className="font-mono typography-meta"
-                      placeholder="Sidekick system prompt"
+                      placeholder={t('settings.magicContext.agentDialog.sidekickSystemPromptPlaceholder')}
                     />
                   </Field>
                 </div>
@@ -1155,14 +1171,14 @@ function AgentAdvancedDialog({
                   rows={4}
                   outerClassName="min-h-[112px]"
                   className="font-mono typography-meta"
-                  placeholder="追加或覆盖 agent prompt"
+                  placeholder={t('settings.magicContext.agentDialog.promptPlaceholder')}
                 />
               </Field>
               <Field label="description">
-                <Input value={asString(entry.description)} onChange={(event) => updateAgent({ description: event.target.value })} placeholder="Agent description" className="h-8" />
+                <Input value={asString(entry.description)} onChange={(event) => updateAgent({ description: event.target.value })} placeholder={t('settings.magicContext.agentDialog.descriptionPlaceholder')} className="h-8" />
               </Field>
-              <JsonTextareaField label="tools" value={entry.tools} onChange={(value) => updateAgent({ tools: value })} placeholder={'JSON object，形如 { "bash": false }。'} />
-              <JsonTextareaField label="permission" value={entry.permission} onChange={(value) => updateAgent({ permission: value })} placeholder={'JSON object，形如 { "bash": "deny" }。'} />
+              <JsonTextareaField label="tools" value={entry.tools} onChange={(value) => updateAgent({ tools: value })} placeholder={t('settings.magicContext.agentDialog.toolsPlaceholder')} />
+              <JsonTextareaField label="permission" value={entry.permission} onChange={(value) => updateAgent({ permission: value })} placeholder={t('settings.magicContext.agentDialog.permissionPlaceholder')} />
             </section>
           </div>
         </div>
@@ -1170,9 +1186,9 @@ function AgentAdvancedDialog({
         <DialogFooter className="border-t border-border/70 px-5 py-3">
           <Button type="button" variant="outline" onClick={() => agentId && resetKey(agentId)}>
             <RiRestartLine className="h-3.5 w-3.5" />
-            重置此项
+            {t('settings.magicContext.actions.resetItem')}
           </Button>
-          <Button type="button" onClick={onClose}>完成</Button>
+          <Button type="button" onClick={onClose}>{t('settings.magicContext.actions.done')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1198,24 +1214,25 @@ function SystemPromptInjectionSection({
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
 }) {
+  const { t } = useI18n();
   const updateDraftPath = useMagicContextConfigStore((state) => state.updateDraftPath);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const injection = asRecord(draft.system_prompt_injection);
   const normalized = normalizeMagicContextConfig(draft);
 
   return (
-    <Section title="System Prompt Injection" description="控制 Magic Context 是否向系统提示注入上下文签名，以及哪些签名应跳过。">
+    <Section title={t('settings.magicContext.systemPrompt.title')} description={t('settings.magicContext.systemPrompt.description')}>
       <div className="grid gap-3 border-t border-border/50 px-3 py-3 first:border-t-0 lg:grid-cols-[minmax(220px,0.8fr)_minmax(320px,1.2fr)]">
         <div className="rounded-md border border-border/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">system_prompt_injection</div>
-              <div className="typography-micro text-muted-foreground">关闭后不再注入 Magic Context 的 system prompt 扩展。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.systemPrompt.cardDescription')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.system_prompt_injection ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('system_prompt_injection') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('system_prompt_injection')} title="删除覆盖">
+              {normalized.system_prompt_injection ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('system_prompt_injection') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('system_prompt_injection')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1229,7 +1246,7 @@ function SystemPromptInjectionSection({
         </div>
 
         <div className="rounded-md border border-border/70 p-3">
-          <Field label="skip_signatures" hint="每行一个 system prompt 签名；空列表会删除这个字段。">
+          <Field label="skip_signatures" hint={t('settings.magicContext.systemPrompt.skipSignaturesHint')}>
             <Textarea
               value={stringArrayToText(injection.skip_signatures)}
               onChange={(event) => updateDraftPath(['system_prompt_injection', 'skip_signatures'], textToStringArray(event.target.value))}
@@ -1252,6 +1269,7 @@ function EmbeddingMemorySection({
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
 }) {
+  const { t } = useI18n();
   const updateDraftPath = useMagicContextConfigStore((state) => state.updateDraftPath);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const embedding = asRecord(draft.embedding);
@@ -1259,18 +1277,18 @@ function EmbeddingMemorySection({
   const normalized = normalizeMagicContextConfig(draft);
 
   return (
-    <Section title="Embedding / Memory" description="跨会话记忆、embedding provider 与注入预算。">
+    <Section title={t('settings.magicContext.embeddingMemory.title')} description={t('settings.magicContext.embeddingMemory.description')}>
       <div className="grid gap-3 border-t border-border/50 px-3 py-3 first:border-t-0 lg:grid-cols-2">
         <div className="rounded-md border border-border/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">embedding</div>
-              <div className="typography-micro text-muted-foreground">openai-compatible 需要 endpoint 和 model。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.embedding.description')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.embedding ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('embedding') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('embedding')} title="删除覆盖">
+              {normalized.embedding ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('embedding') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('embedding')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1282,10 +1300,10 @@ function EmbeddingMemorySection({
                 onValueChange={(value) => updateDraftPath(['embedding', 'provider'], value === INHERIT_VALUE ? undefined : value)}
               >
                 <SelectTrigger className="h-8 w-full" size="lg">
-                  <SelectValue>{(value) => value === INHERIT_VALUE ? '继承' : value}</SelectValue>
+                  <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.magicContext.common.inherit') : value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                  <SelectItem value={INHERIT_VALUE}>{t('settings.magicContext.common.inherit')}</SelectItem>
                   {EMBEDDING_PROVIDERS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -1297,7 +1315,7 @@ function EmbeddingMemorySection({
               <Input value={asString(embedding.endpoint)} onChange={(event) => updateDraftPath(['embedding', 'endpoint'], event.target.value)} placeholder="https://api.example.com/v1/embeddings" className="h-8 font-mono" />
             </Field>
             <Field label="api_key">
-              <Input value={asString(embedding.api_key)} onChange={(event) => updateDraftPath(['embedding', 'api_key'], event.target.value)} placeholder="可选" className="h-8 font-mono" type="password" />
+              <Input value={asString(embedding.api_key)} onChange={(event) => updateDraftPath(['embedding', 'api_key'], event.target.value)} placeholder={t('settings.magicContext.common.optional')} className="h-8 font-mono" type="password" />
             </Field>
           </div>
         </div>
@@ -1306,12 +1324,12 @@ function EmbeddingMemorySection({
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">memory</div>
-              <div className="typography-micro text-muted-foreground">控制记忆检索和注入预算。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.memory.description')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.memory ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('memory') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('memory')} title="删除覆盖">
+              {normalized.memory ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('memory') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('memory')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1343,6 +1361,7 @@ function OperationsSection({
   draft: MagicContextConfig;
   projectOverrides: Set<string>;
 }) {
+  const { t } = useI18n();
   const updateDraftPath = useMagicContextConfigStore((state) => state.updateDraftPath);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const commitCluster = asRecord(draft.commit_cluster_trigger);
@@ -1354,18 +1373,18 @@ function OperationsSection({
   const normalized = normalizeMagicContextConfig(draft);
 
   return (
-    <Section title="Operations / Experimental" description="后台触发器、压缩器和实验功能。">
+    <Section title={t('settings.magicContext.operations.title')} description={t('settings.magicContext.operations.description')}>
       <div className="grid gap-3 border-t border-border/50 px-3 py-3 lg:grid-cols-3">
         <div className="rounded-md border border-border/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">commit_cluster_trigger</div>
-              <div className="typography-micro text-muted-foreground">按 commit cluster 触发 historian。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.operations.commitCluster.description')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.commit_cluster_trigger ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('commit_cluster_trigger') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('commit_cluster_trigger')}>
+              {normalized.commit_cluster_trigger ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('commit_cluster_trigger') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('commit_cluster_trigger')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1384,12 +1403,12 @@ function OperationsSection({
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">compressor</div>
-              <div className="typography-micro text-muted-foreground">合并旧 compartments 的后台压缩器。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.operations.compressor.description')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.compressor ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('compressor') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('compressor')}>
+              {normalized.compressor ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('compressor') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('compressor')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1410,12 +1429,12 @@ function OperationsSection({
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <div className="typography-ui-label font-medium text-foreground">experimental</div>
-              <div className="typography-micro text-muted-foreground">时间感知、git 索引、自动搜索。</div>
+              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.operations.experimental.description')}</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.experimental ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-              {projectOverrides.has('experimental') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('experimental')}>
+              {normalized.experimental ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('experimental') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('experimental')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
@@ -1462,6 +1481,7 @@ function JsonPreviewDialog({
   draft: MagicContextConfig;
   expectedMtimeMs: number | null;
 }) {
+  const { t } = useI18n();
   const preview = React.useMemo(() => {
     const payload = buildMagicContextSavePayload(expectedMtimeMs, draft);
     return JSON.stringify(payload.config, null, 2);
@@ -1471,8 +1491,8 @@ function JsonPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>即将写入的 JSON</DialogTitle>
-          <DialogDescription>空对象或空字符串表示删除该覆盖；后端不会把空值写入文件。</DialogDescription>
+          <DialogTitle>{t('settings.magicContext.jsonPreview.title')}</DialogTitle>
+          <DialogDescription>{t('settings.magicContext.jsonPreview.description')}</DialogDescription>
         </DialogHeader>
         <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border/70 bg-[var(--surface-elevated)] p-3 font-mono typography-meta text-foreground">
           {preview}
@@ -1515,28 +1535,28 @@ export const MagicContextPage: React.FC = () => {
   const projectOverrideCount = projectOverrides.size;
 
   const handleReload = async () => {
-    if (hasChanges && typeof window !== 'undefined' && !window.confirm('重新加载会丢弃未保存的更改，继续吗？')) {
+    if (hasChanges && typeof window !== 'undefined' && !window.confirm(t('settings.magicContext.confirm.reloadDiscard'))) {
       return;
     }
     const ok = await loadConfig({ force: true });
     if (!ok) {
-      toast.error('Magic Context 配置加载失败');
+      toast.error(t('settings.magicContext.toast.loadFailed'));
       return;
     }
-    toast.success('Magic Context 配置已重新加载');
+    toast.success(t('settings.magicContext.toast.reloaded'));
   };
 
   const handleSave = async () => {
     const result = await saveChanges();
     if (!result.ok) {
       if (result.conflict) {
-        toast.error('配置已被外部修改，请重新加载后再保存');
+        toast.error(t('settings.magicContext.toast.conflict'));
       } else {
-        toast.error(result.message || 'Magic Context 配置保存失败');
+        toast.error(result.message || t('settings.magicContext.toast.saveFailed'));
       }
       return;
     }
-    toast.success('Magic Context 配置已保存');
+    toast.success(t('settings.magicContext.toast.saved'));
   };
 
   return (
@@ -1546,7 +1566,7 @@ export const MagicContextPage: React.FC = () => {
           {t('settings.page.magicContext.title')}
         </h2>
         <p className="typography-ui text-muted-foreground">
-          配置 Magic Context 插件（@cortexkit/opencode-magic-context 或 @youzini/opencode-magic-context）的全局 magic-context.jsonc；项目级配置只读取提示，不在此页写入。
+          {t('settings.magicContext.description')}
         </p>
       </div>
 
@@ -1555,26 +1575,26 @@ export const MagicContextPage: React.FC = () => {
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={config?.plugin.detected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
-                {config?.plugin.detected ? '插件已检测' : '未检测到插件'}
+                {config?.plugin.detected ? t('settings.magicContext.badge.pluginDetected') : t('settings.magicContext.badge.pluginMissing')}
               </Badge>
               {projectOverrideCount > 0 ? (
                 <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">
-                  项目覆盖 {projectOverrideCount}
+                  {t('settings.magicContext.badge.projectOverrideCount', { count: projectOverrideCount })}
                 </Badge>
               ) : null}
               {ignoredProjectKeys.length > 0 ? (
                 <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">
-                  项目忽略 {ignoredProjectKeys.join(', ')}
+                  {t('settings.magicContext.badge.projectIgnored', { keys: ignoredProjectKeys.join(', ') })}
                 </Badge>
               ) : null}
-              {hasChanges ? <Badge className="bg-primary/10 text-primary">有未保存更改</Badge> : null}
+              {hasChanges ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.unsavedChanges')}</Badge> : null}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
-              {config?.target.path ?? '正在读取配置路径...'}
+              {config?.target.path ?? t('settings.magicContext.state.readingConfigPath')}
             </div>
             {config?.project.exists ? (
               <div className="break-all typography-micro text-[var(--status-warning)]">
-                当前项目存在覆盖：{config.project.path}
+                {t('settings.magicContext.project.overrideAt', { path: config.project.path })}
               </div>
             ) : null}
             {error ? <div className="typography-micro text-[var(--status-error)]">{error}</div> : null}
@@ -1584,45 +1604,45 @@ export const MagicContextPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-1.5">
             <Button type="button" size="xs" variant="outline" onClick={handleReload} disabled={isLoading || isSaving}>
               <RiRefreshLine className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
-              重新加载
+              {t('settings.magicContext.actions.reload')}
             </Button>
             <Button type="button" size="xs" variant="outline" onClick={() => setIsPreviewOpen(true)}>
               <RiCodeLine className="h-3.5 w-3.5" />
-              JSON 预览
+              {t('settings.magicContext.actions.jsonPreview')}
             </Button>
             <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>
-              放弃更改
+              {t('settings.magicContext.actions.discardChanges')}
             </Button>
             <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving}>
               {isSaving ? <RiRefreshLine className="h-3.5 w-3.5 animate-spin" /> : <RiSaveLine className="h-3.5 w-3.5" />}
-              {isSaving ? '保存中' : '保存更改'}
+              {isSaving ? t('settings.magicContext.actions.saving') : t('settings.magicContext.actions.saveChanges')}
             </Button>
           </div>
         </div>
       </div>
 
-      <Section title="Core" description="主开关、ctx_reduce、缓存等待和自动清理阈值。">
-        <BooleanRow field="enabled" label="enabled" description="Magic Context 主开关。" draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="auto_update" label="auto_update" description="用户级插件自更新开关；项目级 auto_update 会被 Magic Context 忽略。" draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="ctx_reduce_enabled" label="ctx_reduce_enabled" description="关闭后隐藏 ctx_reduce 工具，但保留启发式清理和记忆能力。" draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="drop_tool_structure" label="drop_tool_structure" description="删除工具输出时是否完全移除工具结构。" draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="compaction_markers" label="compaction_markers" description="historian 发布后向 OpenCode DB 写入 compaction 边界。" draft={draft} projectOverrides={projectOverrides} />
-        <MapEditor field="cache_ttl" label="cache_ttl" description="缓存前缀过期后再执行排队操作；支持 default 和 per-model。" draft={draft} projectOverrides={projectOverrides} type="string" allowScalar valuePlaceholder="5m / 60m" />
-        <MapEditor field="execute_threshold_percentage" label="execute_threshold_percentage" description="上下文用量百分比阈值；20..80，支持 per-model。" draft={draft} projectOverrides={projectOverrides} type="number" allowScalar valuePlaceholder="65" />
-        <MapEditor field="execute_threshold_tokens" label="execute_threshold_tokens" description="绝对 token 阈值；per-model map，命中时覆盖百分比阈值。" draft={draft} projectOverrides={projectOverrides} type="number" allowScalar={false} valuePlaceholder="150000" />
+      <Section title={t('settings.magicContext.section.core.title')} description={t('settings.magicContext.section.core.description')}>
+        <BooleanRow field="enabled" label="enabled" description={t('settings.magicContext.field.enabled.description')} draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="auto_update" label="auto_update" description={t('settings.magicContext.field.autoUpdate.description')} draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="ctx_reduce_enabled" label="ctx_reduce_enabled" description={t('settings.magicContext.field.ctxReduce.description')} draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="drop_tool_structure" label="drop_tool_structure" description={t('settings.magicContext.field.dropToolStructure.description')} draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="compaction_markers" label="compaction_markers" description={t('settings.magicContext.field.compactionMarkers.description')} draft={draft} projectOverrides={projectOverrides} />
+        <MapEditor field="cache_ttl" label="cache_ttl" description={t('settings.magicContext.field.cacheTtl.description')} draft={draft} projectOverrides={projectOverrides} type="string" allowScalar valuePlaceholder="5m / 60m" />
+        <MapEditor field="execute_threshold_percentage" label="execute_threshold_percentage" description={t('settings.magicContext.field.executeThresholdPercentage.description')} draft={draft} projectOverrides={projectOverrides} type="number" allowScalar valuePlaceholder="65" />
+        <MapEditor field="execute_threshold_tokens" label="execute_threshold_tokens" description={t('settings.magicContext.field.executeThresholdTokens.description')} draft={draft} projectOverrides={projectOverrides} type="number" allowScalar={false} valuePlaceholder="150000" />
       </Section>
 
-      <Section title="Cleanup Thresholds" description="控制 nudges、保护 tag 数、清理年龄和历史预算。">
-        <ScalarRow field="nudge_interval_tokens" label="nudge_interval_tokens" description="滚动提醒之间的最小 token 增量。" placeholder="10000" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="protected_tags" label="protected_tags" description="近期多少个 active tags 不会被立即丢弃。" placeholder="20" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="auto_drop_tool_age" label="auto_drop_tool_age" description="自动丢弃多旧的工具输出。" placeholder="100" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="clear_reasoning_age" label="clear_reasoning_age" description="清理多旧的 reasoning / thinking blocks。" placeholder="50" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="iteration_nudge_threshold" label="iteration_nudge_threshold" description="连续助手轮次达到多少后插入迭代提醒。" placeholder="15" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="history_budget_percentage" label="history_budget_percentage" description="session-history block 占可用上下文的比例。" placeholder="0.15" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="historian_timeout_ms" label="historian_timeout_ms" description="每次 historian 调用超时时间。" placeholder="300000" draft={draft} projectOverrides={projectOverrides} />
+      <Section title={t('settings.magicContext.section.cleanup.title')} description={t('settings.magicContext.section.cleanup.description')}>
+        <ScalarRow field="nudge_interval_tokens" label="nudge_interval_tokens" description={t('settings.magicContext.field.nudgeInterval.description')} placeholder="10000" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="protected_tags" label="protected_tags" description={t('settings.magicContext.field.protectedTags.description')} placeholder="20" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="auto_drop_tool_age" label="auto_drop_tool_age" description={t('settings.magicContext.field.autoDropToolAge.description')} placeholder="100" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="clear_reasoning_age" label="clear_reasoning_age" description={t('settings.magicContext.field.clearReasoningAge.description')} placeholder="50" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="iteration_nudge_threshold" label="iteration_nudge_threshold" description={t('settings.magicContext.field.iterationNudgeThreshold.description')} placeholder="15" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="history_budget_percentage" label="history_budget_percentage" description={t('settings.magicContext.field.historyBudgetPercentage.description')} placeholder="0.15" draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="historian_timeout_ms" label="historian_timeout_ms" description={t('settings.magicContext.field.historianTimeout.description')} placeholder="300000" draft={draft} projectOverrides={projectOverrides} />
       </Section>
 
-      <Section title="Agents" description="配置 Magic Context 内部的 historian、dreamer、sidekick 模型路由。">
+      <Section title={t('settings.magicContext.section.agents.title')} description={t('settings.magicContext.section.agents.description')}>
         <div className="grid gap-3 border-t border-border/50 p-3 first:border-t-0">
           {AGENT_DEFINITIONS.map((agent) => (
             <AgentCard

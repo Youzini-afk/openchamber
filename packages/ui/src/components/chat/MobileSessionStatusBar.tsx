@@ -570,6 +570,7 @@ function SessionStatusHeader({
   onEditSave,
   onEditCancel,
 }: SessionStatusHeaderProps) {
+  const { t } = useI18n();
   const [imageFailed, setImageFailed] = React.useState(false);
   const ProjectIcon = currentProjectIcon ? PROJECT_ICON_MAP[currentProjectIcon] : null;
   const imageUrl = !imageFailed ? currentProjectIconImageUrl : null;
@@ -698,7 +699,9 @@ function SessionStatusHeader({
                   <div
                     key={child.session.id}
                     className="flex-shrink-0"
-                    title={`Sub-session: ${child.session.title || 'Untitled'}`}
+                    title={t('chat.mobileStatus.subSessionTitle', {
+                      title: child.session.title || t('chat.mobileStatus.untitledSession'),
+                    })}
                   >
                     <RiLoader4Line
                       className="h-2.5 w-2.5 animate-spin"

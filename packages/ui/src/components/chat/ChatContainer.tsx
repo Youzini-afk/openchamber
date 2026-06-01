@@ -56,7 +56,6 @@ const EMPTY_PERMISSIONS: PermissionRequest[] = [];
 const EMPTY_QUESTIONS: QuestionRequest[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
-const DEFAULT_RETRY_MESSAGE = 'Quota limit reached. Retrying automatically.';
 const CHAT_SCROLL_STYLE = {
     overflowAnchor: 'none',
     overscrollBehavior: 'contain',
@@ -156,6 +155,7 @@ type ChatViewportProps = {
         confirmedAt?: number;
         fallbackTimestamp?: number;
     } | null;
+    retryOverlayFallbackMessage: string;
     handleMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     handleLoadOlder: () => void;
@@ -182,6 +182,7 @@ const ChatViewport = React.memo(({
     streamingMessageId,
     activeStreamingPhase,
     retryOverlay,
+    retryOverlayFallbackMessage,
     handleMessageContentChange,
     getAnimationHandlers,
     handleLoadOlder,
@@ -237,6 +238,7 @@ const ChatViewport = React.memo(({
                             activeStreamingMessageId={streamingMessageId}
                             activeStreamingPhase={activeStreamingPhase}
                             retryOverlay={retryOverlay}
+                            retryOverlayFallbackMessage={retryOverlayFallbackMessage}
                             onMessageContentChange={handleMessageContentChange}
                             getAnimationHandlers={getAnimationHandlers}
                             hasMoreAbove={hasMoreAboveTurns}
@@ -365,6 +367,7 @@ type ChatContainerProps = {
 
 export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = true, readOnly = false }) => {
     const { t } = useI18n();
+    const defaultRetryMessage = t('chat.retryOverlay.defaultMessage');
     // Session UI state
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -507,10 +510,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 
         return {
             sessionId: currentSessionId,
-            message: rawMessage || DEFAULT_RETRY_MESSAGE,
+            message: rawMessage || defaultRetryMessage,
             confirmedAt: (sessionStatusForCurrent as { confirmedAt?: number }).confirmedAt,
         };
-    }, [currentSessionId, sessionStatusForCurrent]);
+    }, [currentSessionId, defaultRetryMessage, sessionStatusForCurrent]);
     const [retryFallbackTimestamp, setRetryFallbackTimestamp] = React.useState<number>(0);
     const retryFallbackSessionRef = React.useRef<string | null>(null);
 
@@ -968,6 +971,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 streamingMessageId={streamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
+                retryOverlayFallbackMessage={defaultRetryMessage}
                 handleMessageContentChange={handleMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
                 handleLoadOlder={handleLoadOlder}

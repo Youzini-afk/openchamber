@@ -64,23 +64,23 @@ const THINKING_OPTIONS = ['enabled', 'disabled'];
 const CONTINUATION_HOOKS = [
   {
     id: 'todo-continuation-enforcer',
-    label: 'Todo continuation',
-    description: '根据未完成 todos 继续会话。关闭后可减少 stale todo 反复触发。',
+    labelKey: 'settings.openagent.continuation.todo.label',
+    descriptionKey: 'settings.openagent.continuation.todo.description',
   },
   {
     id: 'atlas',
-    label: 'Atlas auto-continue',
-    description: 'Atlas 任务管理/续跑 hook。关闭后会降低自动分发和继续执行倾向。',
+    labelKey: 'settings.openagent.continuation.atlas.label',
+    descriptionKey: 'settings.openagent.continuation.atlas.description',
   },
   {
     id: 'stop-continuation-guard',
-    label: 'Stop continuation guard',
-    description: '记录用户停止意图，供其他 continuation hooks 遵守。通常建议保留。',
+    labelKey: 'settings.openagent.continuation.stopGuard.label',
+    descriptionKey: 'settings.openagent.continuation.stopGuard.description',
   },
   {
     id: 'compaction-todo-preserver',
-    label: 'Compaction todo preserver',
-    description: '压缩上下文时保留 todo 状态。关闭后压缩后可能少带任务状态。',
+    labelKey: 'settings.openagent.continuation.compactionPreserver.label',
+    descriptionKey: 'settings.openagent.continuation.compactionPreserver.description',
   },
 ] as const;
 
@@ -141,6 +141,7 @@ const buildDisplayItems = (
   kind: OpenAgentKind,
   draft: OpenAgentDraft,
   projectOverrides: string[],
+  customUnknownDescription: string,
 ): OpenAgentDisplayItem[] => {
   const base = toDisplayItems(configItems, kind);
   const knownIds = new Set(base.map((item) => item.id));
@@ -157,7 +158,7 @@ const buildDisplayItems = (
     ...customIds.map((id) => ({
       id,
       label: id,
-      description: 'Custom / Unknown',
+      description: customUnknownDescription,
       group: 'custom' as const,
       defaultModel: null,
       defaultVariant: null,
@@ -165,8 +166,8 @@ const buildDisplayItems = (
   ];
 };
 
-const formatDefaultModel = (item: OpenAgentDisplayItem): string => {
-  if (!item.defaultModel) return '按插件默认';
+const formatDefaultModel = (item: OpenAgentDisplayItem, pluginDefaultLabel: string): string => {
+  if (!item.defaultModel) return pluginDefaultLabel;
   return item.defaultVariant ? `${item.defaultModel} · ${item.defaultVariant}` : item.defaultModel;
 };
 
@@ -178,17 +179,18 @@ const getItemStatus = (
   entry: OpenAgentOverride,
   hasUserOverride: boolean,
   hasProjectOverride: boolean,
+  labels: { disabled: string; overridden: string; projectOverride: string; inherited: string },
 ): { label: string; className: string } => {
   if (entry.disable === true) {
-    return { label: '已禁用', className: 'bg-[var(--status-error)]/10 text-[var(--status-error)]' };
+    return { label: labels.disabled, className: 'bg-[var(--status-error)]/10 text-[var(--status-error)]' };
   }
   if (hasUserOverride) {
-    return { label: '已覆盖', className: 'bg-primary/10 text-primary' };
+    return { label: labels.overridden, className: 'bg-primary/10 text-primary' };
   }
   if (hasProjectOverride) {
-    return { label: '项目覆盖', className: 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]' };
+    return { label: labels.projectOverride, className: 'bg-[var(--status-warning)]/10 text-[var(--status-warning)]' };
   }
-  return { label: '继承默认', className: 'bg-muted text-muted-foreground' };
+  return { label: labels.inherited, className: 'bg-muted text-muted-foreground' };
 };
 
 const normalizeCustomId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-');
@@ -226,13 +228,15 @@ function Field({
 function CompactModelEditor({
   model,
   onChange,
-  placeholder = '继承默认',
+  placeholder,
 }: {
   model: string;
   onChange: (model: string) => void;
   placeholder?: string;
 }) {
+  const { t } = useI18n();
   const parsed = parseModelRef(model);
+  const selectorPlaceholder = placeholder ?? t('settings.openagent.model.inheritDefault');
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -240,7 +244,7 @@ function CompactModelEditor({
         providerId={parsed.providerId}
         modelId={parsed.modelId}
         onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
-        placeholder={placeholder}
+        placeholder={selectorPlaceholder}
         className="h-7 min-w-[120px] max-w-[210px] flex-1"
       />
       <Input
@@ -264,6 +268,7 @@ function JsonTextareaField({
   onChange: (value: unknown) => void;
   placeholder?: string;
 }) {
+  const { t } = useI18n();
   const [text, setText] = React.useState(() => (
     value === undefined || value === null ? '' : JSON.stringify(value, null, 2)
   ));
@@ -285,13 +290,13 @@ function JsonTextareaField({
     try {
       const parsed = JSON.parse(trimmed);
       if (!isRecord(parsed)) {
-        setError('需要 JSON object');
+        setError(t('settings.openagent.validation.jsonObjectRequired'));
         return;
       }
       setError(null);
       onChange(parsed);
     } catch {
-      setError('JSON 格式不正确');
+      setError(t('settings.openagent.validation.jsonInvalid'));
     }
   };
 
@@ -317,6 +322,7 @@ function AddCustomControl({
   kind: OpenAgentKind;
   onAdd: (kind: OpenAgentKind, id: string) => void;
 }) {
+  const { t } = useI18n();
   const [value, setValue] = React.useState('');
 
   const handleAdd = () => {
@@ -342,7 +348,7 @@ function AddCustomControl({
       />
       <Button type="button" size="xs" variant="outline" onClick={handleAdd} disabled={!value.trim()}>
         <RiAddLine className="h-3.5 w-3.5" />
-        添加
+        {t('settings.openagent.actions.add')}
       </Button>
     </div>
   );
@@ -361,6 +367,7 @@ function OpenAgentRow({
   projectOverride: boolean;
   onEdit: (target: EditingTarget) => void;
 }) {
+  const { t } = useI18n();
   const updateDraftItem = useOpenAgentConfigStore((state) => state.updateDraftItem);
   const resetItem = useOpenAgentConfigStore((state) => state.resetItem);
   const entry = getEntry(draft, kind, item.id);
@@ -368,7 +375,12 @@ function OpenAgentRow({
   const normalizedEntry = normalizedRecord[item.id];
   const model = asString(entry.model);
   const fallbackCount = countFallbackModels(entry.fallback_models);
-  const status = getItemStatus(entry, Boolean(normalizedEntry), projectOverride);
+  const status = getItemStatus(entry, Boolean(normalizedEntry), projectOverride, {
+    disabled: t('settings.openagent.badge.disabled'),
+    overridden: t('settings.openagent.badge.overridden'),
+    projectOverride: t('settings.openagent.badge.projectOverride'),
+    inherited: t('settings.openagent.badge.inherited'),
+  });
 
   return (
     <div className="grid min-h-[58px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(190px,1.15fr)_minmax(160px,0.9fr)_minmax(260px,1.2fr)_90px_104px_86px] lg:items-center">
@@ -376,19 +388,19 @@ function OpenAgentRow({
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate typography-ui-label font-medium text-foreground">{item.label}</span>
           {projectOverride ? (
-            <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge>
+            <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.openagent.badge.projectOverride')}</Badge>
           ) : null}
         </div>
         <div className="truncate typography-micro text-muted-foreground">{item.description}</div>
       </div>
 
       <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">默认模型</div>
-        <div className="truncate font-mono typography-meta text-muted-foreground">{formatDefaultModel(item)}</div>
+        <div className="typography-micro text-muted-foreground lg:hidden">{t('settings.openagent.table.defaultModel')}</div>
+        <div className="truncate font-mono typography-meta text-muted-foreground">{formatDefaultModel(item, t('settings.openagent.model.pluginDefault'))}</div>
       </div>
 
       <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">覆盖模型</div>
+        <div className="typography-micro text-muted-foreground lg:hidden">{t('settings.openagent.table.overrideModel')}</div>
         <CompactModelEditor
           model={model}
           onChange={(nextModel) => updateDraftItem(kind, item.id, { model: nextModel })}
@@ -410,8 +422,8 @@ function OpenAgentRow({
           size="icon"
           variant="ghost"
           onClick={() => onEdit({ kind, id: item.id })}
-          aria-label={`编辑 ${item.label}`}
-          title="编辑高级参数"
+          aria-label={t('settings.openagent.actions.editItemAria', { label: item.label })}
+          title={t('settings.openagent.actions.editAdvanced')}
         >
           <RiEditLine className="h-4 w-4" />
         </Button>
@@ -421,8 +433,8 @@ function OpenAgentRow({
           variant="ghost"
           onClick={() => resetItem(kind, item.id)}
           disabled={!normalizedEntry}
-          aria-label={`重置 ${item.label}`}
-          title="重置为继承默认"
+          aria-label={t('settings.openagent.actions.resetItemAria', { label: item.label })}
+          title={t('settings.openagent.actions.resetToInherited')}
         >
           <RiRestartLine className="h-4 w-4" />
         </Button>
@@ -448,6 +460,7 @@ function OpenAgentGroupSection({
   onEdit: (target: EditingTarget) => void;
   onAdd?: (kind: OpenAgentKind, id: string) => void;
 }) {
+  const { t } = useI18n();
   if (items.length === 0 && !onAdd) return null;
 
   return (
@@ -455,17 +468,17 @@ function OpenAgentGroupSection({
       <div className="flex flex-col gap-2 border-b border-border/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="typography-ui-label font-semibold text-foreground">{title}</h3>
-          <p className="typography-micro text-muted-foreground">模型为空表示继承插件默认；保存时不会写入空字段。</p>
+          <p className="typography-micro text-muted-foreground">{t('settings.openagent.group.emptyModelHint')}</p>
         </div>
         {onAdd ? <AddCustomControl kind={kind} onAdd={onAdd} /> : null}
       </div>
       <div className="hidden grid-cols-[minmax(190px,1.15fr)_minmax(160px,0.9fr)_minmax(260px,1.2fr)_90px_104px_86px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground lg:grid">
-        <div>名称</div>
-        <div>默认模型</div>
-        <div>当前覆盖模型</div>
+        <div>{t('settings.openagent.table.name')}</div>
+        <div>{t('settings.openagent.table.defaultModel')}</div>
+        <div>{t('settings.openagent.table.overrideModel')}</div>
         <div>fallback</div>
-        <div>状态</div>
-        <div className="text-right">操作</div>
+        <div>{t('settings.openagent.table.status')}</div>
+        <div className="text-right">{t('settings.openagent.table.actions')}</div>
       </div>
       {items.map((item) => (
         <OpenAgentRow
@@ -479,7 +492,7 @@ function OpenAgentGroupSection({
       ))}
       {items.length === 0 ? (
         <div className="border-t border-border/50 px-3 py-5 text-center typography-meta text-muted-foreground">
-          暂无自定义项。
+          {t('settings.openagent.empty.noCustomItems')}
         </div>
       ) : null}
     </section>
@@ -493,6 +506,7 @@ function FallbackEditor({
   rows: OpenAgentFallbackRow[];
   onChange: (rows: OpenAgentFallbackRow[]) => void;
 }) {
+  const { t } = useI18n();
   const updateRow = (id: string, patch: Partial<OpenAgentFallbackRow>) => {
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   };
@@ -525,17 +539,17 @@ function FallbackEditor({
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="typography-ui-label text-foreground">fallback_models</div>
-          <div className="typography-micro text-muted-foreground">按顺序尝试；清空列表会删除这个字段。</div>
+          <div className="typography-micro text-muted-foreground">{t('settings.openagent.fallback.description')}</div>
         </div>
         <Button type="button" size="xs" variant="outline" onClick={addRow}>
           <RiAddLine className="h-3.5 w-3.5" />
-          添加
+          {t('settings.openagent.actions.add')}
         </Button>
       </div>
 
       {rows.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-center typography-meta text-muted-foreground">
-          还没有 fallback 模型。
+          {t('settings.openagent.fallback.empty')}
         </div>
       ) : null}
 
@@ -552,7 +566,7 @@ function FallbackEditor({
                     model: joinModelRef(providerId, modelId),
                     originalType: row.originalType,
                   })}
-                  placeholder="选择 fallback"
+                  placeholder={t('settings.openagent.fallback.selectPlaceholder')}
                   className="h-7 max-w-full"
                 />
                 <Input
@@ -588,10 +602,10 @@ function FallbackEditor({
                 })}
               >
                 <SelectTrigger className="h-7 w-full" size="sm">
-                  <SelectValue>{(value) => value === INHERIT_VALUE ? 'reasoning' : value}</SelectValue>
+                  <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.fallback.reasoningPlaceholder') : value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                  <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
                   {REASONING_OPTIONS.map((option) => (
                     <SelectItem key={option} value={option}>{option}</SelectItem>
                   ))}
@@ -624,10 +638,10 @@ function FallbackEditor({
                 })}
               >
                 <SelectTrigger className="h-7 w-full" size="sm">
-                  <SelectValue>{(value) => value === INHERIT_VALUE ? 'thinking' : value}</SelectValue>
+                  <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.fallback.thinkingPlaceholder') : value}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                  <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
                   {THINKING_OPTIONS.map((option) => (
                     <SelectItem key={option} value={option}>{option}</SelectItem>
                   ))}
@@ -654,6 +668,7 @@ function AdvancedDialog({
   target: EditingTarget | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const draft = useOpenAgentConfigStore((state) => state.draft);
   const updateDraftItem = useOpenAgentConfigStore((state) => state.updateDraftItem);
   const resetItem = useOpenAgentConfigStore((state) => state.resetItem);
@@ -662,7 +677,7 @@ function AdvancedDialog({
   const entry = target ? getEntry(draft, target.kind, target.id) : {};
   const kind = target?.kind ?? 'agent';
   const id = target?.id ?? '';
-  const label = target ? (target.kind === 'agent' ? 'Agent' : 'Category') : '';
+  const label = target ? (target.kind === 'agent' ? t('settings.openagent.dialog.agent') : t('settings.openagent.dialog.category')) : '';
 
   React.useEffect(() => {
     if (!target) {
@@ -702,14 +717,14 @@ function AdvancedDialog({
         <DialogHeader className="border-b border-border/70 px-5 py-4">
           <DialogTitle>{label}: {id}</DialogTitle>
           <DialogDescription>
-            空字段保存时会删除 override，回到插件默认或不传字段。
+            {t('settings.openagent.dialog.emptyFieldsDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-5">
             <section className="grid gap-3 md:grid-cols-2">
-              <Field label="model" hint="统一保存为 provider/model，也可以手动输入旧模型。">
+              <Field label="model" hint={t('settings.openagent.hint.modelProvider')}>
                 <CompactModelEditor
                   model={asString(entry.model)}
                   onChange={(model) => update({ model })}
@@ -736,11 +751,11 @@ function AdvancedDialog({
                 </Field>
               ) : null}
 
-              <Field label="maxTokens" hint="留空表示不写入输出上限。">
+              <Field label="maxTokens" hint={t('settings.openagent.hint.maxTokens')}>
                 <Input
                   value={asString(entry.maxTokens)}
                   onChange={(event) => update({ maxTokens: event.target.value })}
-                  placeholder="不限制 / 不传"
+                  placeholder={t('settings.openagent.placeholder.maxTokensEmpty')}
                   className="h-8"
                 />
               </Field>
@@ -769,10 +784,10 @@ function AdvancedDialog({
                   onValueChange={(value) => update({ reasoningEffort: value === INHERIT_VALUE ? undefined : value })}
                 >
                   <SelectTrigger className="h-8 w-full" size="lg">
-                    <SelectValue>{(value) => value === INHERIT_VALUE ? '继承' : value}</SelectValue>
+                    <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.model.inherit') : value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                    <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
                     {REASONING_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
@@ -786,10 +801,10 @@ function AdvancedDialog({
                   onValueChange={(value) => update({ textVerbosity: value === INHERIT_VALUE ? undefined : value })}
                 >
                   <SelectTrigger className="h-8 w-full" size="lg">
-                    <SelectValue>{(value) => value === INHERIT_VALUE ? '继承' : value}</SelectValue>
+                    <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.model.inherit') : value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                    <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
                     {TEXT_VERBOSITY_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
@@ -803,10 +818,10 @@ function AdvancedDialog({
                   onValueChange={(value) => updateThinking({ type: value === INHERIT_VALUE ? undefined : value })}
                 >
                   <SelectTrigger className="h-8 w-full" size="lg">
-                    <SelectValue>{(value) => value === INHERIT_VALUE ? '继承' : value}</SelectValue>
+                    <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.model.inherit') : value}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+                    <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
                     {THINKING_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option}>{option}</SelectItem>
                     ))}
@@ -864,7 +879,7 @@ function AdvancedDialog({
                   rows={4}
                   outerClassName="min-h-[112px]"
                   className="font-mono typography-meta"
-                  placeholder="追加到 prompt 的内容"
+                  placeholder={t('settings.openagent.placeholder.promptAppend')}
                 />
               </Field>
 
@@ -872,7 +887,7 @@ function AdvancedDialog({
                 label="tools"
                 value={entry.tools}
                 onChange={(value) => update({ tools: value })}
-                placeholder={'JSON object，形如 { "bash": true }。'}
+                placeholder={t('settings.openagent.placeholder.toolsJson')}
               />
 
               {kind === 'agent' ? (
@@ -880,7 +895,7 @@ function AdvancedDialog({
                   label="providerOptions"
                   value={entry.providerOptions}
                   onChange={(value) => update({ providerOptions: value })}
-                  placeholder="providerOptions 会原样作为 JSON object 保存。"
+                  placeholder={t('settings.openagent.placeholder.providerOptions')}
                 />
               ) : null}
             </section>
@@ -890,9 +905,9 @@ function AdvancedDialog({
         <DialogFooter className="border-t border-border/70 px-5 py-3">
           <Button type="button" variant="outline" onClick={() => target && resetItem(target.kind, target.id)}>
             <RiRestartLine className="h-3.5 w-3.5" />
-            重置此项
+            {t('settings.openagent.actions.resetItem')}
           </Button>
-          <Button type="button" onClick={onClose}>完成</Button>
+          <Button type="button" onClick={onClose}>{t('settings.openagent.actions.done')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -910,6 +925,7 @@ function JsonPreviewDialog({
   draft: OpenAgentDraft;
   expectedMtimeMs: number | null;
 }) {
+  const { t } = useI18n();
   const preview = React.useMemo(() => {
     const payload = buildOpenAgentSavePayload(expectedMtimeMs, draft);
     return JSON.stringify({
@@ -923,8 +939,8 @@ function JsonPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>即将写入的 JSON</DialogTitle>
-          <DialogDescription>只展示 OpenChamber 会更新的 agents / categories 片段。</DialogDescription>
+          <DialogTitle>{t('settings.openagent.jsonPreview.title')}</DialogTitle>
+          <DialogDescription>{t('settings.openagent.jsonPreview.description')}</DialogDescription>
         </DialogHeader>
         <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border/70 bg-[var(--surface-elevated)] p-3 font-mono typography-meta text-foreground">
           {preview}
@@ -935,6 +951,7 @@ function JsonPreviewDialog({
 }
 
 function ContinuationHooksSection() {
+  const { t } = useI18n();
   const draft = useOpenAgentConfigStore((state) => state.draft);
   const setDisabledHooks = useOpenAgentConfigStore((state) => state.setDisabledHooks);
   const disabledHooks = React.useMemo(() => new Set(normalizeHookList(draft.disabled_hooks)), [draft.disabled_hooks]);
@@ -958,17 +975,17 @@ function ContinuationHooksSection() {
     <section className="rounded-lg border border-border/70 bg-background p-3">
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
-          <h3 className="typography-ui-label font-semibold text-foreground">Continuation hooks</h3>
+          <h3 className="typography-ui-label font-semibold text-foreground">{t('settings.openagent.continuation.title')}</h3>
           <p className="max-w-3xl typography-ui text-muted-foreground">
-            这些是 Oh My OpenAgent 的自动续跑相关 hook，不属于 Magic Context。关闭 Todo continuation 可减少 stale todo 反复触发和重复子任务派发。
+            {t('settings.openagent.continuation.description')}
           </p>
         </div>
-        {disabledContinuationHookCount > 0 ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">已禁用 {disabledContinuationHookCount}</Badge> : null}
+        {disabledContinuationHookCount > 0 ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.openagent.continuation.disabledCount', { count: disabledContinuationHookCount })}</Badge> : null}
       </div>
 
       {otherDisabledHookCount > 0 ? (
         <p className="mt-2 typography-micro text-muted-foreground">
-          另有 {otherDisabledHookCount} 个非续跑 hook 已在配置中禁用，不显示在此区块。
+          {t('settings.openagent.continuation.otherDisabled', { count: otherDisabledHookCount })}
         </p>
       ) : null}
 
@@ -978,11 +995,11 @@ function ContinuationHooksSection() {
           return (
             <div key={hook.id} className="flex min-w-0 items-start justify-between gap-3 rounded-md border border-border/70 bg-[var(--surface-elevated)] px-3 py-2">
               <div className="min-w-0 space-y-0.5">
-                <div className="typography-ui-label font-medium text-foreground">{hook.label}</div>
+                <div className="typography-ui-label font-medium text-foreground">{t(hook.labelKey)}</div>
                 <div className="font-mono typography-micro text-muted-foreground">{hook.id}</div>
-                <div className="typography-micro text-muted-foreground">{hook.description}</div>
+                <div className="typography-micro text-muted-foreground">{t(hook.descriptionKey)}</div>
               </div>
-              <Switch checked={enabled} onCheckedChange={(checked) => setHookEnabled(hook.id, Boolean(checked))} aria-label={`启用 ${hook.label}`} />
+              <Switch checked={enabled} onCheckedChange={(checked) => setHookEnabled(hook.id, Boolean(checked))} aria-label={t('settings.openagent.continuation.enableAria', { label: t(hook.labelKey) })} />
             </div>
           );
         })}
@@ -1037,14 +1054,16 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
     'agent',
     draft,
     config?.project.overriddenAgents ?? [],
-  ), [config, draft]);
+    t('settings.openagent.group.customUnknown'),
+  ), [config, draft, t]);
 
   const categoryItems = React.useMemo(() => buildDisplayItems(
     config?.categories,
     'category',
     draft,
     config?.project.overriddenCategories ?? [],
-  ), [config, draft]);
+    t('settings.openagent.group.customUnknown'),
+  ), [config, draft, t]);
 
   const mainAgents = agentItems.filter((item) => item.group === 'main');
   const subAgents = agentItems.filter((item) => item.group === 'sub');
@@ -1056,51 +1075,51 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   const pluginEnabled = config?.plugin.enabled ?? config?.plugin.detected ?? false;
 
   const handleReload = async () => {
-    if (hasChanges && typeof window !== 'undefined' && !window.confirm('重新加载会丢弃未保存的更改，继续吗？')) {
+    if (hasChanges && typeof window !== 'undefined' && !window.confirm(t('settings.openagent.confirm.reloadDiscard'))) {
       return;
     }
     const ok = await loadConfig({ force: true });
     if (!ok) {
-      toast.error('Oh My OpenAgent 配置加载失败');
+      toast.error(t('settings.openagent.toast.loadFailed'));
       return;
     }
-    toast.success('Oh My OpenAgent 配置已重新加载');
+    toast.success(t('settings.openagent.toast.reloaded'));
   };
 
   const handleSave = async () => {
     const result = await saveChanges();
     if (!result.ok) {
       if (result.conflict) {
-        toast.error('配置已被外部修改，请重新加载后再保存');
+        toast.error(t('settings.openagent.toast.conflict'));
       } else {
-        toast.error(result.message || 'Oh My OpenAgent 配置保存失败');
+        toast.error(result.message || t('settings.openagent.toast.saveFailed'));
       }
       return;
     }
-    toast.success('Oh My OpenAgent 配置已保存');
+    toast.success(t('settings.openagent.toast.saved'));
   };
 
   const handlePluginToggle = async (enabled: boolean) => {
-    if (hasChanges && typeof window !== 'undefined' && !window.confirm('切换插件会重新加载 OpenCode，并丢弃未保存的模型路由更改，继续吗？')) {
+    if (hasChanges && typeof window !== 'undefined' && !window.confirm(t('settings.openagent.confirm.togglePluginDiscard'))) {
       return;
     }
 
     const result = await setPluginEnabled(enabled);
     if (!result.ok) {
       if (result.conflict) {
-        toast.error('OpenCode 插件配置已被外部修改，请重新加载后再切换');
+        toast.error(t('settings.openagent.toast.pluginConflict'));
       } else {
-        toast.error(result.message || 'Oh My OpenAgent 插件切换失败');
+        toast.error(result.message || t('settings.openagent.toast.pluginToggleFailed'));
       }
       return;
     }
-    toast.success(enabled ? 'Oh My OpenAgent 插件已启用' : 'Oh My OpenAgent 插件已关闭');
+    toast.success(enabled ? t('settings.openagent.toast.pluginEnabled') : t('settings.openagent.toast.pluginDisabled'));
   };
 
   const handleAddCustom = (kind: OpenAgentKind, id: string) => {
     const existingRecord = getDraftRecord(draft, kind);
     if (existingRecord[id]) {
-      toast.error('这个 ID 已经存在');
+      toast.error(t('settings.openagent.toast.idExists'));
       return;
     }
     updateDraftItem(kind, id, { model: '' });
@@ -1114,7 +1133,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
           {embedded ? 'Oh My OpenAgent / OMO' : t('settings.page.openagent.title')}
         </h2>
         <p className="typography-ui text-muted-foreground">
-          配置 oh-my-openagent 的 agents / categories 模型路由；当前版本写入服务进程用户的全局配置。
+          {t('settings.openagent.description')}
         </p>
       </div>
 
@@ -1123,30 +1142,30 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={config?.plugin.detected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
-                {pluginEnabled ? '插件已启用' : '插件已关闭'}
+                {pluginEnabled ? t('settings.openagent.badge.pluginEnabled') : t('settings.openagent.badge.pluginDisabled')}
               </Badge>
-              {isPluginSaving ? <Badge className="bg-primary/10 text-primary">正在切换插件</Badge> : null}
+              {isPluginSaving ? <Badge className="bg-primary/10 text-primary">{t('settings.openagent.badge.switchingPlugin')}</Badge> : null}
               {config?.target.isLegacy ? (
-                <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">legacy 配置</Badge>
+                <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.openagent.badge.legacyConfig')}</Badge>
               ) : null}
               {projectOverrideCount > 0 ? (
                 <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">
-                  项目覆盖 {projectOverrideCount}
+                  {t('settings.openagent.badge.projectOverrideCount', { count: projectOverrideCount })}
                 </Badge>
               ) : null}
               {hasChanges ? (
-                <Badge className="bg-primary/10 text-primary">有未保存更改</Badge>
+                <Badge className="bg-primary/10 text-primary">{t('settings.openagent.badge.unsavedChanges')}</Badge>
               ) : null}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
-              {config?.target.path ?? '正在读取配置路径...'}
+              {config?.target.path ?? t('settings.openagent.state.readingConfigPath')}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
-              OpenCode 插件注册：{config?.plugin.configPath ?? config?.plugin.writeTargetPath ?? '正在读取 OpenCode 配置...'}
+              {t('settings.openagent.plugin.registrationPrefix')}: {config?.plugin.configPath ?? config?.plugin.writeTargetPath ?? t('settings.openagent.state.readingOpenCodeConfig')}
             </div>
             {config?.project.exists ? (
               <div className="break-all typography-micro text-[var(--status-warning)]">
-                当前项目存在覆盖：{config.project.path}
+                {t('settings.openagent.project.overrideAt', { path: config.project.path })}
               </div>
             ) : null}
             {error ? <div className="typography-micro text-[var(--status-error)]">{error}</div> : null}
@@ -1156,29 +1175,29 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
             {!embedded ? (
               <div className="mr-1 flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
                 <RiPlugLine className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="typography-micro text-foreground">插件总开关</span>
+                <span className="typography-micro text-foreground">{t('settings.openagent.plugin.masterSwitch')}</span>
                 <Switch
                   checked={pluginEnabled}
                   onCheckedChange={(checked) => void handlePluginToggle(Boolean(checked))}
                   disabled={isLoading || isSaving || isPluginSaving}
-                  aria-label="启用或关闭 Oh My OpenAgent 插件"
+                  aria-label={t('settings.openagent.plugin.toggleAria')}
                 />
               </div>
             ) : null}
             <Button type="button" size="xs" variant="outline" onClick={handleReload} disabled={isLoading || isSaving}>
               <RiRefreshLine className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
-              重新加载
+              {t('settings.openagent.actions.reload')}
             </Button>
             <Button type="button" size="xs" variant="outline" onClick={() => setIsPreviewOpen(true)}>
               <RiCodeLine className="h-3.5 w-3.5" />
-              JSON 预览
+              {t('settings.openagent.actions.jsonPreview')}
             </Button>
             <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>
-              放弃更改
+              {t('settings.openagent.actions.discardChanges')}
             </Button>
             <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving || isPluginSaving}>
               {isSaving ? <RiRefreshLine className="h-3.5 w-3.5 animate-spin" /> : <RiSaveLine className="h-3.5 w-3.5" />}
-              {isSaving ? '保存中' : '保存更改'}
+              {isSaving ? t('settings.openagent.actions.saving') : t('settings.openagent.actions.saveChanges')}
             </Button>
           </div>
         </div>
@@ -1187,7 +1206,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       <ContinuationHooksSection />
 
       <OpenAgentGroupSection
-        title="主 Agent"
+        title={t('settings.openagent.group.mainAgents')}
         kind="agent"
         items={mainAgents}
         draft={draft}
@@ -1196,7 +1215,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       />
 
       <OpenAgentGroupSection
-        title="子 Agent"
+        title={t('settings.openagent.group.subAgents')}
         kind="agent"
         items={subAgents}
         draft={draft}
@@ -1205,7 +1224,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       />
 
       <OpenAgentGroupSection
-        title="Categories"
+        title={t('settings.openagent.group.categories')}
         kind="category"
         items={knownCategories}
         draft={draft}
@@ -1214,7 +1233,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       />
 
       <OpenAgentGroupSection
-        title="Custom / Unknown"
+        title={t('settings.openagent.group.customUnknown')}
         kind="agent"
         items={customAgents}
         draft={draft}
@@ -1224,7 +1243,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       />
 
       <OpenAgentGroupSection
-        title="Custom Categories"
+        title={t('settings.openagent.group.customCategories')}
         kind="category"
         items={customCategories}
         draft={draft}
@@ -1235,7 +1254,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
 
       {!isLoading && agentItems.length === 0 && categoryItems.length === 0 ? (
         <div className="rounded-lg border border-border/70 px-4 py-10 text-center typography-ui text-muted-foreground">
-          没有读取到 Oh My OpenAgent 配置项。
+          {t('settings.openagent.empty.noConfigItems')}
         </div>
       ) : null}
 

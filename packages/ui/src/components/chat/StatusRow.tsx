@@ -22,7 +22,7 @@ import { createTodoSignature, useTodosPersistStore } from "@/stores/useTodosPers
 import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useI18n } from "@/lib/i18n";
+import { useI18n, type I18nKey } from "@/lib/i18n";
 
 const STATUS_ROW_CONTAINER_STYLE = { containerType: "inline-size" as const, containerName: "status-row" };
 
@@ -53,14 +53,14 @@ const priorityIcon: Record<TodoPriority, React.ReactNode> = {
   low: <RiArrowDownSLine className="h-3.5 w-3.5" aria-hidden="true" />,
 };
 
-const statusLabelKey: Record<TodoStatus, string> = {
+const statusLabelKey: Record<TodoStatus, I18nKey> = {
   in_progress: "chat.statusRow.todo.status.inProgress",
   pending: "chat.statusRow.todo.status.pending",
   completed: "chat.statusRow.todo.status.completed",
   cancelled: "chat.statusRow.todo.status.cancelled",
 };
 
-const priorityLabelKey: Record<TodoPriority, string> = {
+const priorityLabelKey: Record<TodoPriority, I18nKey> = {
   high: "chat.statusRow.todo.priority.high",
   medium: "chat.statusRow.todo.priority.medium",
   low: "chat.statusRow.todo.priority.low",
@@ -92,7 +92,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo }) => {
           <span className="flex-shrink-0">{statusIcon}</span>
         </TooltipTrigger>
         <TooltipContent side="left" sideOffset={6}>
-          {t(statusKey as never)}
+          {t(statusKey)}
         </TooltipContent>
       </Tooltip>
       <span
@@ -115,7 +115,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo }) => {
           </span>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={6}>
-          {t(priorityKey as never)}
+          {t(priorityKey)}
         </TooltipContent>
       </Tooltip>
     </div>
@@ -383,10 +383,10 @@ export const StatusRow: React.FC<StatusRowProps> = ({
                   type="button"
                   onClick={clearCurrentSessionTodos}
                   className="typography-meta flex-shrink-0 rounded-md px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-[var(--interactive-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                  aria-label={t('chat.statusRow.todo.clearAria' as never)}
-                  title={t('chat.statusRow.todo.clearAria' as never)}
+                  aria-label={t('chat.statusRow.todo.clearAria')}
+                  title={t('chat.statusRow.todo.clearAria')}
                 >
-                  {t('chat.statusRow.todo.clear' as never)}
+                  {t('chat.statusRow.todo.clear')}
                 </button>
               </div>
 

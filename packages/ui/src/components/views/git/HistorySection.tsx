@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { HistoryCommitRow } from './HistoryCommitRow';
 import type { GitLogEntry, CommitFileEntry } from '@/lib/api/types';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { assignLanes } from './gitGraph';
 import type { LanedCommit } from './gitGraph';
 import { Icon } from '@/components/icon/Icon';
@@ -25,7 +25,7 @@ const LOG_SIZE_OPTIONS = [
   { labelKey: 'gitView.history.logSize25', value: 25 },
   { labelKey: 'gitView.history.logSize50', value: 50 },
   { labelKey: 'gitView.history.logSize100', value: 100 },
-];
+] satisfies Array<{ labelKey: I18nKey; value: number }>;
 
 interface HistorySectionProps {
   mode?: 'history' | 'graph';
@@ -237,7 +237,7 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                 <SelectContent>
                   {LOG_SIZE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={String(option.value)}>
-                      {t(option.labelKey as never)}
+                      {t(option.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>

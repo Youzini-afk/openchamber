@@ -100,7 +100,17 @@ const CUSTOM_PROVIDER_API_TYPES: CustomProviderApiTypeOption[] = [
 ];
 
 const CUSTOM_PROVIDER_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+type CustomProviderReasoningEffort = typeof CUSTOM_PROVIDER_REASONING_EFFORTS[number];
 const CUSTOM_PROVIDER_REASONING_DEFAULT_VALUE = '__default__';
+const CUSTOM_PROVIDER_REASONING_EFFORT_LABEL_KEYS: Record<CustomProviderReasoningEffort, I18nKey> = {
+  none: 'settings.providers.page.custom.reasoningEffort.none',
+  minimal: 'settings.providers.page.custom.reasoningEffort.minimal',
+  low: 'settings.providers.page.custom.reasoningEffort.low',
+  medium: 'settings.providers.page.custom.reasoningEffort.medium',
+  high: 'settings.providers.page.custom.reasoningEffort.high',
+  xhigh: 'settings.providers.page.custom.reasoningEffort.xhigh',
+  max: 'settings.providers.page.custom.reasoningEffort.max',
+};
 
 const isCustomProviderApiType = (value: string): value is CustomProviderApiType =>
   CUSTOM_PROVIDER_API_TYPES.some((option) => option.value === value);
@@ -1431,7 +1441,7 @@ export const ProvidersPage: React.FC = () => {
                       </SelectItem>
                       {CUSTOM_PROVIDER_REASONING_EFFORTS.map((effort) => (
                         <SelectItem key={effort} value={effort}>
-                          {t(`settings.providers.page.custom.reasoningEffort.${effort}` as I18nKey)}
+                          {t(CUSTOM_PROVIDER_REASONING_EFFORT_LABEL_KEYS[effort])}
                         </SelectItem>
                       ))}
                     </SelectContent>

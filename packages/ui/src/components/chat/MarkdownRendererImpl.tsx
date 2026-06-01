@@ -768,6 +768,7 @@ const MarkdownCodeBlock: React.FC<{
   language: string;
   syntaxTheme: { [key: string]: React.CSSProperties };
 }> = ({ code, language, syntaxTheme }) => {
+  const { t } = useI18n();
   const [copied, setCopied] = React.useState(false);
   const [highlight, setHighlight] = React.useState(true);
   const [viewMode, setViewMode] = React.useState<'code' | 'preview'>('code');
@@ -834,9 +835,9 @@ const MarkdownCodeBlock: React.FC<{
               type="button"
               onClick={() => setViewMode((mode) => (mode === 'preview' ? 'code' : 'preview'))}
               className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-              title={viewMode === 'preview' ? 'Show code' : 'Preview'}
+              title={viewMode === 'preview' ? t('markdownRenderer.code.actions.showCode') : t('markdownRenderer.code.actions.preview')}
               aria-pressed={viewMode === 'preview'}
-              aria-label={viewMode === 'preview' ? 'Show code' : 'Preview HTML'}
+              aria-label={viewMode === 'preview' ? t('markdownRenderer.code.actions.showCode') : t('markdownRenderer.code.actions.previewHtml')}
             >
               {viewMode === 'preview' ? <RiCodeLine className="size-3.5" /> : <RiEyeLine className="size-3.5" />}
             </button>
@@ -846,8 +847,8 @@ const MarkdownCodeBlock: React.FC<{
               type="button"
               onClick={handleDownload}
               className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-              title="Download HTML"
-              aria-label="Download HTML"
+              title={t('markdownRenderer.code.actions.downloadHtml')}
+              aria-label={t('markdownRenderer.code.actions.downloadHtml')}
             >
               <RiDownloadLine className="size-3.5" />
             </button>
@@ -856,8 +857,8 @@ const MarkdownCodeBlock: React.FC<{
             type="button"
             onClick={() => { void handleCopy(); }}
             className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-            title={copied ? 'Copied' : 'Copy code'}
-            aria-label={copied ? 'Copied' : 'Copy code'}
+            title={copied ? t('markdownRenderer.code.actions.copied') : t('markdownRenderer.code.actions.copyCode')}
+            aria-label={copied ? t('markdownRenderer.code.actions.copied') : t('markdownRenderer.code.actions.copyCode')}
           >
             {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
           </button>
@@ -867,7 +868,7 @@ const MarkdownCodeBlock: React.FC<{
         <div className="h-[320px] md:h-[420px] bg-background">
           <iframe
             srcDoc={code}
-            title="HTML preview"
+            title={t('markdownRenderer.code.previewTitle')}
             className="h-full w-full border-0"
             sandbox="allow-scripts allow-forms"
           />
@@ -903,8 +904,8 @@ const buildMarkdownComponents = ({
 }: {
   syntaxTheme: { [key: string]: React.CSSProperties };
   onPreviewLoopback?: (url: string) => void;
-  previewLabel?: string;
-  previewTitle?: string;
+  previewLabel: string;
+  previewTitle: string;
 }): Components => ({
   table({ children, ...props }) {
     return <TableWrapper className={props.className}>{children}</TableWrapper>;
@@ -1002,12 +1003,12 @@ const buildMarkdownComponents = ({
               onPreviewLoopback(targetHref);
             }}
             className="ml-1 inline-flex h-5 items-center gap-0.5 rounded border border-[var(--border)] bg-[var(--surface-background)] px-1.5 align-middle text-[11px] leading-none text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
-            aria-label={previewTitle ?? previewLabel ?? 'Open preview pane'}
-            title={previewTitle ?? previewLabel ?? 'Open preview pane'}
+            aria-label={previewTitle}
+            title={previewTitle}
             data-loopback-preview-trigger="true"
           >
             <RiEyeLine className="size-3" aria-hidden="true" />
-            <span className="font-medium">{previewLabel ?? 'Preview'}</span>
+            <span className="font-medium">{previewLabel}</span>
           </button>
         ) : null}
       </>
@@ -1391,12 +1392,14 @@ const useFileReferenceInteractions = ({
   editor,
   preferRuntimeEditor,
   enabled,
+  openFileTitle,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
   enabled: boolean;
+  openFileTitle: string;
 }) => {
   const annotationDebounceRef = React.useRef<number | null>(null);
 
@@ -1412,7 +1415,7 @@ const useFileReferenceInteractions = ({
       candidate.removeAttribute('data-openchamber-file-link');
       candidate.removeAttribute('data-openchamber-file-ref');
       candidate.removeAttribute('data-openchamber-file-path');
-      if (candidate.getAttribute('title') === 'Open file') {
+      if (candidate.getAttribute('title') === openFileTitle || candidate.getAttribute('title') === 'Open file') {
         candidate.removeAttribute('title');
       }
       if (candidate.tagName.toLowerCase() !== 'a') {
@@ -1466,7 +1469,7 @@ const useFileReferenceInteractions = ({
           candidate.setAttribute('data-openchamber-file-link', 'true');
           candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
           candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          candidate.setAttribute('title', 'Open file');
+          candidate.setAttribute('title', openFileTitle);
           if (candidate.tagName.toLowerCase() !== 'a') {
             candidate.setAttribute('role', 'button');
             candidate.setAttribute('tabindex', '0');
@@ -1578,7 +1581,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled]);
+  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled, openFileTitle]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1691,6 +1694,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const { editor, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const { t } = useI18n();
   const mermaidBlocks = React.useMemo(() => extractMermaidBlocks(content), [content]);
   useMermaidInlineInteractions({ containerRef, mermaidBlocks, onShowPopup });
   useFileReferenceInteractions({
@@ -1699,10 +1703,10 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     enabled: enableFileReferences && !isStreaming,
+    openFileTitle: t('markdownRenderer.fileReference.openFileTitle'),
   });
   useExternalLinkInteractions({ containerRef });
   const openContextPreview = useUIStore((state) => state.openContextPreview);
-  const { t } = useI18n();
   const handlePreviewLoopback = React.useCallback((url: string) => {
     if (!effectiveDirectory) return;
     openContextPreview(effectiveDirectory, url);
@@ -1783,6 +1787,9 @@ const SimpleMarkdownRendererImpl: React.FC<{
   enableFileReferences = true,
 }) => {
   const { editor, runtime } = useRuntimeAPIs();
+  const { t } = useI18n();
+  const previewLabel = t('terminalView.preview.open');
+  const previewTitle = t('terminalView.preview.openTitle');
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
     [content, stripFrontmatter],
@@ -1803,10 +1810,11 @@ const SimpleMarkdownRendererImpl: React.FC<{
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     enabled: enableFileReferences,
+    openFileTitle: t('markdownRenderer.fileReference.openFileTitle'),
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
   const syntaxTheme = React.useMemo(() => generateSyntaxTheme(currentTheme), [currentTheme]);
-  const markdownComponents = React.useMemo(() => buildMarkdownComponents({ syntaxTheme }), [syntaxTheme]);
+  const markdownComponents = React.useMemo(() => buildMarkdownComponents({ syntaxTheme, previewLabel, previewTitle }), [syntaxTheme, previewLabel, previewTitle]);
   const markdownBlocks = useStableMarkdownBlocks(renderedContent, false, `simple:${variant}`);
 
   const markdownClassName = variant === 'tool'

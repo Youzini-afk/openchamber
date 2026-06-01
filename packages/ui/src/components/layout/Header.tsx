@@ -2511,13 +2511,13 @@ export const Header: React.FC<HeaderProps> = ({
                       'relative',
                       mobileActiveHeaderItem === 'git' && 'bg-interactive-selection text-interactive-selection-foreground'
                     )}
-                    aria-label={rightDrawerOpen ? 'Close git sidebar' : 'Open git sidebar'}
+                    aria-label={rightDrawerOpen ? t('header.actions.closeGitSidebar') : t('header.actions.openGitSidebar')}
                   >
                     <Icon name="layout-right" className="h-5 w-5" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{rightDrawerOpen ? 'Close git sidebar' : 'Open git sidebar'}</p>
+                  <p>{rightDrawerOpen ? t('header.actions.closeGitSidebar') : t('header.actions.openGitSidebar')}</p>
                 </TooltipContent>
               </Tooltip>
             ) : null}

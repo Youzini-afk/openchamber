@@ -35,6 +35,7 @@ import { useAgentOrchestrationStore } from '@/stores/useAgentOrchestrationStore'
 import { useOpenAgentConfigStore } from '@/stores/useOpenAgentConfigStore';
 import { useSlimConfigStore } from '@/stores/useSlimConfigStore';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 import {
   buildSlimSavePayload,
   countFallbackChains,
@@ -122,6 +123,7 @@ function CompactModelEditor({
   model: string;
   onChange: (model: string) => void;
 }) {
+  const { t } = useI18n();
   const parsed = parseModelRef(model);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -129,7 +131,7 @@ function CompactModelEditor({
         providerId={parsed.providerId}
         modelId={parsed.modelId}
         onChange={(providerId, modelId) => onChange(joinModelRef(providerId, modelId))}
-        placeholder="继承默认"
+        placeholder={t('settings.agentOrchestration.model.inheritDefault')}
         className="h-7 min-w-[130px] max-w-[230px] flex-1"
       />
       <Input
@@ -164,6 +166,7 @@ function DelimitedListInput({
   title?: string;
   className?: string;
 }) {
+  const { t } = useI18n();
   const formattedValue = React.useMemo(() => formatCommaList(value), [value]);
   const [isFocused, setIsFocused] = React.useState(false);
   const [draftValue, setDraftValue] = React.useState(formattedValue);
@@ -193,7 +196,7 @@ function DelimitedListInput({
         setDraftValue(formatCommaList(parseCommaList(draftValue)));
       }}
       placeholder={placeholder}
-      title={title ?? '用逗号、分号或换行分隔'}
+      title={title ?? t('settings.agentOrchestration.list.delimitedTitle')}
       className={className}
     />
   );
@@ -209,7 +212,7 @@ function parseJsonObject(value: string): Record<string, unknown> | undefined {
   if (!trimmed) return undefined;
   const parsed = JSON.parse(trimmed);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('请输入 JSON object');
+    throw new Error('JSON object required');
   }
   return parsed as Record<string, unknown>;
 }
@@ -229,6 +232,7 @@ function ModeButton({
   disabled: boolean;
   onSelect: (mode: Exclude<SlimMode, 'conflict'>) => void;
 }) {
+  const { t } = useI18n();
   const selected = current === mode;
   return (
     <button
@@ -243,7 +247,7 @@ function ModeButton({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="typography-ui-label font-semibold">{title}</span>
-        {selected ? <Badge className="bg-primary text-primary-foreground">当前</Badge> : null}
+        {selected ? <Badge className="bg-primary text-primary-foreground">{t('settings.agentOrchestration.badge.current')}</Badge> : null}
       </div>
       <div className="mt-1 typography-micro text-muted-foreground">{description}</div>
     </button>
@@ -261,12 +265,13 @@ function JsonPreviewDialog({
   draft: SlimRawConfig;
   expectedMtimeMs: number | null;
 }) {
+  const { t } = useI18n();
   const preview = React.useMemo(() => JSON.stringify(buildSlimSavePayload(expectedMtimeMs, draft), null, 2), [draft, expectedMtimeMs]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Slim JSON 预览</DialogTitle>
+          <DialogTitle>{t('settings.agentOrchestration.slim.jsonPreviewTitle')}</DialogTitle>
         </DialogHeader>
         <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border/70 bg-[var(--surface-elevated)] p-3 font-mono typography-meta text-foreground">
           {preview}
@@ -283,6 +288,7 @@ function AgentAdvancedDialog({
   agentId: string | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const draft = useSlimConfigStore((state) => state.draft);
   const updatePresetAgent = useSlimConfigStore((state) => state.updatePresetAgent);
   const agent = agentId ? getPresetAgent(draft, agentId) : {};
@@ -296,9 +302,9 @@ function AgentAdvancedDialog({
     if (!agentId) return;
     try {
       updatePresetAgent(agentId, { options: parseJsonObject(optionsText) });
-      toast.success('options 已更新');
+      toast.success(t('settings.agentOrchestration.toast.optionsUpdated'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'JSON 解析失败');
+      toast.error(error instanceof Error ? error.message : t('settings.agentOrchestration.toast.jsonParseFailed'));
     }
   };
 
@@ -306,26 +312,26 @@ function AgentAdvancedDialog({
     <Dialog open={Boolean(agentId)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{agentId} 高级设置</DialogTitle>
+          <DialogTitle>{t('settings.agentOrchestration.agentDialog.title', { agentId: agentId ?? '' })}</DialogTitle>
         </DialogHeader>
         {agentId ? (
           <div className="grid gap-3">
-            <Field label="Display Name">
+            <Field label={t('settings.agentOrchestration.field.displayName')}>
               <Input
                 value={typeof agent.displayName === 'string' ? agent.displayName : ''}
                 onChange={(event) => updatePresetAgent(agentId, { displayName: event.target.value || undefined })}
-                placeholder="继承"
+                placeholder={t('settings.agentOrchestration.model.inherit')}
               />
             </Field>
-            <Field label="自定义 prompt">
+            <Field label={t('settings.agentOrchestration.agentDialog.customPrompt')}>
               <Textarea
                 value={typeof agent.prompt === 'string' ? agent.prompt : ''}
                 onChange={(event) => updatePresetAgent(agentId, { prompt: event.target.value || undefined })}
-                placeholder="仅 custom agent 建议使用"
+                placeholder={t('settings.agentOrchestration.agentDialog.customPromptPlaceholder')}
                 className="min-h-[88px]"
               />
             </Field>
-            <Field label="Orchestrator Prompt">
+            <Field label={t('settings.agentOrchestration.field.orchestratorPrompt')}>
               <Textarea
                 value={typeof agent.orchestratorPrompt === 'string' ? agent.orchestratorPrompt : ''}
                 onChange={(event) => updatePresetAgent(agentId, { orchestratorPrompt: event.target.value || undefined })}
@@ -344,8 +350,8 @@ function AgentAdvancedDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>关闭</Button>
-          <Button type="button" onClick={handleSaveOptions} disabled={!agentId}>保存 options</Button>
+          <Button type="button" variant="outline" onClick={onClose}>{t('settings.agentOrchestration.actions.close')}</Button>
+          <Button type="button" onClick={handleSaveOptions} disabled={!agentId}>{t('settings.agentOrchestration.actions.saveOptions')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -359,6 +365,7 @@ function SlimAgentRow({
   item: SlimAgentItem;
   onAdvanced: (agentId: string) => void;
 }) {
+  const { t } = useI18n();
   const draft = useSlimConfigStore((state) => state.draft);
   const updatePresetAgent = useSlimConfigStore((state) => state.updatePresetAgent);
   const setAgentDisabled = useSlimConfigStore((state) => state.setAgentDisabled);
@@ -373,13 +380,13 @@ function SlimAgentRow({
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="truncate typography-ui-label font-medium text-foreground">{item.label}</span>
-          {disabled ? <Badge className="bg-muted text-muted-foreground">禁用</Badge> : null}
-          {model ? <Badge className="bg-primary/10 text-primary">已覆盖</Badge> : null}
-          {item.projectOverride ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
+          {disabled ? <Badge className="bg-muted text-muted-foreground">{t('settings.agentOrchestration.badge.disabled')}</Badge> : null}
+          {model ? <Badge className="bg-primary/10 text-primary">{t('settings.agentOrchestration.badge.overridden')}</Badge> : null}
+          {item.projectOverride ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.agentOrchestration.badge.projectOverride')}</Badge> : null}
         </div>
         <div className="typography-micro text-muted-foreground">{item.description}</div>
         <div className="truncate font-mono typography-micro text-muted-foreground/80">
-          默认：{item.defaultModel ? `${item.defaultModel}${item.defaultVariant ? ` · ${item.defaultVariant}` : ''}` : '插件默认'}
+          {t('settings.agentOrchestration.agent.defaultPrefix')}: {item.defaultModel ? `${item.defaultModel}${item.defaultVariant ? ` · ${item.defaultVariant}` : ''}` : t('settings.agentOrchestration.model.pluginDefault')}
         </div>
       </div>
       <CompactModelEditor model={model} onChange={(nextModel) => updatePresetAgent(item.id, { model: nextModel || undefined })} />
@@ -392,7 +399,7 @@ function SlimAgentRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={INHERIT_VALUE}>继承</SelectItem>
+            <SelectItem value={INHERIT_VALUE}>{t('settings.agentOrchestration.model.inherit')}</SelectItem>
             {VARIANT_OPTIONS.map((variant) => <SelectItem key={variant} value={variant}>{variant}</SelectItem>)}
           </SelectContent>
         </Select>
@@ -411,22 +418,23 @@ function SlimAgentRow({
         <DelimitedListInput
           value={agent.mcps}
           onChange={(value) => updatePresetAgent(item.id, { mcps: value })}
-          placeholder="mcps，例如：*, !context7"
-          title="用逗号、分号或换行分隔；例如：*, !context7"
+          placeholder="mcps, e.g. *, !context7"
+          title={t('settings.agentOrchestration.list.delimitedExampleTitle')}
           className="h-7 min-w-[100px] flex-1"
         />
         {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">fallback {fallbackCount}</Badge> : null}
         <label className="flex h-7 items-center gap-1.5 rounded border border-border/70 px-2 typography-micro">
           <Checkbox checked={disabled} onChange={(checked) => setAgentDisabled(item.id, checked)} disabled={item.id === 'orchestrator'} />
-          禁用
+          {t('settings.agentOrchestration.actions.disable')}
         </label>
-        <Button type="button" size="xs" variant="outline" onClick={() => onAdvanced(item.id)}>高级</Button>
+        <Button type="button" size="xs" variant="outline" onClick={() => onAdvanced(item.id)}>{t('settings.agentOrchestration.actions.advanced')}</Button>
       </div>
     </div>
   );
 }
 
 function SlimAgentsSection() {
+  const { t } = useI18n();
   const config = useSlimConfigStore((state) => state.config);
   const draft = useSlimConfigStore((state) => state.draft);
   const [advancedAgent, setAdvancedAgent] = React.useState<string | null>(null);
@@ -451,7 +459,7 @@ function SlimAgentsSection() {
     .map((id) => ({
       id,
       label: id,
-      description: 'Custom / Unknown',
+      description: t('settings.agentOrchestration.group.customUnknown'),
       group: 'custom',
       defaultModel: null,
       defaultVariant: null,
@@ -465,8 +473,8 @@ function SlimAgentsSection() {
   return (
     <section className="overflow-hidden rounded-lg border border-border/70 bg-background">
       <div className="border-b border-border/70 px-3 py-2">
-        <h3 className="typography-ui-label font-semibold text-foreground">Agent 路由</h3>
-        <p className="typography-micro text-muted-foreground">常用模型、强度、skills/mcps 和启停。</p>
+        <h3 className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.slim.agentRoutingTitle')}</h3>
+        <p className="typography-micro text-muted-foreground">{t('settings.agentOrchestration.slim.agentRoutingDescription')}</p>
       </div>
       {allItems.map((item) => <SlimAgentRow key={item.id} item={item} onAdvanced={setAdvancedAgent} />)}
       <AgentAdvancedDialog agentId={advancedAgent} onClose={() => setAdvancedAgent(null)} />
@@ -475,32 +483,33 @@ function SlimAgentsSection() {
 }
 
 function FallbackSection() {
+  const { t } = useI18n();
   const draft = useSlimConfigStore((state) => state.draft);
   const updateDraftPath = useSlimConfigStore((state) => state.updateDraftPath);
   const fallback = (draft.fallback ?? {}) as Record<string, unknown>;
   const chains = (fallback.chains && typeof fallback.chains === 'object' && !Array.isArray(fallback.chains) ? fallback.chains : {}) as Record<string, unknown>;
 
   return (
-    <Section title="Fallback" description="模型失败、空响应或超时时的兜底链。">
+    <Section title={t('settings.agentOrchestration.fallback.title')} description={t('settings.agentOrchestration.fallback.description')}>
       <div className="grid gap-3 lg:grid-cols-4">
         <label className="flex h-9 items-center gap-2 rounded-md border border-border/70 px-2">
           <Checkbox checked={fallback.enabled !== false} onChange={(checked) => updateDraftPath(['fallback', 'enabled'], checked)} />
-          <span className="typography-ui">启用 fallback</span>
+          <span className="typography-ui">{t('settings.agentOrchestration.fallback.enable')}</span>
         </label>
-        <Field label="Timeout ms">
+        <Field label={t('settings.agentOrchestration.field.timeoutMs')}>
           <Input value={fallback.timeoutMs == null ? '' : String(fallback.timeoutMs)} onChange={(event) => updateDraftPath(['fallback', 'timeoutMs'], normalizeNumberInput(event.target.value))} placeholder="15000" />
         </Field>
-        <Field label="Retry delay ms">
+        <Field label={t('settings.agentOrchestration.field.retryDelayMs')}>
           <Input value={fallback.retryDelayMs == null ? '' : String(fallback.retryDelayMs)} onChange={(event) => updateDraftPath(['fallback', 'retryDelayMs'], normalizeNumberInput(event.target.value))} placeholder="500" />
         </Field>
         <label className="flex h-9 items-center gap-2 rounded-md border border-border/70 px-2">
           <Checkbox checked={fallback.retry_on_empty !== false} onChange={(checked) => updateDraftPath(['fallback', 'retry_on_empty'], checked)} />
-          <span className="typography-ui">空响应重试</span>
+          <span className="typography-ui">{t('settings.agentOrchestration.fallback.retryEmpty')}</span>
         </label>
       </div>
       <div className="mt-3 grid gap-2 lg:grid-cols-2">
         {SLIM_AGENT_DEFINITIONS.slice(0, 6).map((agent) => (
-          <Field key={agent.id} label={`${agent.label} chain`}>
+          <Field key={agent.id} label={t('settings.agentOrchestration.field.agentChain', { agent: agent.label })}>
             <Input
               value={Array.isArray(chains[agent.id]) ? (chains[agent.id] as string[]).join(', ') : ''}
               onChange={(event) => updateDraftPath(['fallback', 'chains', agent.id], parseCommaList(event.target.value))}
@@ -515,18 +524,19 @@ function FallbackSection() {
 }
 
 function RuntimeAdvancedSection() {
+  const { t } = useI18n();
   const draft = useSlimConfigStore((state) => state.draft);
   const updateDraftPath = useSlimConfigStore((state) => state.updateDraftPath);
   const multiplexer = (draft.multiplexer ?? {}) as Record<string, unknown>;
 
   return (
-    <Section title="运行时高级" description="Multiplexer、自动更新、MCP 禁用和会话续跑。">
+    <Section title={t('settings.agentOrchestration.runtime.title')} description={t('settings.agentOrchestration.runtime.description')}>
       <div className="grid gap-3 lg:grid-cols-4">
         <label className="flex h-9 items-center gap-2 rounded-md border border-border/70 px-2">
           <Checkbox checked={draft.autoUpdate === true} onChange={(checked) => updateDraftPath(['autoUpdate'], checked)} />
           <span className="typography-ui">autoUpdate</span>
         </label>
-        <Field label="Multiplexer">
+        <Field label={t('settings.agentOrchestration.field.multiplexer')}>
           <Select value={typeof multiplexer.type === 'string' ? multiplexer.type : 'none'} onValueChange={(value) => updateDraftPath(['multiplexer', 'type'], normalizeMultiplexerType(value))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -534,7 +544,7 @@ function RuntimeAdvancedSection() {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Layout">
+        <Field label={t('settings.agentOrchestration.field.layout')}>
           <Select value={typeof multiplexer.layout === 'string' ? multiplexer.layout : 'main-vertical'} onValueChange={(value) => updateDraftPath(['multiplexer', 'layout'], normalizeMultiplexerLayout(value))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -542,7 +552,7 @@ function RuntimeAdvancedSection() {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Main pane %">
+        <Field label={t('settings.agentOrchestration.field.mainPanePercent')}>
           <Input value={multiplexer.main_pane_size == null ? '' : String(multiplexer.main_pane_size)} onChange={(event) => updateDraftPath(['multiplexer', 'main_pane_size'], normalizeNumberInput(event.target.value, 'mainPane'))} placeholder="60" />
         </Field>
         <Field label="disabled_mcps">
@@ -556,6 +566,7 @@ function RuntimeAdvancedSection() {
 }
 
 function JsonObjectField({ label, value, path }: { label: string; value: unknown; path: Array<string | number> }) {
+  const { t } = useI18n();
   const updateDraftPath = useSlimConfigStore((state) => state.updateDraftPath);
   const [text, setText] = React.useState(stringifyJson(value));
   React.useEffect(() => setText(stringifyJson(value)), [value]);
@@ -570,13 +581,13 @@ function JsonObjectField({ label, value, path }: { label: string; value: unknown
           onClick={() => {
             try {
               updateDraftPath(path, parseJsonObject(text));
-              toast.success(`${label} 已更新`);
+              toast.success(t('settings.agentOrchestration.toast.jsonUpdated', { label }));
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : 'JSON 解析失败');
+              toast.error(error instanceof Error ? error.message : t('settings.agentOrchestration.toast.jsonParseFailed'));
             }
           }}
         >
-          应用 JSON
+          {t('settings.agentOrchestration.actions.applyJson')}
         </Button>
       </div>
     </Field>
@@ -584,9 +595,10 @@ function JsonObjectField({ label, value, path }: { label: string; value: unknown
 }
 
 function FeatureAdvancedSection() {
+  const { t } = useI18n();
   const draft = useSlimConfigStore((state) => state.draft);
   return (
-    <Section title="Council / Divoom / Interview" description="低频能力收在这里，按需展开编辑。">
+    <Section title={t('settings.agentOrchestration.features.title')} description={t('settings.agentOrchestration.features.description')}>
       <div className="grid gap-3 lg:grid-cols-3">
         <JsonObjectField label="council" path={['council']} value={draft.council} />
         <JsonObjectField label="divoom" path={['divoom']} value={draft.divoom} />
@@ -597,6 +609,7 @@ function FeatureAdvancedSection() {
 }
 
 function SlimPanel() {
+  const { t } = useI18n();
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const config = useSlimConfigStore((state) => state.config);
   const draft = useSlimConfigStore((state) => state.draft);
@@ -622,19 +635,19 @@ function SlimPanel() {
   const handleSave = async () => {
     const result = await saveChanges();
     if (!result.ok) {
-      toast.error(result.conflict ? '配置已被外部修改，请重新加载后再保存' : result.message || 'Slim 配置保存失败');
+      toast.error(result.conflict ? t('settings.agentOrchestration.toast.conflict') : result.message || t('settings.agentOrchestration.toast.slimSaveFailed'));
       return;
     }
-    toast.success('Slim 配置已保存');
+    toast.success(t('settings.agentOrchestration.toast.slimSaved'));
   };
 
   const handleReload = async () => {
-    if (hasChanges && typeof window !== 'undefined' && !window.confirm('重新加载会丢弃未保存的更改，继续吗？')) return;
+    if (hasChanges && typeof window !== 'undefined' && !window.confirm(t('settings.agentOrchestration.confirm.reloadDiscard'))) return;
     const ok = await loadConfig({ force: true });
     if (ok) {
-      toast.success('Slim 配置已重新加载');
+      toast.success(t('settings.agentOrchestration.toast.slimReloaded'));
     } else {
-      toast.error('Slim 配置加载失败');
+      toast.error(t('settings.agentOrchestration.toast.slimLoadFailed'));
     }
   };
 
@@ -645,28 +658,28 @@ function SlimPanel() {
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={config?.plugin.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
-                {config?.plugin.enabled ? 'Slim 已启用' : 'Slim 未启用'}
+                {config?.plugin.enabled ? t('settings.agentOrchestration.badge.slimEnabled') : t('settings.agentOrchestration.badge.slimDisabled')}
               </Badge>
-              {config?.project.exists ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">项目覆盖</Badge> : null}
-              {hasChanges ? <Badge className="bg-primary/10 text-primary">有未保存更改</Badge> : null}
+              {config?.project.exists ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.agentOrchestration.badge.projectOverride')}</Badge> : null}
+              {hasChanges ? <Badge className="bg-primary/10 text-primary">{t('settings.agentOrchestration.badge.unsavedChanges')}</Badge> : null}
             </div>
-            <div className="break-all font-mono typography-micro text-muted-foreground">{config?.target.path ?? '正在读取配置路径...'}</div>
-            {config?.project.exists ? <div className="break-all typography-micro text-[var(--status-warning)]">当前项目存在覆盖：{config.project.path}</div> : null}
+            <div className="break-all font-mono typography-micro text-muted-foreground">{config?.target.path ?? t('settings.agentOrchestration.state.readingConfigPath')}</div>
+            {config?.project.exists ? <div className="break-all typography-micro text-[var(--status-warning)]">{t('settings.agentOrchestration.project.overrideAt', { path: config.project.path })}</div> : null}
             {error ? <div className="typography-micro text-[var(--status-error)]">{error}</div> : null}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <Button type="button" size="xs" variant="outline" onClick={handleReload} disabled={isLoading || isSaving}>
               <RiRefreshLine className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
-              重新加载
+              {t('settings.agentOrchestration.actions.reload')}
             </Button>
             <Button type="button" size="xs" variant="outline" onClick={() => setPreviewOpen(true)}>
               <RiCodeLine className="h-3.5 w-3.5" />
-              JSON 预览
+              {t('settings.agentOrchestration.actions.jsonPreview')}
             </Button>
-            <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>放弃更改</Button>
+            <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>{t('settings.agentOrchestration.actions.discardChanges')}</Button>
             <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving}>
               {isSaving ? <RiRefreshLine className="h-3.5 w-3.5 animate-spin" /> : <RiSaveLine className="h-3.5 w-3.5" />}
-              {isSaving ? '保存中' : '保存更改'}
+              {isSaving ? t('settings.agentOrchestration.actions.saving') : t('settings.agentOrchestration.actions.saveChanges')}
             </Button>
           </div>
         </div>
@@ -674,7 +687,7 @@ function SlimPanel() {
 
       <section className="rounded-lg border border-border/70 bg-background p-3">
         <div className="grid gap-3 lg:grid-cols-[minmax(180px,260px)_1fr] lg:items-end">
-          <Field label="Active preset">
+          <Field label={t('settings.agentOrchestration.field.activePreset')}>
             <Select value={preset} onValueChange={(value) => updateDraftPath(['preset'], value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -682,9 +695,9 @@ function SlimPanel() {
               </SelectContent>
             </Select>
           </Field>
-          <Field label="新 preset 名称">
+          <Field label={t('settings.agentOrchestration.preset.newName')}>
             <Input
-              placeholder="输入后回车创建/切换"
+              placeholder={t('settings.agentOrchestration.preset.newPlaceholder')}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter') return;
                 const value = event.currentTarget.value.trim();
@@ -708,6 +721,7 @@ function SlimPanel() {
 }
 
 export const AgentOrchestrationPage: React.FC = () => {
+  const { t } = useI18n();
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const config = useAgentOrchestrationStore((state) => state.config);
   const isLoading = useAgentOrchestrationStore((state) => state.isLoading);
@@ -730,41 +744,41 @@ export const AgentOrchestrationPage: React.FC = () => {
     if (mode === effectiveMode) return;
     const result = await setMode(mode);
     if (!result.ok) {
-      toast.error(result.conflict ? 'OpenCode 配置已被外部修改，请重新加载' : result.message || '模式切换失败');
+      toast.error(result.conflict ? t('settings.agentOrchestration.toast.openCodeConflict') : result.message || t('settings.agentOrchestration.toast.modeSwitchFailed'));
       return;
     }
-    toast.success('Agent 编排模式已更新');
+    toast.success(t('settings.agentOrchestration.toast.modeUpdated'));
   };
 
   return (
     <SettingsPageLayout className="max-w-6xl space-y-4">
       <div className="space-y-1">
-        <h2 className="typography-ui-header font-semibold text-foreground">Agent 编排</h2>
-        <p className="typography-ui text-muted-foreground">在原版 OpenCode、轻量 Slim 和重型 OMO 之间切换。</p>
+        <h2 className="typography-ui-header font-semibold text-foreground">{t('settings.page.openagent.title')}</h2>
+        <p className="typography-ui text-muted-foreground">{t('settings.agentOrchestration.description')}</p>
       </div>
 
       <div className="rounded-lg border border-border/70 bg-[var(--surface-elevated)] p-3">
         <div className="grid gap-2 lg:grid-cols-3">
-          <ModeButton mode="native" current={effectiveMode} title="原版 OpenCode" description="不加载额外编排插件。" disabled={isSavingMode} onSelect={handleModeSelect} />
-          <ModeButton mode="slim" current={effectiveMode} title="Oh My OpenCode Slim" description="少量 specialist，适合日常任务。" disabled={isSavingMode} onSelect={handleModeSelect} />
-          <ModeButton mode="omo" current={effectiveMode} title="Oh My OpenAgent / OMO" description="完整多 agent 编排，适合复杂任务。" disabled={isSavingMode} onSelect={handleModeSelect} />
+          <ModeButton mode="native" current={effectiveMode} title={t('settings.agentOrchestration.mode.native.title')} description={t('settings.agentOrchestration.mode.native.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
+          <ModeButton mode="slim" current={effectiveMode} title="Oh My OpenCode Slim" description={t('settings.agentOrchestration.mode.slim.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
+          <ModeButton mode="omo" current={effectiveMode} title="Oh My OpenAgent / OMO" description={t('settings.agentOrchestration.mode.omo.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
         </div>
         <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge className={effectiveMode === 'conflict' ? 'bg-[var(--status-error)]/10 text-[var(--status-error)]' : 'bg-primary/10 text-primary'}>
-                当前：{effectiveMode}
+                {t('settings.agentOrchestration.badge.currentMode', { mode: effectiveMode })}
               </Badge>
-              {isLoading ? <Badge className="bg-muted text-muted-foreground">加载中</Badge> : null}
+              {isLoading ? <Badge className="bg-muted text-muted-foreground">{t('settings.agentOrchestration.badge.loading')}</Badge> : null}
             </div>
             <div className="typography-micro text-muted-foreground">
-              此页只管理编排模式和插件配置文件；插件包安装与更新请在运行环境中处理。
+              {t('settings.agentOrchestration.scopeDescription')}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
-              OpenCode 配置：{config?.mode.configPaths.join(' | ') || '未读取'}
+              {t('settings.agentOrchestration.openCodeConfigPrefix')}: {config?.mode.configPaths.join(' | ') || t('settings.agentOrchestration.state.notRead')}
             </div>
             {config?.mode.tuiConfigPath ? (
-              <div className="break-all font-mono typography-micro text-muted-foreground">TUI 配置：{config.mode.tuiConfigPath}</div>
+              <div className="break-all font-mono typography-micro text-muted-foreground">{t('settings.agentOrchestration.tuiConfigPrefix')}: {config.mode.tuiConfigPath}</div>
             ) : null}
             {config?.mode.conflicts.map((conflict) => (
               <div key={conflict} className="typography-micro text-[var(--status-error)]">{conflict}</div>
@@ -777,8 +791,8 @@ export const AgentOrchestrationPage: React.FC = () => {
       {effectiveMode === 'native' ? (
         <div className="rounded-lg border border-border/70 bg-background px-4 py-10 text-center">
           <RiSparklingLine className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-          <div className="typography-ui-label font-semibold text-foreground">正在使用原版 OpenCode</div>
-          <p className="mt-1 typography-ui text-muted-foreground">默认 agents 会由 OpenCode 自己提供；Slim/OMO 配置文件会保留，方便以后切回。</p>
+          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.nativeActive.title')}</div>
+          <p className="mt-1 typography-ui text-muted-foreground">{t('settings.agentOrchestration.nativeActive.description')}</p>
         </div>
       ) : null}
 
@@ -786,7 +800,7 @@ export const AgentOrchestrationPage: React.FC = () => {
       {effectiveMode === 'omo' ? <OpenAgentPage embedded /> : null}
       {effectiveMode === 'conflict' ? (
         <div className="rounded-lg border border-[var(--status-error)]/40 bg-[var(--status-error)]/5 px-4 py-8 text-center typography-ui text-[var(--status-error)]">
-          当前同时检测到 Slim 和 OMO。请选择一个模式，OpenChamber 会清理另一个插件条目。
+          {t('settings.agentOrchestration.conflict.description')}
         </div>
       ) : null}
     </SettingsPageLayout>

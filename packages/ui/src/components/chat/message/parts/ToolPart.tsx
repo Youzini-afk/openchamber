@@ -1124,7 +1124,7 @@ const TaskToolSummary: React.FC<{
         return (
             <div className="relative pr-2 pb-2 pt-2 space-y-2 pl-[1.4375rem]">
                 <div className="typography-meta text-muted-foreground/70">
-                    {isActive ? 'Waiting for subagent activity...' : 'No subagent session id on task metadata.'}
+                    {isActive ? t('chat.toolPart.subagent.waiting') : t('chat.toolPart.subagent.missingSessionId')}
                 </div>
             </div>
         );
@@ -1145,7 +1145,7 @@ const TaskToolSummary: React.FC<{
                 <ToolScrollableSection maxHeightClass={isExpanded ? 'max-h-[40vh]' : 'max-h-56'} disableHorizontal>
                     <div className="w-full min-w-0 space-y-1">
                         {hiddenCount > 0 ? (
-                            <div className="typography-micro text-muted-foreground/70">+{hiddenCount} more…</div>
+                            <div className="typography-micro text-muted-foreground/70">{t('chat.toolPart.subagent.moreHidden', { count: hiddenCount })}</div>
                         ) : null}
 
                         {visibleEntries.map((entry, idx) => {

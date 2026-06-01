@@ -133,6 +133,8 @@ describe('oh-my-opencode-slim config helpers', () => {
     const { readSlimConfig, saveSlimConfig } = await loadModule();
     const before = readSlimConfig();
     fs.writeFileSync(configPath, '{ "preset": "external" }\n');
+    const externalMtime = (before.target.mtimeMs ?? Date.now()) + 5000;
+    fs.utimesSync(configPath, externalMtime / 1000, externalMtime / 1000);
 
     expect(() => saveSlimConfig({
       expectedMtimeMs: before.target.mtimeMs,

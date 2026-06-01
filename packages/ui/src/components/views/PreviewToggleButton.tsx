@@ -4,6 +4,7 @@ import { RiEyeLine, RiEyeOffLine } from '@remixicon/react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/lib/i18n';
 
 export type PreviewToggleButtonProps = {
   /** Current mode - determines which icon is displayed */
@@ -22,9 +23,10 @@ export const PreviewToggleButton: React.FC<PreviewToggleButtonProps> = ({
   currentMode,
   onToggle,
 }) => {
+  const { t } = useI18n();
   const isPreview = currentMode === 'preview';
-  const ariaLabel = isPreview ? 'Switch to edit mode' : 'Switch to preview mode';
-  const tooltipText = isPreview ? 'Edit' : 'Preview';
+  const ariaLabel = isPreview ? t('previewToggle.switchToEdit') : t('previewToggle.switchToPreview');
+  const tooltipText = isPreview ? t('previewToggle.edit') : t('previewToggle.preview');
 
   return (
     <Tooltip>

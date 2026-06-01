@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import { createMobileSession } from '../api/mobileClient';
+import { t } from '../i18n';
 import { getAppVersion, getDevicePlatform } from '../notifications/push';
 import { createBridgeResponseScript, createInjectedBridge, handleBridgeMessage } from '../webview/bridge';
 import type { StoredMobileConfig } from '../types';
@@ -38,7 +39,7 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
         if (!cancelled) setWebUrl(url);
       })
       .catch((sessionError) => {
-        if (!cancelled) setError(sessionError instanceof Error ? sessionError.message : 'Failed to create mobile session');
+        if (!cancelled) setError(sessionError instanceof Error ? sessionError.message : t('web.error.createSessionFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoadingSession(false);
@@ -82,7 +83,7 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
     return (
       <View style={styles.center}>
         <ActivityIndicator color="#ffffff" />
-        <Text style={styles.centerText}>Opening OpenChamber…</Text>
+        <Text style={styles.centerText}>{t('web.loading.opening')}</Text>
       </View>
     );
   }
@@ -90,10 +91,10 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
   if (error || !webUrl) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorTitle}>Could not open OpenChamber</Text>
-        <Text style={styles.errorText}>{error ?? 'Missing mobile session URL'}</Text>
+        <Text style={styles.errorTitle}>{t('web.error.couldNotOpen')}</Text>
+        <Text style={styles.errorText}>{error ?? t('web.error.missingSessionUrl')}</Text>
         <Pressable style={styles.button} onPress={() => onReset()}>
-          <Text style={styles.buttonText}>Reset pairing</Text>
+          <Text style={styles.buttonText}>{t('web.action.resetPairing')}</Text>
         </Pressable>
       </View>
     );
@@ -114,7 +115,7 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
       onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
       onHttpError={(event) => {
         if (event.nativeEvent.statusCode === 401) {
-          Alert.alert('Session expired', 'OpenChamber mobile session expired. Reset pairing if this keeps happening.');
+          Alert.alert(t('web.alert.sessionExpired.title'), t('web.alert.sessionExpired.message'));
         }
       }}
     />

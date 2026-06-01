@@ -10,7 +10,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { GitLogEntry, CommitFileEntry } from '@/lib/api/types';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { getCommitFileDiff, type CommitFileDiffResponse } from '@/lib/gitApi';
 import { PierreDiffViewer } from '@/components/views/PierreDiffViewer';
 import { getLanguageFromExtension } from '@/lib/toolHelpers';
@@ -26,6 +26,30 @@ const HISTORY_DIFF_CACHE_MAX_ENTRIES = 12;
 const HISTORY_DIFF_CACHE_MAX_TOTAL_SIZE_BYTES = 8 * 1024 * 1024;
 
 type HistoryDiffCacheValue = CommitFileDiffResponse | 'loading' | 'error';
+type PendingAction = 'checkout' | 'cherryPick' | 'revert' | 'merge' | 'rebase' | 'resetSoft' | 'resetMixed' | 'resetHard';
+
+const PENDING_ACTION_CONFIRM_KEYS: Record<PendingAction, I18nKey> = {
+  checkout: 'gitView.history.actions.checkoutConfirm',
+  cherryPick: 'gitView.history.actions.cherryPickConfirm',
+  revert: 'gitView.history.actions.revertConfirm',
+  merge: 'gitView.history.actions.mergeConfirm',
+  rebase: 'gitView.history.actions.rebaseConfirm',
+  resetSoft: 'gitView.history.actions.resetSoftConfirm',
+  resetMixed: 'gitView.history.actions.resetMixedConfirm',
+  resetHard: 'gitView.history.actions.resetHardConfirm',
+};
+
+const RESET_MODE_LABEL_KEYS = {
+  soft: 'gitView.history.actions.resetSoft',
+  mixed: 'gitView.history.actions.resetMixed',
+  hard: 'gitView.history.actions.resetHard',
+} as const satisfies Record<'soft' | 'mixed' | 'hard', I18nKey>;
+
+const RESET_MODE_ACTIONS = {
+  soft: 'resetSoft',
+  mixed: 'resetMixed',
+  hard: 'resetHard',
+} as const satisfies Record<'soft' | 'mixed' | 'hard', PendingAction>;
 
 const getHistoryDiffCacheSize = (value: HistoryDiffCacheValue): number => {
   if (typeof value === 'string') {
@@ -148,10 +172,6 @@ export const HistoryCommitRow = React.memo(({
 }: HistoryCommitRowProps) => {
   const { t } = useI18n();
   const isGraphMode = mode === 'graph';
-  type PendingAction =
-    | 'checkout' | 'cherryPick' | 'revert'
-    | 'merge' | 'rebase'
-    | 'resetSoft' | 'resetMixed' | 'resetHard';
 
   const [actionLoading, setActionLoading] = React.useState<string | null>(null);
   const [showCreateBranch, setShowCreateBranch] = React.useState(false);
@@ -433,7 +453,7 @@ export const HistoryCommitRow = React.memo(({
             /* Confirmation banner — replaces the button row while an action is pending */
             <div className="flex items-center gap-2 py-2 border-b border-border/30 mb-2">
               <span className="typography-micro text-muted-foreground flex-1 min-w-0">
-                {t(`gitView.history.actions.${pendingAction}Confirm` as never)}
+                {t(PENDING_ACTION_CONFIRM_KEYS[pendingAction])}
               </span>
               <Button
                 variant="destructive" size="xs" className="h-6 shrink-0"
@@ -529,10 +549,10 @@ export const HistoryCommitRow = React.memo(({
                       disabled={actionLoading !== null}
                       onSelect={(e) => {
                         e.stopPropagation();
-                        setPendingAction(`reset${mode.charAt(0).toUpperCase() + mode.slice(1)}` as PendingAction);
+                        setPendingAction(RESET_MODE_ACTIONS[mode]);
                       }}
                     >
-                      {t(`gitView.history.actions.reset${mode.charAt(0).toUpperCase() + mode.slice(1)}` as never)}
+                      {t(RESET_MODE_LABEL_KEYS[mode])}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>

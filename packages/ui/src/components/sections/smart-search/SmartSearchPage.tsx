@@ -38,38 +38,38 @@ type FieldType = 'text' | 'secret' | 'select' | 'boolean' | 'number' | 'tools';
 
 type FieldDefinition = {
   key: string;
-  label: string;
-  description?: string;
+  labelKey: I18nKey;
+  descriptionKey?: I18nKey;
   type: FieldType;
   placeholder?: string;
   options?: Array<{ value: string; label: string }>;
 };
 
 const MAIN_FIELDS: FieldDefinition[] = [
-  { key: 'XAI_API_URL', label: 'xAI API URL', type: 'text', placeholder: 'https://api.x.ai/v1' },
-  { key: 'XAI_API_KEY', label: 'xAI API Key', type: 'secret' },
-  { key: 'XAI_MODEL', label: 'xAI Model', type: 'text', placeholder: 'grok-4-fast' },
-  { key: 'XAI_TOOLS', label: 'xAI Tools', type: 'tools', description: 'Responses API tools used for live search.' },
-  { key: 'OPENAI_COMPATIBLE_API_URL', label: 'OpenAI-compatible API URL', type: 'text', placeholder: 'https://openrouter.ai/api/v1' },
-  { key: 'OPENAI_COMPATIBLE_API_KEY', label: 'OpenAI-compatible API Key', type: 'secret' },
-  { key: 'OPENAI_COMPATIBLE_MODEL', label: 'OpenAI-compatible Model', type: 'text', placeholder: 'openai/gpt-4o-search-preview' },
+  { key: 'XAI_API_URL', labelKey: 'settings.smartSearch.fields.xaiApiUrl', type: 'text', placeholder: 'https://api.x.ai/v1' },
+  { key: 'XAI_API_KEY', labelKey: 'settings.smartSearch.fields.xaiApiKey', type: 'secret' },
+  { key: 'XAI_MODEL', labelKey: 'settings.smartSearch.fields.xaiModel', type: 'text', placeholder: 'grok-4-fast' },
+  { key: 'XAI_TOOLS', labelKey: 'settings.smartSearch.fields.xaiTools', type: 'tools', descriptionKey: 'settings.smartSearch.fields.xaiTools.description' },
+  { key: 'OPENAI_COMPATIBLE_API_URL', labelKey: 'settings.smartSearch.fields.openaiCompatibleApiUrl', type: 'text', placeholder: 'https://openrouter.ai/api/v1' },
+  { key: 'OPENAI_COMPATIBLE_API_KEY', labelKey: 'settings.smartSearch.fields.openaiCompatibleApiKey', type: 'secret' },
+  { key: 'OPENAI_COMPATIBLE_MODEL', labelKey: 'settings.smartSearch.fields.openaiCompatibleModel', type: 'text', placeholder: 'openai/gpt-4o-search-preview' },
 ];
 
 const DOC_FIELDS: FieldDefinition[] = [
-  { key: 'EXA_API_KEY', label: 'Exa API Key', type: 'secret' },
-  { key: 'EXA_BASE_URL', label: 'Exa Base URL', type: 'text', placeholder: 'https://api.exa.ai' },
-  { key: 'EXA_TIMEOUT_SECONDS', label: 'Exa Timeout', type: 'number' },
-  { key: 'CONTEXT7_API_KEY', label: 'Context7 API Key', type: 'secret' },
-  { key: 'CONTEXT7_BASE_URL', label: 'Context7 Base URL', type: 'text', placeholder: 'https://context7.com' },
-  { key: 'CONTEXT7_TIMEOUT_SECONDS', label: 'Context7 Timeout', type: 'number' },
+  { key: 'EXA_API_KEY', labelKey: 'settings.smartSearch.fields.exaApiKey', type: 'secret' },
+  { key: 'EXA_BASE_URL', labelKey: 'settings.smartSearch.fields.exaBaseUrl', type: 'text', placeholder: 'https://api.exa.ai' },
+  { key: 'EXA_TIMEOUT_SECONDS', labelKey: 'settings.smartSearch.fields.exaTimeout', type: 'number' },
+  { key: 'CONTEXT7_API_KEY', labelKey: 'settings.smartSearch.fields.context7ApiKey', type: 'secret' },
+  { key: 'CONTEXT7_BASE_URL', labelKey: 'settings.smartSearch.fields.context7BaseUrl', type: 'text', placeholder: 'https://context7.com' },
+  { key: 'CONTEXT7_TIMEOUT_SECONDS', labelKey: 'settings.smartSearch.fields.context7Timeout', type: 'number' },
 ];
 
 const CHINA_FIELDS: FieldDefinition[] = [
-  { key: 'ZHIPU_API_KEY', label: 'Zhipu API Key', type: 'secret' },
-  { key: 'ZHIPU_API_URL', label: 'Zhipu API URL', type: 'text', placeholder: 'https://open.bigmodel.cn/api' },
+  { key: 'ZHIPU_API_KEY', labelKey: 'settings.smartSearch.fields.zhipuApiKey', type: 'secret' },
+  { key: 'ZHIPU_API_URL', labelKey: 'settings.smartSearch.fields.zhipuApiUrl', type: 'text', placeholder: 'https://open.bigmodel.cn/api' },
   {
     key: 'ZHIPU_SEARCH_ENGINE',
-    label: 'Zhipu Search Engine',
+    labelKey: 'settings.smartSearch.fields.zhipuSearchEngine',
     type: 'select',
     options: [
       { value: 'search_std', label: 'search_std' },
@@ -78,22 +78,22 @@ const CHINA_FIELDS: FieldDefinition[] = [
       { value: 'search_pro_quark', label: 'search_pro_quark' },
     ],
   },
-  { key: 'ZHIPU_TIMEOUT_SECONDS', label: 'Zhipu Timeout', type: 'number' },
+  { key: 'ZHIPU_TIMEOUT_SECONDS', labelKey: 'settings.smartSearch.fields.zhipuTimeout', type: 'number' },
 ];
 
 const CRAWL_FIELDS: FieldDefinition[] = [
-  { key: 'TAVILY_ENABLED', label: 'Enable Tavily', type: 'boolean' },
-  { key: 'TAVILY_API_KEY', label: 'Tavily API Key', type: 'secret' },
-  { key: 'TAVILY_API_URL', label: 'Tavily API URL', type: 'text', placeholder: 'https://api.tavily.com' },
-  { key: 'TAVILY_TIMEOUT_SECONDS', label: 'Tavily Timeout', type: 'number' },
-  { key: 'FIRECRAWL_API_KEY', label: 'Firecrawl API Key', type: 'secret' },
-  { key: 'FIRECRAWL_API_URL', label: 'Firecrawl API URL', type: 'text', placeholder: 'https://api.firecrawl.dev/v2' },
+  { key: 'TAVILY_ENABLED', labelKey: 'settings.smartSearch.fields.tavilyEnabled', type: 'boolean' },
+  { key: 'TAVILY_API_KEY', labelKey: 'settings.smartSearch.fields.tavilyApiKey', type: 'secret' },
+  { key: 'TAVILY_API_URL', labelKey: 'settings.smartSearch.fields.tavilyApiUrl', type: 'text', placeholder: 'https://api.tavily.com' },
+  { key: 'TAVILY_TIMEOUT_SECONDS', labelKey: 'settings.smartSearch.fields.tavilyTimeout', type: 'number' },
+  { key: 'FIRECRAWL_API_KEY', labelKey: 'settings.smartSearch.fields.firecrawlApiKey', type: 'secret' },
+  { key: 'FIRECRAWL_API_URL', labelKey: 'settings.smartSearch.fields.firecrawlApiUrl', type: 'text', placeholder: 'https://api.firecrawl.dev/v2' },
 ];
 
 const STRATEGY_FIELDS: FieldDefinition[] = [
   {
     key: 'SMART_SEARCH_VALIDATION_LEVEL',
-    label: 'Validation Level',
+    labelKey: 'settings.smartSearch.fields.validationLevel',
     type: 'select',
     options: [
       { value: 'fast', label: 'fast' },
@@ -103,7 +103,7 @@ const STRATEGY_FIELDS: FieldDefinition[] = [
   },
   {
     key: 'SMART_SEARCH_FALLBACK_MODE',
-    label: 'Fallback Mode',
+    labelKey: 'settings.smartSearch.fields.fallbackMode',
     type: 'select',
     options: [
       { value: 'auto', label: 'auto' },
@@ -112,30 +112,30 @@ const STRATEGY_FIELDS: FieldDefinition[] = [
   },
   {
     key: 'SMART_SEARCH_MINIMUM_PROFILE',
-    label: 'Minimum Profile',
+    labelKey: 'settings.smartSearch.fields.minimumProfile',
     type: 'select',
     options: [
       { value: 'standard', label: 'standard' },
       { value: 'off', label: 'off' },
     ],
   },
-  { key: 'SMART_SEARCH_RETRY_MAX_ATTEMPTS', label: 'Retry Attempts', type: 'number' },
-  { key: 'SMART_SEARCH_RETRY_MULTIPLIER', label: 'Retry Multiplier', type: 'number' },
-  { key: 'SMART_SEARCH_RETRY_MAX_WAIT', label: 'Retry Max Wait', type: 'number' },
-  { key: 'SSL_VERIFY', label: 'Verify SSL Certificates', type: 'boolean' },
+  { key: 'SMART_SEARCH_RETRY_MAX_ATTEMPTS', labelKey: 'settings.smartSearch.fields.retryAttempts', type: 'number' },
+  { key: 'SMART_SEARCH_RETRY_MULTIPLIER', labelKey: 'settings.smartSearch.fields.retryMultiplier', type: 'number' },
+  { key: 'SMART_SEARCH_RETRY_MAX_WAIT', labelKey: 'settings.smartSearch.fields.retryMaxWait', type: 'number' },
+  { key: 'SSL_VERIFY', labelKey: 'settings.smartSearch.fields.verifySslCertificates', type: 'boolean' },
 ];
 
 const LOG_FIELDS: FieldDefinition[] = [
-  { key: 'SMART_SEARCH_DEBUG', label: 'Debug Mode', type: 'boolean' },
+  { key: 'SMART_SEARCH_DEBUG', labelKey: 'settings.smartSearch.fields.debugMode', type: 'boolean' },
   {
     key: 'SMART_SEARCH_LOG_LEVEL',
-    label: 'Log Level',
+    labelKey: 'settings.smartSearch.fields.logLevel',
     type: 'select',
     options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'].map((value) => ({ value, label: value })),
   },
-  { key: 'SMART_SEARCH_LOG_DIR', label: 'Log Directory', type: 'text', placeholder: 'logs' },
-  { key: 'SMART_SEARCH_LOG_TO_FILE', label: 'Log to File', type: 'boolean' },
-  { key: 'SMART_SEARCH_OUTPUT_CLEANUP', label: 'Output Cleanup', type: 'boolean' },
+  { key: 'SMART_SEARCH_LOG_DIR', labelKey: 'settings.smartSearch.fields.logDirectory', type: 'text', placeholder: 'logs' },
+  { key: 'SMART_SEARCH_LOG_TO_FILE', labelKey: 'settings.smartSearch.fields.logToFile', type: 'boolean' },
+  { key: 'SMART_SEARCH_OUTPUT_CLEANUP', labelKey: 'settings.smartSearch.fields.outputCleanup', type: 'boolean' },
 ];
 
 const ALL_FIELDS = [...MAIN_FIELDS, ...DOC_FIELDS, ...CHINA_FIELDS, ...CRAWL_FIELDS, ...STRATEGY_FIELDS, ...LOG_FIELDS];
@@ -279,13 +279,13 @@ function SmartSearchField({
     <div className="grid gap-2 rounded-lg border border-border bg-[var(--surface-elevated)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="typography-ui-label text-foreground">{field.label}</div>
+          <div className="typography-ui-label text-foreground">{t(field.labelKey)}</div>
           <div className="typography-micro text-muted-foreground">
             <span className="font-mono">{field.key}</span> · {t(getDisplaySourceKey(entry))}
             {entry?.secret && entry.isSet && entry.maskedValue ? ` · ${entry.maskedValue}` : ''}
             {!entry?.isSet && current ? ` · ${t('settings.smartSearch.source.defaultValue', { value: current })}` : ''}
           </div>
-          {field.description && <div className="typography-micro text-muted-foreground/80">{field.description}</div>}
+          {field.descriptionKey && <div className="typography-micro text-muted-foreground/80">{t(field.descriptionKey)}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {isDirty && <span className="typography-micro text-[var(--status-warning)]">{t('settings.smartSearch.status.modified')}</span>}
