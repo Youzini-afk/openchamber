@@ -57,10 +57,13 @@ const createTestInputStore = () => {
     pendingInputText: null,
     pendingInputMode: "replace",
     pendingSyntheticParts: null,
+    pendingPresetSubmit: null,
     attachedFiles: [],
     activeEditorFile: null,
     setPendingInputText: (text, mode = "replace") => set({ pendingInputText: text, pendingInputMode: mode }),
     consumePendingInputText: () => null,
+    requestPresetSubmit: (text) => set({ pendingPresetSubmit: text }),
+    consumePendingPresetSubmit: () => null,
     setPendingSyntheticParts: (parts) => set({ pendingSyntheticParts: parts }),
     consumePendingSyntheticParts: () => null,
     addAttachedFile: async (file) => {

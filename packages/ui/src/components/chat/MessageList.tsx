@@ -1004,15 +1004,9 @@ const StaticHistoryList = React.memo(({ entries, shouldVirtualize, virtualRows, 
     }
 
     if (virtualRows.length === 0 && entries.length > 0) {
-        const fallbackStart = Math.max(0, entries.length - MESSAGE_LIST_OVERSCAN * 2);
-        const fallbackEntries = entries.slice(fallbackStart);
-        const fallbackHeight = fallbackEntries.reduce((total, entry) => total + estimateHistoryEntryHeight(entry), 0);
-        const fallbackPaddingTop = Math.max(0, totalSize - fallbackHeight);
-
         return (
             <div ref={contentRef} className="relative w-full">
-                {fallbackPaddingTop > 0 ? <div aria-hidden="true" style={{ height: `${fallbackPaddingTop}px` }} /> : null}
-                {fallbackEntries.map((entry) => (
+                {entries.map((entry) => (
                     <div
                         key={entry.key}
                         data-turn-entry={entry.key}
@@ -1107,7 +1101,7 @@ StreamingTailContent.displayName = 'StreamingTailContent';
 const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({ 
     sessionKey,
     turnStart,
-    disableStaging: _disableStaging,
+    disableStaging = false,
     messages,
     sessionIsWorking = false,
     activeStreamingMessageId = null,
@@ -1122,7 +1116,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     scrollRef,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
-    void _disableStaging;
     const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
@@ -1309,6 +1302,45 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const [historyWidthPx, setHistoryWidthPx] = React.useState<number | null>(null);
     const historyMeasurementScopeKey = historyWidthPx === null ? 'width:unknown' : `width:${Math.round(historyWidthPx)}`;
+
+    const previousHistoryLenRef = React.useRef(historyEntries.length);
+    const previousFirstEntryKeyRef = React.useRef(historyEntries[0]?.key);
+
+    React.useLayoutEffect(() => {
+        const previousLen = previousHistoryLenRef.current;
+        const currentLen = historyEntries.length;
+        const previousFirstKey = previousFirstEntryKeyRef.current;
+        const currentFirstKey = historyEntries[0]?.key;
+
+        previousHistoryLenRef.current = currentLen;
+        previousFirstEntryKeyRef.current = currentFirstKey;
+
+        const grew = currentLen > previousLen;
+        const firstChanged = previousFirstKey !== currentFirstKey;
+        if (!shouldVirtualizeHistory || isLoadingOlder || disableStaging || !grew || !firstChanged || previousLen === 0) {
+            return;
+        }
+
+        const prependedCount = currentLen - previousLen;
+        const shiftedOldFirst = historyEntries[prependedCount]?.key;
+        if (shiftedOldFirst !== previousFirstKey) {
+            return;
+        }
+
+        // Prepend detected: new entries added at the beginning of the list.
+        // The virtualizer renders based on the current scroll offset which
+        // now maps to different items. Compensate so the user sees the
+        // prepended content (scroll to top) or stays on the same content.
+        let prependedHeight = 0;
+        for (let i = 0; i < prependedCount; i++) {
+            prependedHeight += estimateHistoryEntryHeight(historyEntries[i]);
+        }
+
+        const scrollEl = resolveScrollContainer();
+        if (!scrollEl || prependedHeight <= 0) return;
+
+        scrollEl.scrollTop += prependedHeight;
+    });
 
     React.useLayoutEffect(() => {
         const historyContent = historyContentRef.current;
@@ -1622,7 +1654,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 if (!applyAnchor()) {
                     const index = messageIndexMap.get(anchor.messageId);
                     if (typeof index === 'number' && index < historyEntries.length) {
-                        scrollHistoryIndexIntoView(index, 'auto');
+                        return scrollHistoryIndexIntoView(index, 'auto');
                     }
                 }
 

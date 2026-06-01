@@ -4,12 +4,13 @@ import type { SidebarSection } from '@/constants/sidebar';
 import { getSafeStorage } from './utils/safeStorage';
 import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey } from '@/lib/typography';
 import type { ShortcutCombo } from '@/lib/shortcuts';
+import type { DraftStarterRef } from '@/lib/draftStarters';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
 export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files' | 'context';
 export type RightSidebarTab = 'git' | 'files' | 'context';
-export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview';
+export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 export type ChatRenderMode = 'sorted' | 'live';
@@ -188,7 +189,7 @@ const buildDefaultContextPanelTabDedupeKey = (mode: ContextPanelMode, targetPath
     return targetPath || mode;
   }
 
-  if (mode === 'preview') {
+  if (mode === 'preview' || mode === 'browser') {
     return targetPath || mode;
   }
 
@@ -272,7 +273,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       touchedAt?: unknown;
     };
 
-    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview') {
+    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
       continue;
     }
 
@@ -451,7 +452,7 @@ const sanitizeContextPanelByDirectory = (
     let tabs = sanitizeContextPanelTabs(candidate.tabs);
     let activeTabId = typeof candidate.activeTabId === 'string' ? candidate.activeTabId : null;
 
-    if (tabs.length === 0 && (candidate.mode === 'diff' || candidate.mode === 'file' || candidate.mode === 'context' || candidate.mode === 'plan' || candidate.mode === 'chat')) {
+    if (tabs.length === 0 && (candidate.mode === 'diff' || candidate.mode === 'file' || candidate.mode === 'context' || candidate.mode === 'plan' || candidate.mode === 'chat' || candidate.mode === 'preview' || candidate.mode === 'browser')) {
       tabs = [createContextPanelTab({
         mode: candidate.mode,
         targetPath: typeof candidate.targetPath === 'string' ? candidate.targetPath : null,
@@ -555,6 +556,8 @@ interface UIStore {
   autoDeleteLastRunAt: number | null;
   messageLimit: number;
   fontSize: number;
+  // Global draft welcome starters; null = unset (use the default built-in set).
+  globalDraftStarters: DraftStarterRef[] | null;
   terminalFontSize: number;
   uiFont: UiFontOption;
   monoFont: MonoFontOption;
@@ -635,6 +638,8 @@ interface UIStore {
   openContextOverview: (directory: string) => void;
   openContextPlan: (directory: string) => void;
   openContextPreview: (directory: string, url: string) => void;
+  openContextBrowser: (directory: string, url?: string) => void;
+  setContextPanelTabTargetPath: (directory: string, tabID: string, targetPath: string) => void;
   setActiveContextPanelTab: (directory: string, tabID: string) => void;
   reorderContextPanelTabs: (directory: string, activeTabID: string, overTabID: string) => void;
   closeContextPanelTab: (directory: string, tabID: string) => void;
@@ -685,6 +690,7 @@ interface UIStore {
   setAutoDeleteLastRunAt: (timestamp: number | null) => void;
   setMessageLimit: (value: number) => void;
   setFontSize: (size: number) => void;
+  setGlobalDraftStarters: (refs: DraftStarterRef[]) => void;
   setTerminalFontSize: (size: number) => void;
   setUiFont: (font: UiFontOption) => void;
   setMonoFont: (font: MonoFontOption) => void;
@@ -820,6 +826,7 @@ export const useUIStore = create<UIStore>()(
         autoDeleteLastRunAt: null,
         messageLimit: 200,
         fontSize: 100,
+        globalDraftStarters: null,
         terminalFontSize: 13,
         uiFont: DEFAULT_UI_FONT,
         monoFont: DEFAULT_MONO_FONT,
@@ -875,7 +882,7 @@ export const useUIStore = create<UIStore>()(
         userMessageRenderingMode: 'markdown',
         stickyUserHeader: true,
         showSplitAssistantMessageActions: false,
-        showMobileSessionStatusBar: true,
+        showMobileSessionStatusBar: false,
         isMobileSessionStatusBarCollapsed: false,
         isExpandedInput: false,
         reportUsage: true,
@@ -1077,6 +1084,78 @@ export const useUIStore = create<UIStore>()(
             targetPath: normalizedUrl,
             dedupeKey: normalizedUrl,
             label,
+          });
+        },
+
+        openContextBrowser: (directory, url = '') => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedUrl = (url || '').trim();
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          let label: string | null = null;
+          if (normalizedUrl) {
+            try {
+              const parsed = new URL(normalizedUrl.includes('://') ? normalizedUrl : `https://${normalizedUrl}`);
+              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                label = parsed.host || parsed.hostname || null;
+              }
+            } catch {
+              // ignore invalid URL
+            }
+          }
+
+          get().openContextPanelTab(normalizedDirectory, {
+            mode: 'browser',
+            targetPath: normalizedUrl || null,
+            dedupeKey: 'browser',
+            label: label ?? 'Browser',
+          });
+        },
+
+        setContextPanelTabTargetPath: (directory, tabID, targetPath) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabID = (tabID || '').trim();
+          const normalizedTargetPath = normalizeContextTargetPath(targetPath);
+          if (!normalizedDirectory || !normalizedTabID || !normalizedTargetPath) {
+            return;
+          }
+
+          set((state) => {
+            const prev = state.contextPanelByDirectory[normalizedDirectory];
+            if (!prev) {
+              return state;
+            }
+
+            const tabs = sanitizeContextPanelTabs(prev.tabs);
+            let changed = false;
+            const nextTabs = tabs.map((tab) => {
+              if (tab.id !== normalizedTabID || tab.targetPath === normalizedTargetPath) {
+                return tab;
+              }
+              changed = true;
+              return {
+                ...tab,
+                targetPath: normalizedTargetPath,
+                touchedAt: Date.now(),
+              };
+            });
+
+            if (!changed) {
+              return state;
+            }
+
+            return {
+              contextPanelByDirectory: {
+                ...state.contextPanelByDirectory,
+                [normalizedDirectory]: {
+                  ...prev,
+                  tabs: nextTabs,
+                  touchedAt: Date.now(),
+                },
+              },
+            };
           });
         },
 
@@ -1495,6 +1574,10 @@ export const useUIStore = create<UIStore>()(
           const clampedSize = Math.max(50, Math.min(200, size));
           set({ fontSize: clampedSize });
           get().applyTypography();
+        },
+
+        setGlobalDraftStarters: (refs) => {
+          set({ globalDraftStarters: refs });
         },
 
         setTerminalFontSize: (size) => {
@@ -2105,6 +2188,7 @@ export const useUIStore = create<UIStore>()(
           autoDeleteLastRunAt: state.autoDeleteLastRunAt,
           messageLimit: state.messageLimit,
           fontSize: state.fontSize,
+          globalDraftStarters: state.globalDraftStarters,
           terminalFontSize: state.terminalFontSize,
           uiFont: state.uiFont,
           monoFont: state.monoFont,

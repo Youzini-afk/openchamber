@@ -1,5 +1,6 @@
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import type { DraftStarterRef } from '@/lib/draftStarters';
 
 export type AssistantNotificationPayload = {
   title?: string;
@@ -172,6 +173,16 @@ export type DesktopSettings = {
   responseStyleEnabled?: boolean;
   responseStylePreset?: 'concise' | 'detailed' | 'mentor' | 'pushback' | 'noFiller' | 'matchEnergy' | 'warmPeer' | 'custom';
   responseStyleCustomInstructions?: string;
+  sttProvider?: 'browser' | 'server' | 'wasm';
+  sttServerUrl?: string;
+  sttModel?: string;
+  wasmSttModel?: string;
+  sttLanguage?: string;
+  sttSilenceThresholdDb?: number;
+  sttSilenceHoldMs?: number;
+  sttTranscribeOnStop?: boolean;
+  // Global draft welcome starters (pinned commands/skills), persisted to settings.json
+  draftStarters?: DraftStarterRef[];
 };
 
 type TauriGlobal = {

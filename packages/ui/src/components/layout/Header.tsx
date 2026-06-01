@@ -744,6 +744,7 @@ export const Header: React.FC<HeaderProps> = ({
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const openContextOverview = useUIStore((state) => state.openContextOverview);
   const openContextPlan = useUIStore((state) => state.openContextPlan);
+  const openContextBrowser = useUIStore((state) => state.openContextBrowser);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const contextPanelByDirectory = useUIStore((state) => state.contextPanelByDirectory);
   const activeMainTab = useUIStore((state) => state.activeMainTab);
@@ -1435,6 +1436,30 @@ export const Header: React.FC<HeaderProps> = ({
     return getActiveContextMode(panelState) === 'plan';
   }, [contextPanelByDirectory, openDirectory]);
 
+  const handleOpenContextBrowser = React.useCallback(() => {
+    const directory = normalize(openDirectory || activeProject?.path || '');
+    if (!directory) {
+      return;
+    }
+
+    const panelState = contextPanelByDirectory[directory];
+    if (getActiveContextMode(panelState) === 'browser') {
+      closeContextPanel(directory);
+      return;
+    }
+
+    openContextBrowser(directory);
+  }, [activeProject?.path, closeContextPanel, contextPanelByDirectory, openContextBrowser, openDirectory]);
+
+  const isContextBrowserActive = React.useMemo(() => {
+    const directory = normalize(openDirectory || activeProject?.path || '');
+    if (!directory) {
+      return false;
+    }
+    const panelState = contextPanelByDirectory[directory];
+    return getActiveContextMode(panelState) === 'browser';
+  }, [activeProject?.path, contextPanelByDirectory, openDirectory]);
+
   const desktopHeaderIconButtonClass = DESKTOP_HEADER_ICON_BUTTON_CLASS;
   const mobileHeaderIconButtonClass = MOBILE_HEADER_ICON_BUTTON_CLASS;
   const mobileActiveHeaderItem = React.useMemo(() => {
@@ -1935,6 +1960,15 @@ export const Header: React.FC<HeaderProps> = ({
         onClick={toggleBottomTerminal}
         Icon={'terminal-box'}
       />
+      {!isMobile ? (
+        <HeaderIconActionButton
+          title={t('contextPanel.browser.open')}
+          ariaLabel={t('contextPanel.browser.open')}
+          onClick={handleOpenContextBrowser}
+          pressed={isContextBrowserActive}
+          Icon={'global'}
+        />
+      ) : null}
       <HeaderIconActionButton
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}
         ariaLabel={t('header.actions.toggleRightSidebarAria')}

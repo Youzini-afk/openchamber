@@ -229,9 +229,8 @@ const maybeHideLoadingOverlay = () => {
       return;
     }
 
-    const providersText = bootstrapProvidersReady ? '✓ Providers' : '… Providers';
-    const agentsText = bootstrapAgentsReady ? '✓ Agents' : '… Agents';
-    setLoadingStatusText(`Loading data (${providersText}, ${agentsText})…`);
+    // Still loading providers/agents — stay silent (the animated logo signals work).
+    setLoadingStatusText('');
     return;
   }
 
@@ -248,7 +247,8 @@ const maybeHideLoadingOverlay = () => {
     return;
   }
 
-  setLoadingStatusText('Starting OpenCode API…');
+  // Connecting — no jargon; the animated logo conveys progress.
+  setLoadingStatusText('');
 };
 
 const applyInitialTheme = (theme: { metadata?: { variant?: string }; colors?: { surface?: { background?: string; foreground?: string } } }) => {
@@ -1723,6 +1723,15 @@ onCommand('showSettingsPage', (payload) => {
 
   import('@/stores/useUIStore').then(({ useUIStore }) => {
     useUIStore.getState().setSettingsPage(page.trim());
+  });
+});
+
+// Run the same full OpenCode reload flow the app uses after an update: shows the
+// reload overlay, restarts the managed OpenCode (via the bridge's /api/config/reload),
+// and refreshes config/data. Triggered by the "Restart API Connection" command.
+onCommand('reloadOpenCode', () => {
+  void import('@openchamber/ui/stores/useAgentsStore').then(({ reloadOpenCodeConfiguration }) => {
+    void reloadOpenCodeConfiguration();
   });
 });
 
