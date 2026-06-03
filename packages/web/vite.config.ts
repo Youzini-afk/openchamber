@@ -105,6 +105,7 @@ export default defineConfig({
       maxParallelFileOps: lowMemoryBuild ? 24 : 1000,
       input: {
         main: path.resolve(__dirname, 'index.html'),
+        mobile: path.resolve(__dirname, 'mobile.html'),
         miniChat: path.resolve(__dirname, 'mini-chat.html'),
       },
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],

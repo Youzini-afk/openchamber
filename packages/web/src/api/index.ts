@@ -1,4 +1,10 @@
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
+import {
+  createRuntimeUrlResolver,
+  getRuntimeUrlResolver,
+  setRuntimeUrlResolver,
+  type RuntimeUrlResolver,
+} from '@openchamber/ui/lib/runtime-url';
 import { createWebTerminalAPI } from './terminal';
 import { createWebGitAPI } from './git';
 import { createWebFilesAPI } from './files';
@@ -11,19 +17,41 @@ import { createWebGitHubAPI } from './github';
 import { createWebWorkspaceAPI } from './workspace';
 import { createWebMobileAPI } from './mobile';
 import { createWebSmartSearchAPI } from './smart-search';
+import { createWebClientAuthAPI } from './clientAuth';
 
-export const createWebAPIs = (): RuntimeAPIs => ({
-  runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
-  terminal: createWebTerminalAPI(),
-  git: createWebGitAPI(),
-  workspace: createWebWorkspaceAPI(),
-  files: createWebFilesAPI(),
-  settings: createWebSettingsAPI(),
-  permissions: createWebPermissionsAPI(),
-  notifications: createWebNotificationsAPI(),
-  github: createWebGitHubAPI(),
-  push: createWebPushAPI(),
-  mobile: createWebMobileAPI(),
-  tools: createWebToolsAPI(),
-  smartSearch: createWebSmartSearchAPI(),
+export interface WebAPIsOptions {
+  urls?: RuntimeUrlResolver;
+}
+
+const createActiveRuntimeUrlResolver = (): RuntimeUrlResolver => ({
+  api: (...args) => getRuntimeUrlResolver().api(...args),
+  authenticatedAsset: (...args) => getRuntimeUrlResolver().authenticatedAsset(...args),
+  auth: (...args) => getRuntimeUrlResolver().auth(...args),
+  health: (...args) => getRuntimeUrlResolver().health(...args),
+  rawFile: (...args) => getRuntimeUrlResolver().rawFile(...args),
+  sse: (...args) => getRuntimeUrlResolver().sse(...args),
+  websocket: (...args) => getRuntimeUrlResolver().websocket(...args),
 });
+
+export const createWebAPIs = (options: WebAPIsOptions = {}): RuntimeAPIs => {
+  const urls = options.urls ?? createRuntimeUrlResolver();
+  setRuntimeUrlResolver(urls);
+  const activeUrls = createActiveRuntimeUrlResolver();
+
+  return {
+    runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
+    terminal: createWebTerminalAPI(),
+    git: createWebGitAPI(),
+    workspace: createWebWorkspaceAPI(),
+    files: createWebFilesAPI({ urls: activeUrls }),
+    settings: createWebSettingsAPI(),
+    permissions: createWebPermissionsAPI(),
+    notifications: createWebNotificationsAPI(),
+    github: createWebGitHubAPI({ urls: activeUrls }),
+    push: createWebPushAPI(),
+    clientAuth: createWebClientAuthAPI(),
+    mobile: createWebMobileAPI(),
+    smartSearch: createWebSmartSearchAPI(),
+    tools: createWebToolsAPI(),
+  };
+};

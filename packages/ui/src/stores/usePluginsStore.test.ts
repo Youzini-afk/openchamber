@@ -8,6 +8,19 @@ const refreshAfterOpenCodeRestartMock = mock(async () => undefined);
 const startConfigUpdateMock = mock(() => undefined);
 const finishConfigUpdateMock = mock(() => undefined);
 
+type FetchCall = {
+  input: RequestInfo | URL;
+  init?: RequestInit;
+};
+
+const fetchCalls: FetchCall[] = [];
+let queuedResponses: Response[] = [];
+
+const runtimeFetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  fetchCalls.push({ input, init });
+  return queuedResponses.shift() ?? jsonResponse(pluginListPayload);
+});
+
 mock.module('@/stores/useProjectsStore', () => ({
   useProjectsStore: {
     getState: () => ({
@@ -20,6 +33,10 @@ mock.module('@/lib/opencode/client', () => ({
   opencodeClient: {
     getDirectory: () => '/fallback/project',
   },
+}));
+
+mock.module('@/lib/runtime-fetch', () => ({
+  runtimeFetch: runtimeFetchMock,
 }));
 
 mock.module('@/stores/useAgentsStore', () => ({
@@ -77,19 +94,6 @@ const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
 
-type FetchCall = {
-  input: RequestInfo | URL;
-  init?: RequestInit;
-};
-
-const fetchCalls: FetchCall[] = [];
-let queuedResponses: Response[] = [];
-
-const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  fetchCalls.push({ input, init });
-  return queuedResponses.shift() ?? jsonResponse(pluginListPayload);
-});
-
 const queueFetchResponses = (responses: Response[]) => {
   queuedResponses = [...responses];
 };
@@ -113,18 +117,23 @@ const requestBody = (callIndex: number): unknown => {
   return init?.body ? JSON.parse(String(init.body)) : undefined;
 };
 
+const flushPluginFollowUps = async (): Promise<void> => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 describe('usePluginsStore', () => {
   beforeEach(() => {
     resetStore();
     fetchCalls.length = 0;
     queuedResponses = [];
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
 
   test('loadPlugins calls config plugins endpoint once and populates entries/files', async () => {
     queueFetchResponses([jsonResponse(pluginListPayload), jsonResponse({ results: [registryOk] })]);
 
     const result = await usePluginsStore.getState().loadPlugins();
+    await flushPluginFollowUps();
 
     expect(result).toBe(true);
     expect(fetchCalls).toHaveLength(2);
@@ -139,6 +148,7 @@ describe('usePluginsStore', () => {
 
     await usePluginsStore.getState().loadPlugins();
     await usePluginsStore.getState().loadPlugins();
+    await flushPluginFollowUps();
 
     expect(fetchCalls).toHaveLength(2);
   });
@@ -279,6 +289,7 @@ describe('usePluginsStore', () => {
     queueFetchResponses([jsonResponse(pluginListPayload), jsonResponse({ results: [registryOk] })]);
 
     const result = await usePluginsStore.getState().loadPlugins();
+    await flushPluginFollowUps();
 
     expect(result).toBe(true);
     expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fproject');
@@ -289,6 +300,7 @@ describe('usePluginsStore', () => {
     queueFetchResponses([jsonResponse(okMutationPayload), jsonResponse(pluginListPayload), jsonResponse({ results: [] })]);
 
     const result = await usePluginsStore.getState().createEntry({ spec: 'new-plugin@1', scope: 'user' });
+    await flushPluginFollowUps();
 
     expect(result.ok).toBe(true);
     expect(registryCalls()).toHaveLength(1);
@@ -301,6 +313,7 @@ describe('usePluginsStore', () => {
     queueFetchResponses([jsonResponse(okMutationPayload), jsonResponse(pluginListPayload), jsonResponse({ results: [] })]);
 
     const result = await usePluginsStore.getState().updateEntry(entry.id, { spec: 'plugin-b@2' });
+    await flushPluginFollowUps();
 
     expect(result.ok).toBe(true);
     expect(registryCalls()).toHaveLength(1);
@@ -313,6 +326,7 @@ describe('usePluginsStore', () => {
     queueFetchResponses([jsonResponse(okMutationPayload), jsonResponse(pluginListPayload), jsonResponse({ results: [] })]);
 
     const result = await usePluginsStore.getState().updateEntry(entry.id, { options: { enabled: true } });
+    await flushPluginFollowUps();
 
     expect(result.ok).toBe(true);
     expect(String(registryCalls()[0]?.input)).toContain('specs=plugin-a');

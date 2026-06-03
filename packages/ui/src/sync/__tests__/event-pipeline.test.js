@@ -1,25 +1,22 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { createEventPipeline } from '../event-pipeline';
-
-const originalDocument = globalThis.document;
-const originalWindow = globalThis.window;
-const originalWebSocket = globalThis.WebSocket;
+import { installGlobalStub, restoreGlobalStubs } from './global-stub-helpers';
 
 function installDomStubs() {
-  globalThis.document = {
+  installGlobalStub('document', {
     visibilityState: 'visible',
     addEventListener() {},
     removeEventListener() {},
-  };
+  });
 
-  globalThis.window = {
+  installGlobalStub('window', {
     location: {
       href: 'http://127.0.0.1:3000/',
       origin: 'http://127.0.0.1:3000',
     },
     addEventListener() {},
     removeEventListener() {},
-  };
+  });
 }
 
 class FakeWebSocket {
@@ -55,9 +52,7 @@ class FakeWebSocket {
 }
 
 afterEach(() => {
-  globalThis.document = originalDocument;
-  globalThis.window = originalWindow;
-  globalThis.WebSocket = originalWebSocket;
+  restoreGlobalStubs();
   FakeWebSocket.instances = [];
 });
 
@@ -525,7 +520,7 @@ describe('createEventPipeline', () => {
 
   it('consumes websocket message stream frames when transport is ws', async () => {
     installDomStubs();
-    globalThis.WebSocket = FakeWebSocket;
+    installGlobalStub('WebSocket', FakeWebSocket);
 
     const received = [];
     const sdk = {
@@ -584,7 +579,7 @@ describe('createEventPipeline', () => {
 
   it('falls back to SSE when websocket closes before ready in auto mode', async () => {
     installDomStubs();
-    globalThis.WebSocket = FakeWebSocket;
+    installGlobalStub('WebSocket', FakeWebSocket);
 
     let releaseStream;
     const hold = new Promise((resolve) => {
@@ -631,7 +626,7 @@ describe('createEventPipeline', () => {
 
   it('falls back to SSE when websocket does not become ready in auto mode', async () => {
     installDomStubs();
-    globalThis.WebSocket = FakeWebSocket;
+    installGlobalStub('WebSocket', FakeWebSocket);
 
     let releaseStream;
     const hold = new Promise((resolve) => {
@@ -684,7 +679,7 @@ describe('createEventPipeline', () => {
 
   it('passes the last websocket event id when falling back to SSE', async () => {
     installDomStubs();
-    globalThis.WebSocket = FakeWebSocket;
+    installGlobalStub('WebSocket', FakeWebSocket);
     const originalConsoleError = console.error;
     console.error = () => {};
 
@@ -763,7 +758,7 @@ describe('createEventPipeline', () => {
 
   it('marks the pipeline disconnected on heartbeat timeout and recovers on the next websocket connect', async () => {
     installDomStubs();
-    globalThis.WebSocket = FakeWebSocket;
+    installGlobalStub('WebSocket', FakeWebSocket);
 
     const disconnectReasons = [];
     let reconnectCount = 0;

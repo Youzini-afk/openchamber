@@ -26,6 +26,7 @@ import {
   RiFolder6Line,
   RiFolderAddLine,
 } from '@remixicon/react';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useDeviceInfo } from '@/lib/device';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -136,7 +137,7 @@ const focusPathInput = (input: HTMLInputElement | null): void => {
 
 const resolveFreshFilesystemHome = async (): Promise<string | null> => {
   try {
-    const response = await fetch('/api/fs/home', {
+    const response = await runtimeFetch('/api/fs/home', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });

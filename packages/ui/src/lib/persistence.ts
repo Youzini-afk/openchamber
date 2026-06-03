@@ -7,8 +7,9 @@ import { setDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { setFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { loadAppearancePreferences, applyAppearancePreferences } from '@/lib/appearancePersistence';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { sanitizeStarterRefs } from '@/lib/draftStarters';
+import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const DEFAULT_CHECKPOINT_RETENTION_LIMIT = 200;
 const MIN_CHECKPOINT_RETENTION_LIMIT = 1;
@@ -1064,7 +1065,7 @@ const fetchWebSettings = async (): Promise<DesktopSettings | null> => {
     }
 
     try {
-      const response = await fetch('/api/config/settings', {
+      const response = await runtimeFetch('/api/config/settings', {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
@@ -1179,7 +1180,7 @@ const _flushSettingsUpdate = async (): Promise<void> => {
   }
 
   try {
-    const response = await fetch('/api/config/settings', {
+    const response = await runtimeFetch('/api/config/settings', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

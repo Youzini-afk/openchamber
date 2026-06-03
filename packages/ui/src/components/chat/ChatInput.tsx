@@ -6,7 +6,6 @@ import {
     RiAttachment2,
     RiCloseLine,
     RiExternalLinkLine,
-    RiFolderLine,
     RiFullscreenLine,
     RiGitPullRequestLine,
     RiShieldCheckLine,
@@ -46,12 +45,12 @@ import { PendingChangesBar } from './PendingChangesBar';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { MobileAgentButton } from './MobileAgentButton';
 import { MobileModelButton } from './MobileModelButton';
-import { MobileSessionStatusBar } from './MobileSessionStatusBar';
+import { MobileSessionStatusBar, MobileSessionPanelTrigger } from './MobileSessionStatusBar';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 // useMessageStore removed — messages now come from sync system
-import { isTauriShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { StopIcon } from '@/components/icons/StopIcon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -70,7 +69,7 @@ import { DraftPresetChips } from './DraftPresetChips';
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, getProjectIconImageUrl } from '@/lib/projectMeta';
+import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
@@ -986,7 +985,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const suppressNextFileDropTextInsertTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingDroppedAbsolutePathsRef = React.useRef<string[]>([]);
     const canAcceptDropRef = React.useRef(false);
-    const nativeDragInsideDropZoneRef = React.useRef(false);
     const mentionRef = React.useRef<FileMentionHandle>(null);
     const commandRef = React.useRef<CommandAutocompleteHandle>(null);
     const skillRef = React.useRef<SkillAutocompleteHandle>(null);
@@ -1049,11 +1047,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
     const setExpandedInput = useUIStore((state) => state.setExpandedInput);
     const setTimelineDialogOpen = useUIStore((state) => state.setTimelineDialogOpen);
+    const { git: runtimeGit, vscode: vscodeApi } = useRuntimeAPIs();
     const cycleAgentShortcutOverride = useUIStore((state) => state.shortcutOverrides.cycle_agent);
     const cycleAgentShortcut = React.useMemo(() => (
         getEffectiveShortcutCombo('cycle_agent', cycleAgentShortcutOverride ? { cycle_agent: cycleAgentShortcutOverride } : undefined)
     ), [cycleAgentShortcutOverride]);
-    const { git: runtimeGit } = useRuntimeAPIs();
     const { currentTheme } = useThemeSystem();
     const chatSearchDirectory = useChatSearchDirectory();
     const isGitRepo = useIsGitRepo(currentDirectory);
@@ -1408,6 +1406,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const drafts = useInlineCommentDraftStore.getState().drafts[sessionKey] ?? [];
         for (const draft of drafts) {
             if (draft.source === source) {
+                removeInlineCommentDraft(sessionKey, draft.id);
+            }
+        }
+    }, [currentSessionId, newSessionDraftOpen, removeInlineCommentDraft]);
+    // Review comments are the inline-comment drafts that aren't preview sources.
+    const removeReviewDrafts = React.useCallback(() => {
+        const sessionKey = currentSessionId ?? (newSessionDraftOpen ? 'draft' : '');
+        if (!sessionKey) return;
+        const drafts = useInlineCommentDraftStore.getState().drafts[sessionKey] ?? [];
+        for (const draft of drafts) {
+            if (draft.source !== 'preview-console' && draft.source !== 'preview-annotation') {
                 removeInlineCommentDraft(sessionKey, draft.id);
             }
         }
@@ -1888,14 +1897,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             else if (commandName === 'compact' && currentSessionId) {
                 try {
                     await sessionActions.waitForConnectionOrThrow();
-                    const { opencodeClient } = await import('@/lib/opencode/client');
-                    const sdk = opencodeClient.getSdkClient();
-                    const configState = useConfigStore.getState();
-                    await sdk.session.summarize({
-                        sessionID: currentSessionId,
-                        modelID: configState.currentModelId || '',
-                        providerID: configState.currentProviderId || '',
-                    });
+                    const compactDirectory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId) || currentDirectory || undefined;
+                    await opencodeClient.summarizeSession(currentSessionId, currentProviderId, currentModelId, compactDirectory);
                 } catch (error) {
                     toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.compactFailed'));
                 }
@@ -2741,7 +2744,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         } else {
             setShowFileMention(false);
         }
-    }, [inputMode, setCommandQuery, setMentionQuery, setShowCommandAutocomplete, setShowFileMention, setShowSkillAutocomplete, setSkillQuery]);
+    }, [
+        inputMode,
+        setCommandQuery,
+        setMentionQuery,
+        setShowCommandAutocomplete,
+        setShowFileMention,
+        setShowSkillAutocomplete,
+        setShowSnippetAutocomplete,
+        setSkillQuery,
+        setSnippetQuery,
+    ]);
 
     const insertTextAtSelection = React.useCallback((text: string) => {
         if (!text) {
@@ -3410,121 +3423,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
     };
 
-    // Tauri desktop: handle native file drops via onDragDropEvent
-    React.useEffect(() => {
-        if (!isTauriShell()) return;
-        let cancelled = false;
-        let unlisten: (() => void) | null = null;
-
-        void (async () => {
-            try {
-                const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-                const webviewWindow = getCurrentWebviewWindow();
-                const removeListener = await webviewWindow.onDragDropEvent(async (event) => {
-                    if (!canAcceptDropRef.current) return;
-
-                    const payload = (event as { payload?: unknown }).payload;
-                    if (!payload || typeof payload !== 'object') return;
-
-                    const typed = payload as { type?: string; paths?: string[]; position?: { x?: number; y?: number } };
-                    const type = typed.type;
-                    const x = typed.position?.x;
-                    const y = typed.position?.y;
-
-                    // Check if drop is inside the chat input area
-                    const zone = dropZoneRef.current;
-                    let inZone: boolean | null = null;
-                    if (zone && typeof x === 'number' && typeof y === 'number') {
-                        const rect = zone.getBoundingClientRect();
-                        inZone = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-                        // Handle retina displays where Tauri might report physical pixels
-                        if (!inZone && window.devicePixelRatio > 1) {
-                            const sx = x / window.devicePixelRatio;
-                            const sy = y / window.devicePixelRatio;
-                            inZone = sx >= rect.left && sx <= rect.right && sy >= rect.top && sy <= rect.bottom;
-                        }
-                    }
-
-                    if (type === 'enter' || type === 'over') {
-                        if (inZone !== null) {
-                            nativeDragInsideDropZoneRef.current = inZone;
-                        }
-                        setIsDragging(nativeDragInsideDropZoneRef.current);
-                        return;
-                    }
-                    if (type === 'leave') {
-                        nativeDragInsideDropZoneRef.current = false;
-                        setIsDragging(false);
-                        return;
-                    }
-                    if (type === 'drop') {
-                        const shouldHandleDrop = inZone ?? nativeDragInsideDropZoneRef.current;
-                        nativeDragInsideDropZoneRef.current = false;
-                        setIsDragging(false);
-                        if (!shouldHandleDrop) return;
-
-                        const paths = Array.isArray(typed.paths)
-                            ? typed.paths.filter((p): p is string => typeof p === 'string')
-                            : [];
-                        if (paths.length === 0) return;
-
-                        for (const path of paths) {
-                            try {
-                                const normalizedPath = normalizeDroppedPath(path);
-                                const fileName = normalizedPath.split(/[\\/]/).pop() || normalizedPath;
-                                let file: File;
-
-                                // In Tauri shell, dropped paths are local machine paths.
-                                // Read bytes via native command to avoid workspace-bound /api/fs/raw restrictions.
-                                if (isTauriShell()) {
-                                    const { invoke } = await import('@tauri-apps/api/core');
-                                    const result = await invoke<{ mime: string; base64: string }>('desktop_read_file', { path: normalizedPath });
-                                    const byteCharacters = atob(result.base64);
-                                    const byteNumbers = new Array(byteCharacters.length);
-                                    for (let i = 0; i < byteCharacters.length; i++) {
-                                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                                    }
-                                    const byteArray = new Uint8Array(byteNumbers);
-                                    const blob = new Blob([byteArray], { type: result.mime || 'application/octet-stream' });
-                                    file = new File([blob], fileName, { type: result.mime || 'application/octet-stream' });
-                                } else {
-                                    const response = await fetch(`/api/fs/raw?path=${encodeURIComponent(normalizedPath)}`);
-                                    if (!response.ok) {
-                                        throw new Error(`Failed to read dropped file (${response.status})`);
-                                    }
-                                    const blob = await response.blob();
-                                    file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
-                                }
-
-                                await addAttachedFile(file);
-                            } catch (error) {
-                                console.error('Failed to attach dropped file:', path, error);
-                                toast.error(t('chat.chatInput.toast.attachNamedFailed', {
-                                    name: path.split(/[\\/]/).pop() || t('chat.chatInput.fileFallback'),
-                                }));
-                            }
-                        }
-                    }
-                });
-
-                if (cancelled) {
-                    removeListener();
-                    return;
-                }
-                unlisten = removeListener;
-            } catch (error) {
-                if (!cancelled) {
-                    console.warn('Failed to register Tauri drag-drop listener:', error);
-                }
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-            if (unlisten) unlisten();
-        };
-    }, [addAttachedFile, normalizeDroppedPath, t]);
-
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const attachFiles = React.useCallback(async (files: FileList | File[]) => {
@@ -3542,8 +3440,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const handleVSCodePickFiles = React.useCallback(async () => {
         try {
-            const response = await fetch('/api/vscode/pick-files');
-            const data = await response.json();
+            const data = (await vscodeApi?.pickFiles?.()) as {
+                files?: Array<{ name: string; mimeType?: string; dataUrl?: string }>;
+                skipped?: Array<{ name?: string; reason?: string }>;
+            } | undefined;
             const picked = Array.isArray(data?.files) ? data.files : [];
             const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
 
@@ -3582,7 +3482,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             console.error('VS Code file pick failed', error);
             toast.error(error instanceof Error ? error.message : t('chat.chatInput.toast.vscodePickFailed'));
         }
-    }, [attachFiles, t]);
+    }, [attachFiles, t, vscodeApi]);
 
     const handlePickLocalFiles = React.useCallback(() => {
         if (isVSCodeRuntime()) {
@@ -3705,7 +3605,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             rootBranch: selectedDraftProjectCurrentBranch,
             worktrees,
             pendingBootstrapDirectory: newSessionDraft?.bootstrapPendingDirectory ?? null,
-        });
+        }).filter((option) => option.kind === 'worktree');
     }, [availableWorktreesByProject, newSessionDraft?.bootstrapPendingDirectory, selectedDraftProject, selectedDraftProjectCurrentBranch, selectedDraftProjectPath]);
 
     const selectedDraftDirectory = React.useMemo(
@@ -3842,30 +3742,32 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         iconImage?: { mime: string; updatedAt: number; source: 'custom' | 'auto' } | null;
         iconBackground?: string | null;
     }) => {
-        const imageUrl = getProjectIconImageUrl(
-            { id: project.id, iconImage: project.iconImage ?? null },
-            {
-                themeVariant: currentTheme.metadata.variant,
-                iconColor: currentTheme.colors.surface.foreground,
-            },
-        );
-        const ProjectIcon = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
+        const projectIconName = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
         const iconColor = getProjectIconColor(project.color);
+        const fallbackIcon = projectIconName ? (
+            <Icon name={projectIconName} className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+        ) : (
+            <Icon name="folder" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80"  style={iconColor ? { color: iconColor } : undefined}/>
+        );
 
         return (
             <span className="inline-flex min-w-0 items-center gap-1.5">
-                {imageUrl ? (
+                {project.iconImage ? (
                     <span
                         className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center overflow-hidden rounded-[3px]"
                         style={project.iconBackground ? { backgroundColor: project.iconBackground } : undefined}
                     >
-                        <img src={imageUrl} alt="" className="h-full w-full object-contain" draggable={false} />
+                        <ProjectIconImage
+                            project={{ id: project.id, iconImage: project.iconImage ?? null }}
+                            options={{
+                                themeVariant: currentTheme.metadata.variant,
+                                iconColor: currentTheme.colors.surface.foreground,
+                            }}
+                            className="h-full w-full object-contain"
+                            fallback={fallbackIcon}
+                        />
                     </span>
-                ) : ProjectIcon ? (
-                    <ProjectIcon className="h-3.5 w-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
-                ) : (
-                    <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground/80" style={iconColor ? { color: iconColor } : undefined} />
-                )}
+                ) : fallbackIcon}
                 <span className="truncate">{getProjectDisplayLabel(project)}</span>
             </span>
         );
@@ -3983,6 +3885,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                             >
                                 <span className="text-xs font-medium text-muted-foreground">{t('chat.chatInput.reviewComments')}</span>
                                 <span className="text-xs font-semibold" style={{ color: currentTheme?.colors?.status?.info }}>{reviewCount}</span>
+                                <button
+                                    type="button"
+                                    className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
+                                    style={{ minHeight: 0, minWidth: 0 }}
+                                    onClick={removeReviewDrafts}
+                                    aria-label={t('chat.chatInput.reviewCommentsRemove')}
+                                    title={t('chat.chatInput.reviewCommentsRemove')}
+                                >
+                                    <Icon name="close" className="h-3 w-3" />
+                                </button>
                             </div>
                         ) : null}
                         {previewConsoleCount > 0 ? (
@@ -3998,6 +3910,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 <button
                                     type="button"
                                     className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
+                                    style={{ minHeight: 0, minWidth: 0 }}
                                     onClick={() => removePreviewDrafts('preview-console')}
                                     aria-label={t('chat.chatInput.devServerLogsRemove')}
                                     title={t('chat.chatInput.devServerLogsRemove')}
@@ -4019,6 +3932,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 <button
                                     type="button"
                                     className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
+                                    style={{ minHeight: 0, minWidth: 0 }}
                                     onClick={() => removePreviewDrafts('preview-annotation')}
                                     aria-label={t('chat.chatInput.previewContextRemove')}
                                     title={t('chat.chatInput.previewContextRemove')}
@@ -4180,7 +4094,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         {selectedDraftBranchLabel ?? t('chat.chatInput.branch')}
                                     </SelectValue>
                                 </SelectTrigger>
-                                <SelectContent fitContent>
+                                <SelectContent className="w-max min-w-48">
                                     {projectRootBranchOption ? (
                                         <SelectGroup>
                                             <SelectLabel>{t('chat.chatInput.projectRoot')}</SelectLabel>
@@ -4445,6 +4359,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                             <>
                                 <div className="flex w-full items-center justify-between gap-x-1.5">
                                     <div className="flex items-center gap-x-1.5">
+                                        <MobileSessionPanelTrigger
+                                            footerIconButtonClass={footerIconButtonClass}
+                                            iconSizeClass={iconSizeClass}
+                                        />
                                         <ComposerAttachmentControls
                                             isVSCode={isVSCode}
                                             footerIconButtonClass={footerIconButtonClass}
@@ -4549,7 +4467,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         )}
                     </div>
 
-                    {/* Mobile Session Status Bar - above input */}
+                    {/* Mobile session panel: slide-up overlay toggled by MobileSessionPanelTrigger. */}
                     {isMobile && <MobileSessionStatusBar />}
                 </div>
             </div>

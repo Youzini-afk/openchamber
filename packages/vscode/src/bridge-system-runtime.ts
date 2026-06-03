@@ -63,6 +63,33 @@ const readProviderAuthKey = (value: unknown): string => {
     normalizeBridgeString(body.token);
 };
 
+type ProviderSourceLayer = {
+  exists: boolean;
+  path?: string | null;
+};
+
+type ProviderSources = {
+  auth: { exists: boolean };
+  user: ProviderSourceLayer;
+  project: ProviderSourceLayer;
+  custom: ProviderSourceLayer;
+};
+
+const isProviderSources = (value: unknown): value is ProviderSources => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Record<keyof ProviderSources, unknown>>;
+  return Boolean(candidate.auth && candidate.user && candidate.project && candidate.custom);
+};
+
+const unwrapProviderSources = (value: unknown): ProviderSources => {
+  if (isProviderSources(value)) return value;
+  if (value && typeof value === 'object') {
+    const nested = (value as { sources?: unknown }).sources;
+    if (isProviderSources(nested)) return nested;
+  }
+  throw new Error('Invalid provider source response');
+};
+
 const ZEN_MODELS_URL = 'https://opencode.ai/zen/v1/models';
 const ZEN_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 let cachedZenModels: { models: Array<{ id: string; owned_by?: string }>; at: number } | null = null;
@@ -75,8 +102,8 @@ const getOpenChamberConfigDir = (): string => {
   return path.join(os.homedir(), '.config', 'openchamber');
 };
 
-const sanitizeInstallScope = (scope: string): 'desktop-tauri' | 'vscode' | 'web' => {
-  if (scope === 'desktop-tauri' || scope === 'vscode' || scope === 'web') return scope;
+const sanitizeInstallScope = (scope: string): 'vscode' | 'web' => {
+  if (scope === 'vscode' || scope === 'web') return scope;
   return 'web';
 };
 
@@ -608,7 +635,7 @@ export async function handleSystemBridgeMessage(
         const workingDirectory = typeof directory === 'string' && directory.trim().length > 0
           ? directory.trim()
           : ctx?.manager?.getWorkingDirectory();
-        const sources = getProviderSources(providerId, workingDirectory);
+        const sources = unwrapProviderSources(getProviderSources(providerId, workingDirectory));
         const auth = getProviderAuth(providerId);
         sources.auth.exists = Boolean(auth);
         return { id, type, success: true, data: { providerId, sources } };

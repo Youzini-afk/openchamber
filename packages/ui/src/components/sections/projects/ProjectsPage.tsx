@@ -3,11 +3,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { toast } from '@/components/ui';
+import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
-import { PROJECT_COLORS, PROJECT_ICONS, PROJECT_COLOR_MAP as COLOR_MAP, getProjectIconImageUrl } from '@/lib/projectMeta';
 import { RiCloseLine } from '@remixicon/react';
+import { PROJECT_COLORS, PROJECT_ICONS, PROJECT_COLOR_MAP as COLOR_MAP, ProjectIconImage } from '@/lib/projectMeta';
 import { WorktreeSectionContent } from '@/components/sections/openchamber/WorktreeSectionContent';
 import { ProjectActionsSection } from '@/components/sections/projects/ProjectActionsSection';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -160,16 +161,8 @@ export const ProjectsPage: React.FC = () => {
   const hasCustomIcon = selectedProject?.iconImage?.source === 'custom';
   const effectiveHasImageIcon = (hasStoredImageIcon && !pendingRemoveImageIcon) || hasPendingUploadImageIcon;
   const hasRemovableImageIcon = effectiveHasImageIcon;
-  const iconPreviewUrl = !previewImageFailed
-    ? (hasPendingUploadImageIcon
-      ? pendingUploadIconPreviewUrl
-      : (selectedProject && hasStoredImageIcon && !pendingRemoveImageIcon
-        ? getProjectIconImageUrl(selectedProject, {
-          themeVariant: currentTheme.metadata.variant,
-          iconColor: currentTheme.colors.surface.foreground,
-        })
-        : null))
-    : null;
+  const showStoredImagePreview = Boolean(selectedProject && hasStoredImageIcon && !pendingRemoveImageIcon);
+  const showImagePreview = !previewImageFailed && (hasPendingUploadImageIcon || showStoredImagePreview);
 
   const handleUploadIcon = React.useCallback((file: File | null) => {
     if (!selectedProject || !file || isUploadingIcon) {
@@ -349,7 +342,6 @@ export const ProjectsPage: React.FC = () => {
                   <RiCloseLine className="h-4 w-4 text-muted-foreground" />
                 </button>
                 {PROJECT_ICONS.map((i) => {
-                  const IconComponent = i.Icon;
                   return (
                     <button
                       key={i.key}
@@ -363,12 +355,12 @@ export const ProjectsPage: React.FC = () => {
                       )}
                       title={i.label}
                     >
-                      <IconComponent className="w-4 h-4" style={currentColorVar && icon === i.key ? { color: currentColorVar } : undefined} />
+                      <Icon name={i.Icon} className="w-4 h-4" style={currentColorVar && icon === i.key ? { color: currentColorVar } : undefined} />
                     </button>
                   );
                 })}
               </div>
-              {effectiveHasImageIcon && iconPreviewUrl && (
+              {effectiveHasImageIcon && showImagePreview && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="typography-meta text-muted-foreground">{t('settings.projects.page.field.preview')}</span>
                   <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-[var(--surface-elevated)] p-1">
@@ -376,13 +368,25 @@ export const ProjectsPage: React.FC = () => {
                       className="inline-flex h-4 w-4 items-center justify-center overflow-hidden rounded-[2px]"
                       style={iconBackground ? { backgroundColor: iconBackground } : undefined}
                     >
-                      <img
-                        src={iconPreviewUrl}
-                        alt=""
-                        className="h-full w-full object-contain"
-                        draggable={false}
-                        onError={() => setPreviewImageFailed(true)}
-                      />
+                      {hasPendingUploadImageIcon && pendingUploadIconPreviewUrl ? (
+                        <img
+                          src={pendingUploadIconPreviewUrl}
+                          alt=""
+                          className="h-full w-full object-contain"
+                          draggable={false}
+                          onError={() => setPreviewImageFailed(true)}
+                        />
+                      ) : selectedProject ? (
+                        <ProjectIconImage
+                          project={selectedProject}
+                          options={{
+                            themeVariant: currentTheme.metadata.variant,
+                            iconColor: currentTheme.colors.surface.foreground,
+                          }}
+                          className="h-full w-full object-contain"
+                          onError={() => setPreviewImageFailed(true)}
+                        />
+                      ) : null}
                     </span>
                   </span>
                 </div>

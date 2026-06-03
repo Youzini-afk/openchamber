@@ -27,6 +27,7 @@ import { DiffViewToggle } from './DiffViewToggle';
 import { VirtualizedCodeBlock, type CodeLine } from './parts/VirtualizedCodeBlock';
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { useI18n } from '@/lib/i18n';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -739,7 +740,7 @@ const MermaidPreviewDialog: React.FC<{
             if (!normalizedPath) {
                 sourcePromise = Promise.reject(new Error('Invalid local file path for Mermaid preview.'));
             } else {
-                sourcePromise = fetch(`/api/fs/raw?path=${encodeURIComponent(normalizedPath)}`)
+                sourcePromise = runtimeFetch('/api/fs/raw', { query: { path: normalizedPath } })
                     .then((response) => {
                         if (!response.ok) {
                             return Promise.reject(new Error(`Failed to read diagram file (${response.status})`));

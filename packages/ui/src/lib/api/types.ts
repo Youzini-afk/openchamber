@@ -965,6 +965,10 @@ export interface NotificationPayload {
   body?: string;
 
   tag?: string;
+  kind?: string;
+  sessionId?: string;
+  directory?: string;
+  requireHidden?: boolean;
 }
 
 export interface NotificationsAPI {
@@ -1058,6 +1062,9 @@ export interface VSCodeAPI {
   openAgentManager(): Promise<void>;
   openSettings(settingsPage?: string): Promise<void>;
   openExternalUrl(url: string): Promise<void>;
+  pickFiles?(): Promise<unknown>;
+  saveImage?(payload: unknown): Promise<unknown>;
+  saveMarkdown?(payload: unknown): Promise<unknown>;
 }
 
 export interface PushSubscribePayload {
@@ -1441,6 +1448,37 @@ export interface GitHubAPI {
   repoBranches(owner: string, repo: string): Promise<string[]>;
 }
 
+export interface RemoteClientRecord {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  expiresAt?: string | null;
+  clientKind?: string | null;
+}
+
+export interface RemoteClientCreateResult {
+  client: RemoteClientRecord;
+  token: string;
+}
+
+export interface RemoteClientRevokeResult {
+  revoked: boolean;
+  client?: RemoteClientRecord;
+}
+
+export interface RemoteClientPurgeRevokedResult {
+  purged: number;
+}
+
+export interface ClientAuthAPI {
+  listClients(): Promise<RemoteClientRecord[]>;
+  createClient(input?: { label?: string }): Promise<RemoteClientCreateResult>;
+  purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
+  revokeClient(id: string): Promise<RemoteClientRevokeResult>;
+}
+
 export interface RuntimeAPIs {
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
@@ -1455,6 +1493,7 @@ export interface RuntimeAPIs {
   push?: PushAPI;
   mobile?: MobileAPI;
   diagnostics?: DiagnosticsAPI;
+  clientAuth?: ClientAuthAPI;
   tools: ToolsAPI;
   smartSearch?: SmartSearchAPI;
   editor?: EditorAPI;

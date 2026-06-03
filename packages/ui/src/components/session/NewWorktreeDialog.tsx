@@ -518,6 +518,7 @@ export function NewWorktreeDialog({
 
   const sendLinkedContextMessage = React.useCallback(async (args: {
     sessionId: string;
+    directory: string;
     issue: GitHubIssue | null;
     pr: GitHubPullRequestSummary | null;
     includeDiff: boolean;
@@ -584,6 +585,7 @@ export function NewWorktreeDialog({
           { text: instructionsText, synthetic: true },
           { text: contextText, synthetic: true },
         ],
+        directory: args.directory,
       });
 
       toast.success(t('session.newWorktree.toast.sessionFromIssue'));
@@ -620,6 +622,7 @@ export function NewWorktreeDialog({
           { text: instructionsText, synthetic: true },
           { text: contextText, synthetic: true },
         ],
+        directory: args.directory,
       });
 
       toast.success(t('session.newWorktree.toast.sessionFromPr'));
@@ -943,6 +946,7 @@ export function NewWorktreeDialog({
         onWorktreeCreated?.(metadata.path, { sessionId: createdSessionId });
         void sendLinkedContextMessage({
           sessionId: createdSessionId,
+          directory: metadata.path,
           issue: linkedIssue,
           pr: linkedPrState,
           includeDiff: includePrDiff,

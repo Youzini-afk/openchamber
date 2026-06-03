@@ -1,14 +1,9 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { createEventPipeline } from '../event-pipeline';
-
-const savedDocument = globalThis.document;
-const savedWindow = globalThis.window;
-const savedNavigator = globalThis.navigator;
+import { installGlobalStub, restoreGlobalStubs } from './global-stub-helpers';
 
 afterEach(() => {
-  globalThis.document = savedDocument;
-  globalThis.window = savedWindow;
-  globalThis.navigator = savedNavigator;
+  restoreGlobalStubs();
 });
 
 // Multi-listener event-target stub. The simpler single-slot stub used in
@@ -38,11 +33,13 @@ function createEventTarget(extras = {}) {
 
 describe('createEventPipeline — online event', () => {
   it('cuts the inter-attempt wait short when `online` fires after disconnect', async () => {
-    globalThis.document = createEventTarget({ visibilityState: 'visible' });
-    globalThis.window = createEventTarget({
+    const originalConsoleError = console.error;
+    console.error = mock(() => {});
+    installGlobalStub('document', createEventTarget({ visibilityState: 'visible' }));
+    installGlobalStub('window', createEventTarget({
       location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
-    });
-    globalThis.navigator = { onLine: false };
+    }));
+    installGlobalStub('navigator', { onLine: false });
 
     let sdkCallIndex = 0;
     const sdk = {
@@ -71,37 +68,41 @@ describe('createEventPipeline — online event', () => {
       },
     };
 
-    const startedAt = Date.now();
-    const elapsed = await new Promise((resolve) => {
-      let connects = 0;
-      const { cleanup } = createEventPipeline({
-        sdk,
-        transport: 'sse',
-        heartbeatTimeoutMs: 60_000,
-        reconnectDelayMs: 60_000,
-        onEvent: () => {},
-        onDisconnect: () => {
-          // We're now inside waitForRetry on the long offline cap.
-          // Flip the browser back online and fire the event; waitForRetry
-          // should resolve early and the next attempt should fire.
-          setTimeout(() => {
-            globalThis.navigator = { onLine: true };
-            globalThis.window.dispatch('online');
-          }, 30);
-        },
-        onReconnect: () => {
-          connects += 1;
-          if (connects === 1) {
-            cleanup();
-            resolve(Date.now() - startedAt);
-          }
-        },
+    try {
+      const startedAt = Date.now();
+      const elapsed = await new Promise((resolve) => {
+        let connects = 0;
+        const { cleanup } = createEventPipeline({
+          sdk,
+          transport: 'sse',
+          heartbeatTimeoutMs: 60_000,
+          reconnectDelayMs: 60_000,
+          onEvent: () => {},
+          onDisconnect: () => {
+            // We're now inside waitForRetry on the long offline cap.
+            // Flip the browser back online and fire the event; waitForRetry
+            // should resolve early and the next attempt should fire.
+            setTimeout(() => {
+              installGlobalStub('navigator', { onLine: true });
+              globalThis.window.dispatch('online');
+            }, 30);
+          },
+          onReconnect: () => {
+            connects += 1;
+            if (connects === 1) {
+              cleanup();
+              resolve(Date.now() - startedAt);
+            }
+          },
+        });
       });
-    });
 
-    // Two attempts: the failed one + the recovery one. If the `online`
-    // interrupt didn't fire, the test would have hung on the 60s offline cap.
-    expect(sdkCallIndex).toBe(2);
-    expect(elapsed).toBeLessThan(2_000);
+      // Two attempts: the failed one + the recovery one. If the `online`
+      // interrupt didn't fire, the test would have hung on the 60s offline cap.
+      expect(sdkCallIndex).toBe(2);
+      expect(elapsed).toBeLessThan(2_000);
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 });

@@ -12,6 +12,7 @@ mock.module("@/lib/opencode/client", () => ({
     getBaseUrl: () => "/api",
     getDirectory: () => "/test/project",
     listAgents: () => Promise.resolve([]),
+    shellSession: () => Promise.resolve({ info: {}, parts: [] }),
     withDirectory: (_directory: string | null | undefined, fn: () => Promise<unknown>) => fn(),
   },
 }))
@@ -50,14 +51,6 @@ mock.module("@/stores/useConfigStore", () => ({
   },
 }))
 
-mock.module("@/stores/useCommandsStore", () => ({
-  useCommandsStore: {
-    getState: () => ({
-      loadCommands: () => Promise.resolve(true),
-    }),
-  },
-}))
-
 mock.module("@/stores/useProjectsStore", () => ({
   useProjectsStore: {
     getState: () => ({
@@ -92,12 +85,15 @@ describe("refreshAfterOpenCodeRestart", () => {
   })
 
   test("signals the realtime pipeline to reconnect during config refresh", async () => {
-    globalThis.window = {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
       dispatchEvent: (event: Event) => {
         dispatchedEvents.push(event.type)
         return true
       },
-    } as unknown as Window & typeof globalThis
+      },
+    })
 
     try {
       const { refreshAfterOpenCodeRestart } = await import("./useAgentsStore")
@@ -111,7 +107,10 @@ describe("refreshAfterOpenCodeRestart", () => {
       expect(dispatchedEvents).toContain("openchamber:system-resume")
       expect(loadProviderDirectories).toEqual(["/test/project"])
     } finally {
-      globalThis.window = savedWindow
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: savedWindow,
+      })
     }
   })
 

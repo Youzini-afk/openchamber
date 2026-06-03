@@ -8,9 +8,12 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 describe('model selector compact layout', () => {
   test('clips long provider/model labels inside the selector trigger', () => {
     const source = readFileSync(resolve(testDir, 'ModelSelector.tsx'), 'utf8');
+    const triggerLabelClasses = source
+      .match(/className="([^"]*min-w-0[^"]*truncate[^"]*)">\{triggerLabel\}<\/span>/)?.[1] ?? '';
 
     expect(source).toContain('overflow-hidden');
-    expect(source).toContain('min-w-0 truncate');
+    expect(triggerLabelClasses).toContain('min-w-0');
+    expect(triggerLabelClasses).toContain('truncate');
   });
 
   test('does not show remote provider logo images before they finish loading', () => {

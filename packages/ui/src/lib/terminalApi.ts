@@ -1,3 +1,6 @@
+import { getRuntimeUrlResolver } from './runtime-url';
+import { runtimeFetch } from './runtime-fetch';
+
 export interface TerminalWebSocketDescriptor {
   path: string;
   v?: number;
@@ -88,23 +91,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 const normalizeWebSocketPath = (pathValue: string): string => {
-  if (/^wss?:\/\//i.test(pathValue)) {
-    return pathValue;
-  }
-
-  if (/^https?:\/\//i.test(pathValue)) {
-    const url = new URL(pathValue);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return url.toString();
-  }
-
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  const normalizedPath = pathValue.startsWith('/') ? pathValue : `/${pathValue}`;
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}${normalizedPath}`;
+  return getRuntimeUrlResolver().websocket(pathValue);
 };
 
 const encodeControlFrame = (payload: TerminalControlMessage): Uint8Array => {
@@ -759,7 +746,7 @@ const applyTerminalTransportCapabilities = (capabilities: TerminalSession['capab
 };
 
 const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<void> => {
-  const response = await fetch(`/api/terminal/${sessionId}/input`, {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}/input`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: data,
@@ -782,7 +769,7 @@ export async function createTerminalSession(options: CreateTerminalOptions): Pro
     body.cwd = options.cwd ?? '';
   }
 
-  const response = await fetch('/api/terminal/create', {
+  const response = await runtimeFetch('/api/terminal/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -876,7 +863,7 @@ const connectTerminalStreamViaSse = (
       return;
     }
 
-    eventSource = new EventSource(`/api/terminal/${sessionId}/stream`);
+    eventSource = new EventSource(getRuntimeUrlResolver().sse(`/api/terminal/${sessionId}/stream`));
     let opened = false;
 
     connectionTimeoutId = setTimeout(() => {
@@ -967,7 +954,7 @@ export async function resizeTerminal(
   cols: number,
   rows: number
 ): Promise<void> {
-  const response = await fetch(`/api/terminal/${sessionId}/resize`, {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}/resize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cols, rows }),
@@ -982,7 +969,7 @@ export async function resizeTerminal(
 export async function closeTerminal(sessionId: string): Promise<void> {
   getTerminalTransportGlobalState().manager?.unbindSession(sessionId);
 
-  const response = await fetch(`/api/terminal/${sessionId}`, {
+  const response = await runtimeFetch(`/api/terminal/${sessionId}`, {
     method: 'DELETE',
   });
 
@@ -1007,7 +994,7 @@ export async function restartTerminalSession(
     body.cwd = options.cwd ?? '';
   }
 
-  const response = await fetch(`/api/terminal/${currentSessionId}/restart`, {
+  const response = await runtimeFetch(`/api/terminal/${currentSessionId}/restart`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -1028,7 +1015,7 @@ export async function forceKillTerminal(options: {
   cwd?: string;
   workspacePath?: string;
 }): Promise<void> {
-  const response = await fetch('/api/terminal/force-kill', {
+  const response = await runtimeFetch('/api/terminal/force-kill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options),
