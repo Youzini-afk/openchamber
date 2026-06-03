@@ -74,6 +74,71 @@ function getProjectOpenCodeConfigCandidates(directory) {
   ];
 }
 
+function getProviderConfigFileCandidates(descriptor, directory) {
+  if (!descriptor) return [];
+  const basenames = Array.from(new Set([
+    ...(descriptor.packageNames ?? []),
+    ...(descriptor.aliases ?? []),
+  ].map((name) => normalizeString(name)).filter(Boolean)));
+  const directories = [
+    getOpenCodeConfigDir(),
+    ...(directory ? [path.join(directory, '.opencode'), directory] : []),
+  ];
+  return directories.flatMap((dir) => basenames.flatMap((basename) => [
+    path.join(dir, `${basename}.jsonc`),
+    path.join(dir, `${basename}.json`),
+  ]));
+}
+
+function getOpenCodePackageCacheRoots() {
+  const envConfigDir = normalizeString(process.env.OPENCODE_CONFIG_DIR);
+  const derivedRoot = path.resolve(getOpenCodeConfigDir(), '..', '..', '.cache', 'opencode', 'packages');
+  if (envConfigDir) return [derivedRoot];
+  return Array.from(new Set([
+    derivedRoot,
+    path.join(os.homedir(), '.cache', 'opencode', 'packages'),
+  ]));
+}
+
+function descriptorPackageCacheExists(descriptor) {
+  const packageNames = Array.from(new Set([
+    ...(descriptor?.packageNames ?? []),
+    ...(descriptor?.aliases ?? []),
+  ].map((name) => normalizeString(name)).filter(Boolean)));
+  if (packageNames.length === 0) return false;
+
+  for (const root of getOpenCodePackageCacheRoots()) {
+    if (!fs.existsSync(root)) continue;
+    for (const packageName of packageNames) {
+      const directCandidates = [
+        path.join(root, `${packageName}@latest`, 'package.json'),
+        path.join(root, 'node_modules', packageName, 'package.json'),
+      ];
+      if (directCandidates.some((candidate) => fs.existsSync(candidate))) return true;
+
+      try {
+        const entries = fs.readdirSync(root, { withFileTypes: true });
+        if (entries.some((entry) => entry.isDirectory() && entry.name.startsWith(`${packageName}@`) && fs.existsSync(path.join(root, entry.name, 'package.json')))) {
+          return true;
+        }
+      } catch {
+      }
+    }
+  }
+  return false;
+}
+
+function getKnownProviderLocalSignals(directory) {
+  const signals = new Map();
+  for (const descriptor of AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS) {
+    signals.set(descriptor.id, {
+      configFileConfigured: getProviderConfigFileCandidates(descriptor, directory).some((candidate) => fs.existsSync(candidate)),
+      localPackageInstalled: descriptorPackageCacheExists(descriptor),
+    });
+  }
+  return signals;
+}
+
 function getUserTuiConfigCandidates() {
   const configDir = getOpenCodeConfigDir();
   return [
@@ -327,6 +392,7 @@ function getConfigScan(directory) {
   const tuiEntries = tuiPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'user', 'tui'));
   const allEntries = [...userEntries, ...projectEntries, ...tuiEntries];
   const rememberedProviderRecords = getRememberedProviderRecords([...userPaths, ...legacyUserPaths, ...projectPaths]);
+  const localProviderSignals = getKnownProviderLocalSignals(directory);
   const configPaths = Array.from(new Set([
     ...userPaths.filter((filePath) => fs.existsSync(filePath)),
     ...projectPaths.filter((filePath) => fs.existsSync(filePath)),
@@ -356,6 +422,7 @@ function getConfigScan(directory) {
     tuiEntries,
     allEntries,
     rememberedProviderRecords,
+    localProviderSignals,
     configPaths,
     tuiConfigPath,
     mtimeMsByPath,
@@ -400,7 +467,7 @@ function getProviderStateForMode(mode) {
   return 'active';
 }
 
-function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
+function getProviderInfo(mode, entries, rememberedProviderRecords = [], localProviderSignals = new Map()) {
   const rememberedProviderIds = rememberedProviderRecords.map((record) => record.id);
   const providerIds = getActiveProviderIds(entries.filter((entry) => entry.surface !== 'tui'));
   const providerState = mode.effective === MODE_CONFLICT || providerIds.length > 1
@@ -412,6 +479,7 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
   const providersById = new Map();
   for (const descriptor of AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS) {
     const remembered = rememberedProviderIds.includes(descriptor.id);
+    const localSignals = localProviderSignals.get(descriptor.id) ?? {};
     providersById.set(descriptor.id, {
       id: descriptor.id,
       legacyMode: descriptor.legacyMode,
@@ -419,6 +487,9 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
       description: descriptor.description ?? null,
       active: activeProviderId === descriptor.id,
       installed: false,
+      configured: false,
+      configFileConfigured: localSignals.configFileConfigured === true,
+      localPackageInstalled: localSignals.localPackageInstalled === true,
       managementSurfaceId: descriptor.managementSurfaceId,
       expectedAgentName: descriptor.expectedAgentName ?? null,
       known: true,
@@ -428,6 +499,7 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
   }
   for (const entry of entries.filter((item) => item.surface !== 'tui')) {
     if (!entry.providerId || !entry.provider) continue;
+    const previous = providersById.get(entry.providerId) ?? {};
     providersById.set(entry.providerId, {
       id: entry.provider.id,
       legacyMode: entry.provider.legacyMode,
@@ -435,6 +507,9 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
       description: entry.provider.description ?? null,
       active: activeProviderId === entry.provider.id,
       installed: true,
+      configured: true,
+      configFileConfigured: previous.configFileConfigured === true,
+      localPackageInstalled: previous.localPackageInstalled === true,
       managementSurfaceId: entry.provider.managementSurfaceId,
       expectedAgentName: entry.provider.expectedAgentName ?? null,
       known: entry.provider.known === true,
@@ -455,6 +530,9 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
       description: provider?.description ?? record.description ?? null,
       active: false,
       installed: false,
+      configured: false,
+      configFileConfigured: false,
+      localPackageInstalled: false,
       managementSurfaceId: provider?.managementSurfaceId ?? record.managementSurfaceId ?? `generic-agent-provider:${record.id}`,
       expectedAgentName: provider?.expectedAgentName ?? record.expectedAgentName ?? null,
       known: provider ? true : false,
@@ -464,10 +542,16 @@ function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
   }
   const providers = Array.from(providersById.values()).map((provider) => {
     const matchingEntries = entries.filter((entry) => entry.providerId === provider.id);
+    const configured = matchingEntries.length > 0 || provider.configured === true;
+    const configFileConfigured = provider.configFileConfigured === true;
+    const localPackageInstalled = provider.localPackageInstalled === true;
     return {
       ...provider,
       active: activeProviderId === provider.id,
-      installed: matchingEntries.length > 0,
+      configured,
+      configFileConfigured,
+      localPackageInstalled,
+      installed: configured || configFileConfigured || localPackageInstalled,
       remembered: provider.remembered === true,
     };
   });
@@ -665,7 +749,7 @@ function readAgentOrchestrationConfig(options = {}) {
   const mode = getModeInfoFromScan(scan);
   return {
     mode,
-    ...getProviderInfo(mode, [...scan.userEntries, ...scan.projectEntries, ...scan.tuiEntries], scan.rememberedProviderRecords),
+    ...getProviderInfo(mode, [...scan.userEntries, ...scan.projectEntries, ...scan.tuiEntries], scan.rememberedProviderRecords, scan.localProviderSignals),
     omo: readOpenAgentConfig({ directory }),
     slim: readSlimConfig({ directory }),
   };

@@ -71,6 +71,9 @@ export const registerPluginRoutes = (app, dependencies) => {
         status: 'available',
         configurable: provider.configurable === true,
         installed: true,
+        configured: true,
+        configFileConfigured: false,
+        localPackageInstalled: false,
         remembered: false,
       });
     }
@@ -94,6 +97,9 @@ export const registerPluginRoutes = (app, dependencies) => {
         status: provider.active ? 'available' : 'inactive',
         configurable: provider.configurable === true,
         installed: provider.installed === true,
+        configured: provider.configured === true,
+        configFileConfigured: provider.configFileConfigured === true,
+        localPackageInstalled: provider.localPackageInstalled === true,
         remembered: provider.remembered === true,
       }));
     const descriptorSurfaceIds = new Set(descriptorBackedSurfaces.map((surface) => surface.id));

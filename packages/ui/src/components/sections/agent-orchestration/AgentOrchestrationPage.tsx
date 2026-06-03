@@ -748,7 +748,7 @@ function getProviderDescription(provider: OrchestrationProvider, t: ReturnType<t
 
 function getProviderMetadata(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string | null {
   if (provider.known === false) return t('settings.agentOrchestration.mode.generic.metadata');
-  if (provider.remembered && !provider.installed && !provider.active) return t('settings.agentOrchestration.mode.provider.inactive');
+  if (!provider.active && (provider.remembered || provider.installed)) return t('settings.agentOrchestration.mode.provider.inactive');
   if (!provider.installed) return t('settings.agentOrchestration.mode.provider.notInstalled');
   return null;
 }

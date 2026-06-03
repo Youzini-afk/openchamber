@@ -41,6 +41,9 @@ export interface PluginManagementSurface {
   status: 'available' | 'inactive';
   configurable?: boolean;
   installed?: boolean;
+  configured?: boolean;
+  configFileConfigured?: boolean;
+  localPackageInstalled?: boolean;
   remembered?: boolean;
 }
 

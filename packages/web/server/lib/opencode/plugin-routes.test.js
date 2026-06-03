@@ -206,6 +206,7 @@ describe('opencode plugin routes', () => {
           spec: null,
           status: 'inactive',
           installed: false,
+          configured: false,
           remembered: true,
         }),
       ]);
@@ -221,6 +222,42 @@ describe('opencode plugin routes', () => {
         process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
       }
     }
+  });
+
+  test('GET /api/config/plugins keeps descriptor-backed provider surfaces for locally installed inactive providers', async () => {
+    app = createApp({
+      readAgentOrchestrationConfig: () => ({
+        providers: [{
+          id: 'oh-my-openagent',
+          legacyMode: 'omo',
+          title: 'Oh My OpenAgent',
+          managementSurfaceId: 'openagent-agent-provider-settings',
+          active: false,
+          installed: true,
+          configured: false,
+          configFileConfigured: true,
+          localPackageInstalled: true,
+          remembered: false,
+          configurable: true,
+        }],
+      }),
+    });
+
+    const response = await request(app).get('/api/config/plugins').expect(200);
+
+    expect(response.body.entries).toEqual([]);
+    expect(response.body.managementSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'openagent-agent-provider-settings',
+        providerId: 'oh-my-openagent',
+        status: 'inactive',
+        installed: true,
+        configured: false,
+        configFileConfigured: true,
+        localPackageInstalled: true,
+        remembered: false,
+      }),
+    ]);
   });
 
   test('GET /api/config/plugins prefers canonical opencode config over legacy config.json', async () => {

@@ -27,6 +27,9 @@ export interface AgentOrchestrationConfigResponse {
     description?: string | null;
     active: boolean;
     installed: boolean;
+    configured?: boolean;
+    configFileConfigured?: boolean;
+    localPackageInstalled?: boolean;
     remembered?: boolean;
     managementSurfaceId?: string;
     expectedAgentName: string | null;

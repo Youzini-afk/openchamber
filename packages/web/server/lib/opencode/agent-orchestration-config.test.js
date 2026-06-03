@@ -76,6 +76,7 @@ describe('agent orchestration config helpers', () => {
     expect(slimConfig.providers.find((provider) => provider.id === 'oh-my-opencode-slim')).toMatchObject({
       active: true,
       installed: true,
+      configured: true,
       legacyMode: 'slim',
       expectedAgentName: 'orchestrator',
     });
@@ -87,6 +88,48 @@ describe('agent orchestration config helpers', () => {
     expect(conflictConfig.providerState).toBe('conflict');
     expect(conflictConfig.diagnostics.conflicts).toBe(conflictConfig.mode.conflicts);
     expect(conflictConfig.diagnostics.mtimeMsByPath).toBe(conflictConfig.mode.mtimeMsByPath);
+  });
+
+  it('exposes known providers installed in OpenCode package cache without showing unknown candidates', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const cacheDir = path.join(tempHome, '.cache', 'opencode', 'packages');
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.mkdirSync(path.join(cacheDir, 'oh-my-openagent@latest'), { recursive: true });
+    fs.mkdirSync(path.join(cacheDir, 'unrelated-agent-plugin@latest'), { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'oh-my-openagent@latest', 'package.json'), '{ "name": "oh-my-openagent" }\n');
+    fs.writeFileSync(path.join(cacheDir, 'unrelated-agent-plugin@latest', 'package.json'), '{ "name": "unrelated-agent-plugin" }\n');
+    fs.writeFileSync(opencodePath, '{ "plugin": ["oh-my-opencode-slim"] }\n');
+
+    const { readAgentOrchestrationConfig } = await loadModule();
+    const config = readAgentOrchestrationConfig();
+
+    expect(config.providers.find((provider) => provider.id === 'oh-my-openagent')).toMatchObject({
+      active: false,
+      configured: false,
+      localPackageInstalled: true,
+      installed: true,
+      remembered: false,
+    });
+    expect(config.providers.some((provider) => provider.id.includes('unrelated-agent-plugin'))).toBe(false);
+  });
+
+  it('exposes known providers with existing provider config files even when inactive', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodePath, '{ "plugin": ["oh-my-opencode-slim"] }\n');
+    fs.writeFileSync(path.join(configDir, 'oh-my-openagent.json'), '{ "agents": { "sisyphus": {} } }\n');
+
+    const { readAgentOrchestrationConfig } = await loadModule();
+    const config = readAgentOrchestrationConfig();
+
+    expect(config.providers.find((provider) => provider.id === 'oh-my-openagent')).toMatchObject({
+      active: false,
+      configured: false,
+      configFileConfigured: true,
+      installed: true,
+    });
   });
 
   it('exposes explicitly declared third-party agent provider plugins without hardcoding their package names', async () => {
