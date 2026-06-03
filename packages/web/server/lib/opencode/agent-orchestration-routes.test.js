@@ -91,6 +91,34 @@ describe('agent orchestration routes', () => {
     });
   });
 
+  it.each([
+    ['omo', 'sisyphus'],
+    ['native', 'build'],
+  ])('refreshes OpenCode with %s expected agent name', async (mode, agentName) => {
+    const app = express();
+    app.use(express.json());
+    const setAgentOrchestrationMode = vi.fn(() => createConfigPayload({ mode: { ...createConfigPayload().mode, effective: mode, user: mode } }));
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+
+    registerAgentOrchestrationRoutes(app, {
+      readAgentOrchestrationConfig: vi.fn(),
+      setAgentOrchestrationMode,
+      readSlimConfig: vi.fn(),
+      saveSlimConfig: vi.fn(),
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: null, error: null })),
+    });
+
+    await request(app)
+      .patch('/api/agent-orchestration/mode')
+      .send({ mode, expectedMtimeMsByPath: {} })
+      .expect(200);
+
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration mode updated', {
+      agentName,
+    });
+  });
+
   it('returns 409 when mode config changed on disk', async () => {
     const app = express();
     app.use(express.json());
