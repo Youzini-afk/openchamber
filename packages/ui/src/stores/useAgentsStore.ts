@@ -88,6 +88,7 @@ const buildAgentsSignature = (agents: Agent[]): string => {
 };
 
 export type AgentScope = 'user' | 'project';
+export const AGENT_ORCHESTRATION_SELECTION = '__agent-orchestration__';
 
 export interface AgentConfig {
   name: string;

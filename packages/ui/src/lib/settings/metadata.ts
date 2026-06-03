@@ -7,7 +7,6 @@ export type SettingsPageSlug =
   | 'providers'
   | 'usage'
   | 'agents'
-  | 'openagent'
   | 'magic-context'
   | 'smart-search'
   | 'behavior'
@@ -108,14 +107,12 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     title: 'Agents',
     group: 'opencode',
     kind: 'split',
-    keywords: ['agent', 'agents', 'prompts', 'tools', 'permissions'],
-  },
-  {
-    slug: 'openagent',
-    title: 'Agent Orchestration',
-    group: 'opencode',
-    kind: 'single',
     keywords: [
+      'agent',
+      'agents',
+      'prompts',
+      'tools',
+      'permissions',
       'agent orchestration',
       'oh my openagent',
       'openagent',
@@ -270,6 +267,10 @@ export function resolveSettingsSlug(value: string | null | undefined): SettingsP
   const legacy = (LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG as Record<string, SettingsPageSlug>)[normalized];
   if (legacy) {
     return legacy;
+  }
+
+  if (normalized === 'openagent' || normalized === 'agent-orchestration') {
+    return 'agents';
   }
 
   const direct = getSettingsPageMeta(normalized);

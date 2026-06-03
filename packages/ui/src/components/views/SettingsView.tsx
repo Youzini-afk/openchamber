@@ -3,11 +3,10 @@ import { cn, getModifierLabel } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useAgentsStore } from '@/stores/useAgentsStore';
+import { AGENT_ORCHESTRATION_SELECTION, reloadOpenCodeConfiguration, useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
 import { useMagicContextConfigStore } from '@/stores/useMagicContextConfigStore';
-import { useAgentOrchestrationStore } from '@/stores/useAgentOrchestrationStore';
 import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
@@ -43,7 +42,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { AgentOrchestrationPage } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
 import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
 import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
@@ -73,7 +71,6 @@ import { McpIcon } from '@/components/icons/McpIcon';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsPageMeta,
@@ -122,7 +119,6 @@ const pageOrder: SettingsPageSlug[] = [
   'projects',
   'remote-instances',
   'agents',
-  'openagent',
   'magic-context',
   'smart-search',
   'behavior',
@@ -209,8 +205,6 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiCloudLine;
     case 'agents':
       return RiAiAgentLine;
-    case 'openagent':
-      return RiRobot2Line;
     case 'magic-context':
       return RiBrainLine;
     case 'smart-search':
@@ -437,11 +431,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     if (settingsSlug === 'agents') {
+      if (settingsPageRaw === 'openagent' || settingsPageRaw === 'agent-orchestration') {
+        useAgentsStore.getState().setSelectedAgent(AGENT_ORCHESTRATION_SELECTION);
+      }
       void useAgentsStore.getState().loadAgents();
-      return;
-    }
-    if (settingsSlug === 'openagent') {
-      void useAgentOrchestrationStore.getState().loadConfig({ force: true });
       return;
     }
     if (settingsSlug === 'magic-context') {
@@ -467,7 +460,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     if (settingsSlug === 'snippets') {
       void useSnippetsStore.getState().loadSnippets();
     }
-  }, [activeProjectId, isSettingsDialogOpen, isWindowed, runtimeCtx.isVSCode, settingsSlug]);
+  }, [activeProjectId, isSettingsDialogOpen, isWindowed, runtimeCtx.isVSCode, settingsPageRaw, settingsSlug]);
 
   const openPage = React.useCallback((slug: SettingsPageSlug) => {
     setSettingsPage(slug);
@@ -512,8 +505,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.usage.title');
       case 'agents':
         return t('settings.page.agents.title');
-      case 'openagent':
-        return t('settings.page.openagent.title');
       case 'magic-context':
         return t('settings.page.magicContext.title');
       case 'smart-search':
@@ -611,8 +602,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <RemoteInstancesPage />;
       case 'agents':
         return <AgentsPage />;
-      case 'openagent':
-        return <AgentOrchestrationPage />;
       case 'magic-context':
         return <MagicContextPage />;
       case 'smart-search':

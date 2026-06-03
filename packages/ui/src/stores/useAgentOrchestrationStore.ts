@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { startConfigUpdate, finishConfigUpdate } from '@/lib/configUpdate';
 import { opencodeClient } from '@/lib/opencode/client';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import type { OpenAgentConfigResponse } from '@/stores/useOpenAgentConfigStore';
@@ -12,6 +13,23 @@ export interface AgentOrchestrationConfigResponse {
     effective: SlimMode;
     user: SlimMode;
     project: SlimMode | null;
+    conflicts: string[];
+    configPaths: string[];
+    tuiConfigPath: string | null;
+    mtimeMsByPath: Record<string, number | null>;
+  };
+  activeProviderId: string | null;
+  providerState: 'native' | 'active' | 'conflict';
+  providers: Array<{
+    id: string;
+    legacyMode: Exclude<SlimMode, 'native' | 'conflict'>;
+    title: string;
+    active: boolean;
+    installed: boolean;
+    managementSurfaceId?: string;
+    expectedAgentName: string | null;
+  }>;
+  diagnostics: {
     conflicts: string[];
     configPaths: string[];
     tuiConfigPath: string | null;
@@ -94,8 +112,8 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
         const request = (async () => {
           set({ isLoading: true, error: null });
           try {
-            const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-            const response = await fetch(`/api/agent-orchestration/config${query}`, {
+            const response = await runtimeFetch('/api/agent-orchestration/config', {
+              query: configDirectory ? { directory: configDirectory } : undefined,
               headers: configDirectory ? { 'x-opencode-directory': configDirectory } : undefined,
             });
             if (!response.ok) {
@@ -126,8 +144,8 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
         set({ isSavingMode: true, error: null });
         let requiresReload = false;
         try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-          const response = await fetch(`/api/agent-orchestration/mode${query}`, {
+          const response = await runtimeFetch('/api/agent-orchestration/mode', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

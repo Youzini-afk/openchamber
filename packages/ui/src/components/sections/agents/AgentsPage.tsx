@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
-import { useAgentsStore, type AgentConfig, type AgentScope } from '@/stores/useAgentsStore';
+import { AGENT_ORCHESTRATION_SELECTION, useAgentsStore, type AgentConfig, type AgentScope } from '@/stores/useAgentsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useDirectorySync } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { AgentOrchestrationPage } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
 import {
   Select,
   SelectContent,
@@ -205,6 +206,7 @@ export const AgentsPage: React.FC = () => {
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
+  const isOrchestrationSelected = selectedAgentName === AGENT_ORCHESTRATION_SELECTION;
   const isNewAgent = Boolean(agentDraft && agentDraft.name === selectedAgentName && !selectedAgent);
 
   const [draftName, setDraftName] = React.useState('');
@@ -608,6 +610,10 @@ export const AgentsPage: React.FC = () => {
     }
   };
 
+
+  if (isOrchestrationSelected) {
+    return <AgentOrchestrationPage />;
+  }
 
   if (!selectedAgentName) {
     return (

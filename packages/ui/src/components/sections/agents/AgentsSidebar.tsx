@@ -17,8 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiAiAgentFill, RiAiAgentLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiRobot2Line, RiRobotLine, RiRestartLine, RiEditLine } from '@remixicon/react';
-import { useAgentsStore, isAgentBuiltIn, isAgentHidden, type AgentScope, type AgentDraft } from '@/stores/useAgentsStore';
+import { RiAddLine, RiAiAgentFill, RiAiAgentLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiRobot2Line, RiRobotLine, RiRestartLine, RiEditLine, RiSparklingLine } from '@remixicon/react';
+import { useAgentsStore, isAgentBuiltIn, isAgentHidden, AGENT_ORCHESTRATION_SELECTION, type AgentScope, type AgentDraft } from '@/stores/useAgentsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@opencode-ai/sdk/v2';
@@ -345,8 +345,21 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+        <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t('settings.agents.sidebar.section.system')}
+        </div>
+        <SystemListItem
+          label={t('settings.agents.sidebar.orchestration.label')}
+          description={t('settings.agents.sidebar.orchestration.description')}
+          isSelected={selectedAgentName === AGENT_ORCHESTRATION_SELECTION}
+          onSelect={() => {
+            setSelectedAgent(AGENT_ORCHESTRATION_SELECTION);
+            onItemSelect?.();
+          }}
+        />
+
         {visibleAgents.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
+          <div className="px-4 py-8 text-center text-muted-foreground">
             <RiRobot2Line className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.agents.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.agents.sidebar.empty.description')}</p>
@@ -506,6 +519,32 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
         </DialogContent>
       </Dialog>
     </div>
+  );
+};
+
+interface SystemListItemProps {
+  label: string;
+  description: string;
+  isSelected: boolean;
+  onSelect: () => void;
+}
+
+const SystemListItem: React.FC<SystemListItemProps> = ({ label, description, isSelected, onSelect }) => {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'group flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-all duration-200',
+        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover',
+      )}
+    >
+      <RiSparklingLine className="h-3.5 w-3.5 shrink-0 text-primary" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate typography-ui-label font-normal text-foreground">{label}</span>
+        <span className="block truncate typography-micro text-muted-foreground/60">{description}</span>
+      </span>
+    </button>
   );
 };
 
