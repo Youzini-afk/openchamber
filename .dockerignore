@@ -21,6 +21,4 @@ pnpm-debug.log*
 .opencode
 data
 workspaces
-packages/desktop/src-tauri
-packages/desktop/target
 packages/intellij

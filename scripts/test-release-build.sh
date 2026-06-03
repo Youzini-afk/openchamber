@@ -105,7 +105,7 @@ run_with_act() {
     log_success "act found: $(command -v act)"
 
     log_warn "⚠️  Note: act uses Docker (Linux containers)"
-    log_warn "   macOS-specific steps (Tauri, Xcode, signing) may not work."
+    log_warn "   macOS-specific steps (Electron packaging, Xcode, signing) may not work."
     log_warn "   For full macOS testing, use --native mode or GitHub's runners."
     echo ""
 
@@ -149,33 +149,20 @@ run_native_build() {
     }
 
     check_command bun
-    check_command rustc
-    check_command cargo
-
-    # Check Rust targets
-    log_info "Checking Rust targets..."
-    for target in "${TARGETS[@]}"; do
-        if ! rustup target list --installed | grep -q "$target"; then
-            log_warn "Rust target $target not installed. Installing..."
-            if [[ "$DRY_RUN" == false ]]; then
-                rustup target add "$target"
-            fi
-            log_success "Installed $target"
-        else
-            log_success "Rust target $target is installed"
-        fi
-    done
 
     if [[ "$DRY_RUN" == true ]]; then
         log_step "Commands that would be executed (dry run)"
         echo "  1. bun install --frozen-lockfile"
-        echo "  2. bun run --cwd packages/ui build"
+        echo "  2. bun run --cwd packages/electron build:web-assets"
+        echo "  3. bun run --cwd packages/electron bundle:main"
         for target in "${TARGETS[@]}"; do
-            echo "  3. bun run --cwd packages/desktop build"
+            local arch="arm64"
+            [[ "$target" == "x86_64-apple-darwin" ]] && arch="x64"
+            echo "  4. ELECTRON_BUILDER_ARCH=$arch bun run --cwd packages/electron rebuild:native"
             if [[ "$NO_BUNDLE" == true ]]; then
-                echo "  4. bun run --cwd packages/desktop tauri build --target $target --no-bundle"
+                echo "  5. (cd packages/electron && bunx electron-builder --mac --$arch --dir --publish=never)"
             else
-                echo "  4. bun run --cwd packages/desktop tauri build --target $target"
+                echo "  5. (cd packages/electron && bunx electron-builder --mac --$arch --publish=never)"
             fi
         done
         return
@@ -185,31 +172,31 @@ run_native_build() {
     log_step "Installing dependencies"
     bun install --frozen-lockfile
 
-    # Step 2: Build UI package
-    log_step "Building UI package"
-    bun run --cwd packages/ui build
+    # Step 2: Build Electron app inputs
+    log_step "Building Electron app inputs"
+    bun run --cwd packages/electron build:web-assets
+    bun run --cwd packages/electron bundle:main
 
-    # Step 3: Build Desktop for each target
+    # Step 3: Package Electron desktop for each target
     for target in "${TARGETS[@]}"; do
-        log_step "Building Desktop for $target"
+        log_step "Packaging Electron Desktop for $target"
 
-        # Build the frontend
-        log_info "Building desktop frontend..."
-        bun run --cwd packages/desktop build
+        local arch="arm64"
+        [[ "$target" == "x86_64-apple-darwin" ]] && arch="x64"
 
-        # Build Tauri for the target
-        log_info "Building Tauri for $target (this may take a while)..."
-        
-        local TAURI_ARGS="--target $target"
+        log_info "Rebuilding native modules for $arch..."
+        ELECTRON_BUILDER_ARCH="$arch" bun run --cwd packages/electron rebuild:native
+
+        local BUILDER_ARGS="--mac --$arch --publish=never"
         if [[ "$NO_BUNDLE" == true ]]; then
-            TAURI_ARGS+=" --no-bundle"
+            BUILDER_ARGS+=" --dir"
         fi
 
         if [[ "$VERBOSE" == true ]]; then
-            TAURI_ARGS+=" --verbose"
+            BUILDER_ARGS+=" --verbose"
         fi
 
-        bun run --cwd packages/desktop tauri build $TAURI_ARGS
+        (cd packages/electron && bunx electron-builder $BUILDER_ARGS)
 
         log_success "Successfully built for $target"
     done
@@ -218,16 +205,20 @@ run_native_build() {
     log_step "Build Summary"
 
     for target in "${TARGETS[@]}"; do
+        local arch="arm64"
+        [[ "$target" == "x86_64-apple-darwin" ]] && arch="x64"
+
         if [[ "$NO_BUNDLE" == true ]]; then
-            local BINARY_PATH="packages/desktop/src-tauri/target/$target/release/openchamber-desktop"
+            local BINARY_PATH="packages/electron/dist/mac"
+            [[ "$arch" == "arm64" && -d "packages/electron/dist/mac-arm64" ]] && BINARY_PATH="packages/electron/dist/mac-arm64"
         else
-            local BINARY_PATH="packages/desktop/src-tauri/target/$target/release/bundle/dmg"
+            local BINARY_PATH="packages/electron/dist"
         fi
 
         if [[ -e "$BINARY_PATH" ]]; then
             if [[ -d "$BINARY_PATH" ]]; then
                 log_success "$target: Bundle created at $BINARY_PATH"
-                ls -la "$BINARY_PATH"/*.dmg 2>/dev/null || true
+                ls -la "$BINARY_PATH" 2>/dev/null || true
             else
                 local SIZE
                 SIZE=$(du -h "$BINARY_PATH" | cut -f1)
@@ -237,7 +228,7 @@ run_native_build() {
         else
             log_warn "$target: Output not found at expected path"
             log_info "Checking target directory..."
-            ls -la "packages/desktop/src-tauri/target/$target/release/" 2>/dev/null | head -10 || true
+            ls -la "packages/electron/dist" 2>/dev/null || true
         fi
     done
 }
