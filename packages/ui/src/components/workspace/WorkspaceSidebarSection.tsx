@@ -12,8 +12,10 @@ import {
   RiFolderAddLine,
   RiFolderLine,
   RiGitBranchLine,
+  RiCheckLine,
   RiMore2Line,
   RiRefreshLine,
+  RiSortAlphabetAsc,
   RiTerminalLine,
   RiUpload2Line,
 } from '@remixicon/react';
@@ -38,7 +40,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { WorkspaceEntry } from '@/lib/api/types';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isWorkspaceArchivePath } from '@/lib/workspaceArchive';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -46,6 +48,14 @@ import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
+import {
+  DEFAULT_WORKSPACE_SORT_MODE,
+  WORKSPACE_SORT_MODES,
+  WORKSPACE_SORT_STORAGE_KEY,
+  normalizeWorkspaceSortMode,
+  sortWorkspaceEntries,
+  type WorkspaceSortMode,
+} from './workspaceSort';
 
 type WorkspaceSidebarSectionProps = {
   mobileVariant?: boolean;
@@ -57,6 +67,7 @@ const TREE_INDENT_PX = 14;
 const TREE_ROW_LEFT_PADDING_PX = 4;
 const MAX_TREE_GUIDE_DEPTH = 18;
 const TREE_GUIDE_LINE_CLASS = 'bg-muted-foreground/40 group-hover/workspace-row:bg-muted-foreground/60';
+const EMPTY_WORKSPACE_ENTRIES: WorkspaceEntry[] = [];
 
 const entryDepthPadding = (depth: number): React.CSSProperties => ({
   paddingLeft: `${Math.min(depth, MAX_TREE_GUIDE_DEPTH) * TREE_INDENT_PX + TREE_ROW_LEFT_PADDING_PX}px`,
@@ -159,6 +170,22 @@ const isOpenableFileEntry = (entry: WorkspaceEntry): boolean => (
   entry.type === 'file' || entry.type === 'symlink'
 );
 
+const getInitialSortMode = (): WorkspaceSortMode => {
+  if (typeof window === 'undefined') return DEFAULT_WORKSPACE_SORT_MODE;
+  try {
+    return normalizeWorkspaceSortMode(window.localStorage.getItem(WORKSPACE_SORT_STORAGE_KEY));
+  } catch {
+    return DEFAULT_WORKSPACE_SORT_MODE;
+  }
+};
+
+const WORKSPACE_SORT_LABEL_KEYS: Record<WorkspaceSortMode, I18nKey> = {
+  'name-asc': 'workspace.sidebar.sort.nameAsc',
+  'name-desc': 'workspace.sidebar.sort.nameDesc',
+  'modified-desc': 'workspace.sidebar.sort.modifiedDesc',
+  'modified-asc': 'workspace.sidebar.sort.modifiedAsc',
+};
+
 export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = ({
   mobileVariant = false,
   setSessionSwitcherOpen,
@@ -199,6 +226,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const [renameDraft, setRenameDraft] = React.useState('');
   const [renameError, setRenameError] = React.useState<string | null>(null);
   const [renameSubmitting, setRenameSubmitting] = React.useState(false);
+  const [sortMode, setSortModeState] = React.useState<WorkspaceSortMode>(getInitialSortMode);
 
   React.useEffect(() => {
     if (didInitialLoadRef.current) {
@@ -208,7 +236,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     void useWorkspaceStore.getState().refreshWorkspace();
   }, []);
 
-  const rootEntries = entriesByPath[''] ?? [];
+  const rootEntries = entriesByPath[''] ?? EMPTY_WORKSPACE_ENTRIES;
+  const sortedRootEntries = React.useMemo(() => sortWorkspaceEntries(rootEntries, sortMode), [rootEntries, sortMode]);
   const isBusy = Boolean(loadingRoot || loadingPaths[''] || actionPending);
   const trashEntry = React.useMemo<WorkspaceEntry | null>(() => {
     if (!root?.features?.trash) return null;
@@ -223,6 +252,16 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       mtimeMs,
     };
   }, [root, t]);
+
+  const setSortMode = React.useCallback((nextMode: WorkspaceSortMode) => {
+    const normalizedMode = normalizeWorkspaceSortMode(nextMode);
+    setSortModeState(normalizedMode);
+    try {
+      window.localStorage.setItem(WORKSPACE_SORT_STORAGE_KEY, normalizedMode);
+    } catch {
+      // Ignore storage failures; sorting still applies for this session.
+    }
+  }, []);
 
   const handleCreateFolder = React.useCallback(async (parent = '') => {
     const name = window.prompt(t('workspace.sidebar.prompt.newFolderName'));
@@ -399,7 +438,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     const isArchive = entry.type === 'file' && isWorkspaceArchivePath(entry.relativePath);
     const isExpanded = Boolean(expandedPaths[entry.relativePath]);
     const isSelected = selectedPath === entry.relativePath;
-    const children = entriesByPath[entry.relativePath] ?? [];
+    const children = sortWorkspaceEntries(entriesByPath[entry.relativePath] ?? [], sortMode);
     const gitLabel = getEntryGitLabel(entry);
     const menuOpen = contextMenuPath === entry.relativePath;
 
@@ -445,7 +484,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
             ) : (
               <RiFileLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
-            <span className="min-w-0 flex-1 truncate typography-ui-label lowercase text-foreground">
+            <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">
               {entry.name}
             </span>
             {gitLabel ? (
@@ -651,6 +690,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     refreshGitStatus,
     selectedPath,
     setWorkspaceSelectedPath,
+    sortMode,
     t,
     toggleExpandedPath,
   ]);
@@ -708,6 +748,32 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
           </TooltipTrigger>
           <TooltipContent side="bottom">{t('workspace.sidebar.actions.upload')}</TooltipContent>
         </Tooltip>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  className="h-7 w-7 p-0"
+                  aria-label={t('workspace.sidebar.actions.sort')}
+                >
+                  <RiSortAlphabetAsc className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t('workspace.sidebar.actions.sort')}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="min-w-[180px]">
+            {WORKSPACE_SORT_MODES.map((mode) => (
+              <DropdownMenuItem key={mode} onClick={() => setSortMode(mode)}>
+                <RiCheckLine className={cn('mr-1.5 h-4 w-4', sortMode === mode ? 'opacity-100' : 'opacity-0')} />
+                {t(WORKSPACE_SORT_LABEL_KEYS[mode])}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -788,13 +854,13 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       ) : null}
 
       <div className="space-y-0.5">
-        {rootEntries.length === 0 && !trashEntry ? (
+        {sortedRootEntries.length === 0 && !trashEntry ? (
           <div className="px-1 py-1 typography-micro text-muted-foreground">
             {isBusy ? t('workspace.sidebar.state.loading') : t('workspace.sidebar.state.empty')}
           </div>
         ) : null}
-        {rootEntries.length > 0 ? (
-          rootEntries.map((entry, index) => renderEntry(entry, 0, [Boolean(trashEntry) || index < rootEntries.length - 1]))
+        {sortedRootEntries.length > 0 ? (
+          sortedRootEntries.map((entry, index) => renderEntry(entry, 0, [Boolean(trashEntry) || index < sortedRootEntries.length - 1]))
         ) : null}
         {trashEntry ? renderEntry(trashEntry, 0, [false]) : null}
       </div>
