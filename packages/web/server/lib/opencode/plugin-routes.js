@@ -7,6 +7,7 @@ import {
   AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS,
   getAgentOrchestrationProviderForSpec,
 } from './agent-orchestration-providers.js';
+import { matchesMagicContextPlugin } from './magic-context-config.js';
 
 const ENTRY_EXISTS_CODES = new Set(['ENTRY_EXISTS', 'EEXIST']);
 const FILE_EXISTS_CODES = new Set(['FILE_EXISTS', 'EEXIST']);
@@ -48,7 +49,7 @@ export const registerPluginRoutes = (app, dependencies) => {
       entriesByProvider.set(provider.id, existing);
     }
 
-    return AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.flatMap((provider) => {
+    const agentProviderSurfaces = AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.flatMap((provider) => {
       const providerEntries = entriesByProvider.get(provider.id) ?? [];
       if (providerEntries.length === 0 || !provider.managementSurfaceId) return [];
       const primaryEntry = providerEntries[0] ?? null;
@@ -67,6 +68,22 @@ export const registerPluginRoutes = (app, dependencies) => {
         status: 'available',
       }];
     });
+
+    const magicContextEntries = entries.filter((entry) => matchesMagicContextPlugin(entry.spec));
+    const primaryMagicContextEntry = magicContextEntries[0] ?? null;
+    const magicContextSurfaces = primaryMagicContextEntry ? [{
+      id: 'magic-context-settings',
+      title: 'Magic Context',
+      kind: 'magic-context-config',
+      panel: { kind: 'magic-context-config' },
+      providerId: null,
+      pluginEntryId: primaryMagicContextEntry.id,
+      spec: primaryMagicContextEntry.spec,
+      scope: new Set(magicContextEntries.map((entry) => entry.scope)).size > 1 ? 'mixed' : primaryMagicContextEntry.scope,
+      status: 'available',
+    }] : [];
+
+    return [...agentProviderSurfaces, ...magicContextSurfaces];
   };
 
   const resolveDirectory = async (req, res) => {

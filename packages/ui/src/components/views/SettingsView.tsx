@@ -6,7 +6,6 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { AGENT_ORCHESTRATION_SELECTION, reloadOpenCodeConfiguration, useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
-import { useMagicContextConfigStore } from '@/stores/useMagicContextConfigStore';
 import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
@@ -42,7 +41,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
 import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
@@ -119,7 +117,6 @@ const pageOrder: SettingsPageSlug[] = [
   'projects',
   'remote-instances',
   'agents',
-  'magic-context',
   'smart-search',
   'behavior',
   'commands',
@@ -205,8 +202,6 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<
       return RiCloudLine;
     case 'agents':
       return RiAiAgentLine;
-    case 'magic-context':
-      return RiBrainLine;
     case 'smart-search':
       return RiSearchEyeLine;
     case 'behavior':
@@ -437,10 +432,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       void useAgentsStore.getState().loadAgents();
       return;
     }
-    if (settingsSlug === 'magic-context') {
-      void useMagicContextConfigStore.getState().loadConfig();
-      return;
-    }
     if (settingsSlug === 'commands') {
       void useCommandsStore.getState().loadCommands();
       return;
@@ -450,7 +441,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     if (settingsSlug === 'plugins') {
-      void usePluginsStore.getState().loadPlugins();
+      void (async () => {
+        const loaded = await usePluginsStore.getState().loadPlugins();
+        if (loaded && settingsPageRaw === 'magic-context') {
+          const hasSurface = usePluginsStore.getState().managementSurfaces.some((surface) => surface.id === 'magic-context-settings');
+          if (hasSurface) {
+            usePluginsStore.getState().selectSurface('magic-context-settings');
+          }
+        }
+      })();
       return;
     }
     if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
@@ -505,8 +504,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.usage.title');
       case 'agents':
         return t('settings.page.agents.title');
-      case 'magic-context':
-        return t('settings.page.magicContext.title');
       case 'smart-search':
         return t('settings.page.smartSearch.title');
       case 'behavior':
@@ -602,8 +599,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <RemoteInstancesPage />;
       case 'agents':
         return <AgentsPage />;
-      case 'magic-context':
-        return <MagicContextPage />;
       case 'smart-search':
         return <SmartSearchPage />;
       case 'behavior':

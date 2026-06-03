@@ -10,6 +10,7 @@ import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLay
 import { RegistryBanner } from './RegistryBanner';
 import { SlimPanel } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
 import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
+import { MagicContextPage } from '@/components/sections/magic-context/MagicContextPage';
 import {
   usePluginsStore,
   getSurfaceIdFromSelection,
@@ -422,6 +423,10 @@ export const PluginsPage: React.FC = () => {
 
 const PluginManagementSurfacePanel: React.FC<{ surface: PluginManagementSurface }> = ({ surface }) => {
   const { t } = useI18n();
+  if (surface.panel.kind === 'magic-context-config') {
+    return <MagicContextPage />;
+  }
+
   return (
     <SettingsPageLayout>
       <div className="space-y-1">

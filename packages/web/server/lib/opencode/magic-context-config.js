@@ -1003,6 +1003,7 @@ function saveMagicContextConfig(input = {}) {
 }
 
 export {
+  matchesMagicContextPlugin,
   readMagicContextConfig,
   saveMagicContextConfig,
   sanitizeMagicContextConfig,

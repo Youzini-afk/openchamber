@@ -66,9 +66,9 @@ export type PluginFile = {
 export type PluginManagementSurface = {
   id: string;
   title: string;
-  kind: 'agent-orchestration-provider-config';
-  panel: { kind: 'slim-orchestration-config' | 'openagent-config' };
-  providerId: string;
+  kind: 'agent-orchestration-provider-config' | 'magic-context-config';
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' };
+  providerId: string | null;
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';
@@ -968,6 +968,8 @@ const AGENT_PROVIDER_SURFACE_DESCRIPTORS = [
   },
 ] as const;
 
+const MAGIC_CONTEXT_PACKAGE_NAMES = ['opencode-magic-context', '@cortexkit/opencode-magic-context', '@youzini/opencode-magic-context'] as const;
+
 const getPluginBasename = (spec: string): string => spec.trim().replace(/\\/g, '/').split('/').pop() ?? spec.trim();
 
 const entryMatchesProvider = (entry: PluginEntry, packageNames: readonly string[]): boolean => {
@@ -977,7 +979,7 @@ const entryMatchesProvider = (entry: PluginEntry, packageNames: readonly string[
 
 export const listPluginManagementSurfaces = (workingDirectory?: string): PluginManagementSurface[] => {
   const entries = listPluginEntries(workingDirectory);
-  return AGENT_PROVIDER_SURFACE_DESCRIPTORS.flatMap((descriptor) => {
+  const agentProviderSurfaces: PluginManagementSurface[] = AGENT_PROVIDER_SURFACE_DESCRIPTORS.flatMap((descriptor) => {
     const matchingEntries = entries.filter((entry) => entryMatchesProvider(entry, descriptor.packageNames));
     if (matchingEntries.length === 0) return [];
     const primaryEntry = matchingEntries[0] ?? null;
@@ -985,15 +987,35 @@ export const listPluginManagementSurfaces = (workingDirectory?: string): PluginM
     return [{
       id: descriptor.id,
       title: descriptor.title,
-      kind: 'agent-orchestration-provider-config',
+      kind: 'agent-orchestration-provider-config' as const,
       panel: { kind: descriptor.panelKind },
       providerId: descriptor.providerId,
       pluginEntryId: primaryEntry?.id ?? null,
       spec: primaryEntry?.spec ?? null,
       scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
-      status: 'available',
+      status: 'available' as const,
     }];
   });
+
+  const magicContextEntries = entries.filter((entry) => (
+    entryMatchesProvider(entry, MAGIC_CONTEXT_PACKAGE_NAMES)
+      || entry.spec.toLowerCase().includes('opencode-magic-context')
+      || entry.spec.toLowerCase().includes('magic-context/packages/plugin')
+  ));
+  const primaryMagicContextEntry = magicContextEntries[0] ?? null;
+  const magicContextSurfaces: PluginManagementSurface[] = primaryMagicContextEntry ? [{
+    id: 'magic-context-settings',
+    title: 'Magic Context',
+    kind: 'magic-context-config',
+    panel: { kind: 'magic-context-config' },
+    providerId: null,
+    pluginEntryId: primaryMagicContextEntry.id,
+    spec: primaryMagicContextEntry.spec,
+    scope: new Set(magicContextEntries.map((entry) => entry.scope)).size > 1 ? 'mixed' : primaryMagicContextEntry.scope,
+    status: 'available',
+  }] : [];
+
+  return [...agentProviderSurfaces, ...magicContextSurfaces];
 };
 
 export const getPluginEntry = (id: string, workingDirectory?: string): PluginEntry | null =>

@@ -7,7 +7,6 @@ export type SettingsPageSlug =
   | 'providers'
   | 'usage'
   | 'agents'
-  | 'magic-context'
   | 'smart-search'
   | 'behavior'
   | 'commands'
@@ -124,13 +123,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
       'categories',
       'model routes',
     ],
-  },
-  {
-    slug: 'magic-context',
-    title: 'Magic Context',
-    group: 'opencode',
-    kind: 'single',
-    keywords: ['magic context', 'opencode-magic-context', 'context', 'memory', 'historian', 'dreamer', 'sidekick'],
   },
   {
     slug: 'smart-search',
@@ -271,6 +263,10 @@ export function resolveSettingsSlug(value: string | null | undefined): SettingsP
 
   if (normalized === 'openagent' || normalized === 'agent-orchestration') {
     return 'agents';
+  }
+
+  if (normalized === 'magic-context') {
+    return 'plugins';
   }
 
   const direct = getSettingsPageMeta(normalized);

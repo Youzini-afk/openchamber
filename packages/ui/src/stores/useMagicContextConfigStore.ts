@@ -10,6 +10,7 @@ import {
 } from '@/components/sections/magic-context/magicContextConfig';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 export interface MagicContextConfigResponse {
   plugin: {
@@ -174,8 +175,8 @@ export const useMagicContextConfigStore = create<MagicContextConfigStore>()(
         const request = (async () => {
           set({ isLoading: true, error: null });
           try {
-            const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-            const response = await fetch(`/api/magic-context/config${query}`, {
+            const response = await runtimeFetch('/api/magic-context/config', {
+              query: configDirectory ? { directory: configDirectory } : undefined,
               headers: configDirectory ? { 'x-opencode-directory': configDirectory } : undefined,
             });
             if (!response.ok) {
@@ -258,9 +259,9 @@ export const useMagicContextConfigStore = create<MagicContextConfigStore>()(
 
         let requiresReload = false;
         try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
           const payload = buildMagicContextSavePayload(state.config?.target.mtimeMs ?? null, state.draft);
-          const response = await fetch(`/api/magic-context/config${query}`, {
+          const response = await runtimeFetch('/api/magic-context/config', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

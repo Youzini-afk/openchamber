@@ -32,9 +32,9 @@ export interface PluginFile {
 export interface PluginManagementSurface {
   id: string;
   title: string;
-  kind: 'agent-orchestration-provider-config';
-  panel: { kind: 'slim-orchestration-config' | 'openagent-config' };
-  providerId: string;
+  kind: 'agent-orchestration-provider-config' | 'magic-context-config';
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' };
+  providerId: string | null;
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';

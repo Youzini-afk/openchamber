@@ -103,6 +103,7 @@ describe('opencode plugin routes', () => {
   test('GET /api/config/plugins returns agent provider management surfaces', async () => {
     await createEntry('oh-my-opencode-slim');
     await createEntry('oh-my-openagent@1.2.3');
+    await createEntry('@cortexkit/opencode-magic-context');
 
     const response = await request(app).get('/api/config/plugins').expect(200);
 
@@ -121,6 +122,14 @@ describe('opencode plugin routes', () => {
         kind: 'agent-orchestration-provider-config',
         providerId: 'oh-my-openagent',
         panel: { kind: 'openagent-config' },
+        status: 'available',
+      }),
+      expect.objectContaining({
+        id: 'magic-context-settings',
+        title: 'Magic Context',
+        kind: 'magic-context-config',
+        providerId: null,
+        panel: { kind: 'magic-context-config' },
         status: 'available',
       }),
     ]);
