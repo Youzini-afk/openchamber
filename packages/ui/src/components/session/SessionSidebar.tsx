@@ -69,7 +69,7 @@ import {
   formatProjectLabel,
   normalizePath,
 } from './sidebar/utils';
-import { refreshGlobalSessions, resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { mergeSessionDirectoryMetadata, refreshGlobalSessions, resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
@@ -332,7 +332,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const sessions = React.useMemo(() => {
     const liveById = new Map(liveSessions.map((session) => [session.id, session]));
-    const merged = globalActiveSessions.map((session) => liveById.get(session.id) ?? session);
+    const merged = globalActiveSessions.map((session) => {
+      const liveSession = liveById.get(session.id);
+      return liveSession ? mergeSessionDirectoryMetadata(liveSession, session) : session;
+    });
     const seenIds = new Set(merged.map((session) => session.id));
 
     liveSessions.forEach((session) => {
@@ -1036,45 +1039,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   });
 
   const sectionsForSidebarRender = React.useMemo(() => {
-    const archiveFilteredSections = showArchivedSessions
+    return showArchivedSessions
       ? sectionsForRender
       : sectionsForRender.map((section) => ({
         ...section,
         groups: section.groups.filter((group) => !group.isArchivedBucket),
       }));
-
-    if (isVSCode || hasSessionSearchQuery || recentSessionIds.size === 0) {
-      return archiveFilteredSections;
-    }
-
-    const filterNodes = (nodes: SessionNode[]): SessionNode[] => {
-      return nodes.reduce<SessionNode[]>((acc, node) => {
-        if (recentSessionIds.has(node.session.id)) {
-          return acc;
-        }
-
-        const filteredChildren = filterNodes(node.children);
-        if (filteredChildren.length === node.children.length) {
-          acc.push(node);
-          return acc;
-        }
-
-        acc.push({
-          ...node,
-          children: filteredChildren,
-        });
-        return acc;
-      }, []);
-    };
-
-    return archiveFilteredSections.map((section) => ({
-      ...section,
-      groups: section.groups.map((group) => ({
-        ...group,
-        sessions: filterNodes(group.sessions),
-      })),
-    }));
-  }, [isVSCode, hasSessionSearchQuery, recentSessionIds, sectionsForRender, showArchivedSessions]);
+  }, [sectionsForRender, showArchivedSessions]);
 
   const prLookupKeys = React.useMemo(() => {
     const keys = new Set<string>();
@@ -1708,7 +1679,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             setSessionSwitcherOpen(false);
           }
           if (options?.sessionId) {
-            setCurrentSession(options.sessionId);
+            setCurrentSession(options.sessionId, worktreePath);
             return;
           }
           openNewSessionDraft({ directoryOverride: worktreePath });

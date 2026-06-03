@@ -4,14 +4,13 @@ on:
   issues:
     types: [labeled]
 
-concurrency:
-  group: reproduce-issue-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   reproduce:
     if: github.event.label.name == 'bug'
     runs-on: ubuntu-latest
+    concurrency:
+      group: reproduce-issue-${{ github.event.issue.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
       issues: write
@@ -20,6 +19,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Install opencode
         run: curl -fsSL https://opencode.ai/install | bash

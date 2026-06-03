@@ -83,6 +83,36 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ mobileKeyboardMode: 'fixed-layout' })).toEqual({});
   });
 
+  it('accepts STT settings as persisted shared settings', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      sttProvider: 'wasm',
+      sttServerUrl: ' https://stt.example.test ',
+      sttModel: ' whisper-large ',
+      wasmSttModel: ' moonshine ',
+      sttLanguage: ' en ',
+      sttSilenceThresholdDb: -45.5,
+      sttSilenceHoldMs: 1234.6,
+      sttTranscribeOnStop: true,
+    })).toEqual({
+      sttProvider: 'wasm',
+      sttServerUrl: 'https://stt.example.test',
+      sttModel: 'whisper-large',
+      wasmSttModel: 'moonshine',
+      sttLanguage: 'en',
+      sttSilenceThresholdDb: -45.5,
+      sttSilenceHoldMs: 1235,
+      sttTranscribeOnStop: true,
+    });
+  });
+
+  it('rejects invalid STT provider values', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'remote' })).toEqual({});
+  });
+
   it('accepts collapsibleThinkingBlocks as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -91,6 +121,54 @@ describe('settings helpers', () => {
     });
     expect(helpers.sanitizeSettingsUpdate({ collapsibleThinkingBlocks: false })).toEqual({
       collapsibleThinkingBlocks: false,
+    });
+  });
+
+  it('accepts shortcut overrides as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({
+      shortcutOverrides: {
+        open_settings: 'mod+comma',
+        new_chat: '__unassigned__',
+        invalid: 123,
+        empty: '',
+      },
+    })).toEqual({
+      shortcutOverrides: {
+        open_settings: 'mod+comma',
+        new_chat: '__unassigned__',
+      },
+    });
+  });
+
+  it('preserves empty shortcut overrides when resetting all shortcuts', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ shortcutOverrides: {} })).toEqual({
+      shortcutOverrides: {},
+    });
+  });
+
+  it('accepts OpenCode update notification preference as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ showOpenCodeUpdateNotifications: false })).toEqual({
+      showOpenCodeUpdateNotifications: false,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ showOpenCodeUpdateNotifications: true })).toEqual({
+      showOpenCodeUpdateNotifications: true,
+    });
+  });
+
+  it('accepts dismissed OpenCode update toast version as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ openCodeUpdateToastDismissedVersion: ' 1.16.0 ' })).toEqual({
+      openCodeUpdateToastDismissedVersion: '1.16.0',
+    });
+    expect(helpers.sanitizeSettingsUpdate({ openCodeUpdateToastDismissedVersion: '' })).toEqual({
+      openCodeUpdateToastDismissedVersion: '',
     });
   });
 

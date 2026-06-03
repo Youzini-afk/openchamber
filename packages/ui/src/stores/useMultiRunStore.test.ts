@@ -42,6 +42,14 @@ mock.module('@/lib/opencode/client', () => ({
 
 mock.module('@/lib/gitApi', () => ({
   checkIsGitRepository: mock(() => Promise.resolve(false)),
+  deleteRemoteBranch: mock(() => Promise.resolve({ success: true })),
+  git: {
+    worktree: {
+      list: mock(() => Promise.resolve([])),
+      create: mock(),
+      remove: mock(),
+    },
+  },
 }));
 
 mock.module('@/lib/worktrees/worktreeCreate', () => ({
@@ -52,10 +60,12 @@ mock.module('@/lib/worktrees/worktreeCreate', () => ({
 mock.module('@/lib/worktrees/worktreeStatus', () => ({
   getRootBranch: mock(() => Promise.resolve('main')),
   invalidateResolvedProjectRootCache: mock(() => undefined),
+  resolveProjectRoot: (directory: string) => Promise.resolve(directory),
 }));
 
 mock.module('@/lib/openchamberConfig', () => ({
   saveWorktreeSetupCommands: mock(() => Promise.resolve()),
+  substituteCommandVariables: (command: string) => command,
 }));
 
 mock.module('./useDirectoryStore', () => ({

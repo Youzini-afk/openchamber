@@ -22,6 +22,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from '@/components/icon/Icon';
 import { disposePreviewAudio } from './voicePreviewAudio';
+import { updateDesktopSettings } from '@/lib/persistence';
 const LANGUAGE_OPTIONS = [
     { value: 'en-US', label: 'English' },
     { value: 'es-ES', label: 'Español' },
@@ -117,6 +118,36 @@ export const VoiceSettings: React.FC = () => {
 
     const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
     const [isBrowserPreviewPlaying, setIsBrowserPreviewPlaying] = useState(false);
+
+    const persistSttProvider = useCallback((provider: 'browser' | 'server' | 'wasm') => {
+        setSttProvider(provider);
+        void updateDesktopSettings({ sttProvider: provider });
+    }, [setSttProvider]);
+
+    const persistSttServerUrl = useCallback((url: string) => {
+        setSttServerUrl(url);
+        void updateDesktopSettings({ sttServerUrl: url });
+    }, [setSttServerUrl]);
+
+    const persistSttModel = useCallback((model: string) => {
+        setSttModel(model);
+        void updateDesktopSettings({ sttModel: model });
+    }, [setSttModel]);
+
+    const persistSttLanguage = useCallback((lang: string) => {
+        setSttLanguage(lang);
+        void updateDesktopSettings({ sttLanguage: lang });
+    }, [setSttLanguage]);
+
+    const persistSttSilenceThresholdDb = useCallback((db: number) => {
+        setSttSilenceThresholdDb(db);
+        void updateDesktopSettings({ sttSilenceThresholdDb: db });
+    }, [setSttSilenceThresholdDb]);
+
+    const persistSttSilenceHoldMs = useCallback((ms: number) => {
+        setSttSilenceHoldMs(ms);
+        void updateDesktopSettings({ sttSilenceHoldMs: ms });
+    }, [setSttSilenceHoldMs]);
 
     useEffect(() => {
         const loadVoices = async () => {
@@ -773,7 +804,7 @@ export const VoiceSettings: React.FC = () => {
                                         variant="chip"
                                         size="xs"
                                         aria-pressed={sttProvider === 'browser'}
-                                        onClick={() => setSttProvider('browser')}
+                                        onClick={() => persistSttProvider('browser')}
                                         className="!font-normal"
                                     >
                                         {t('settings.voice.page.provider.browser')}
@@ -782,7 +813,7 @@ export const VoiceSettings: React.FC = () => {
                                         variant="chip"
                                         size="xs"
                                         aria-pressed={sttProvider === 'server'}
-                                        onClick={() => setSttProvider('server')}
+                                        onClick={() => persistSttProvider('server')}
                                         className="!font-normal"
                                     >
                                         {t('settings.voice.page.provider.server')}
@@ -809,14 +840,14 @@ export const VoiceSettings: React.FC = () => {
                                         <input
                                             type="text"
                                             value={sttServerUrl}
-                                            onChange={(e) => setSttServerUrl(e.target.value)}
+                                            onChange={(e) => persistSttServerUrl(e.target.value)}
                                             placeholder="http://localhost:8001/v1"
                                             className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
                                         />
                                         {sttServerUrl && (
                                             <button
                                                 type="button"
-                                                onClick={() => setSttServerUrl('')}
+                                                onClick={() => persistSttServerUrl('')}
                                                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                                             >
                                                 <RiCloseLine className="w-3.5 h-3.5" />
@@ -854,7 +885,7 @@ export const VoiceSettings: React.FC = () => {
                                         <input
                                             type="text"
                                             value={sttModel}
-                                            onChange={(e) => setSttModel(e.target.value)}
+                                            onChange={(e) => persistSttModel(e.target.value)}
                                             placeholder="deepdml/faster-whisper-large-v3-turbo-ct2"
                                             className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
                                         />
@@ -869,7 +900,7 @@ export const VoiceSettings: React.FC = () => {
                                         <input
                                             type="text"
                                             value={sttLanguage}
-                                            onChange={(e) => setSttLanguage(e.target.value)}
+                                            onChange={(e) => persistSttLanguage(e.target.value)}
                                             placeholder="auto"
                                             className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70"
                                         />
@@ -878,7 +909,7 @@ export const VoiceSettings: React.FC = () => {
                                 <div className="flex items-center gap-8 py-0.5">
                                     <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.silenceThreshold')}</span>
                                     <div className="flex items-center gap-2 w-fit">
-                                        {!isMobile && <input type="range" min={-60} max={-20} step={1} value={sttSilenceThresholdDb} onChange={(e) => setSttSilenceThresholdDb(Number(e.target.value))} className={sliderClass} />}
+                                        {!isMobile && <input type="range" min={-60} max={-20} step={1} value={sttSilenceThresholdDb} onChange={(e) => persistSttSilenceThresholdDb(Number(e.target.value))} className={sliderClass} />}
                                         <span className="typography-ui-label text-foreground tabular-nums min-w-[3.5rem] text-right">
                                             {sttSilenceThresholdDb} dB
                                         </span>
@@ -887,8 +918,8 @@ export const VoiceSettings: React.FC = () => {
                                 <div className="flex items-center gap-8 py-0.5">
                                     <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.silenceHold')}</span>
                                     <div className="flex items-center gap-2 w-fit">
-                                        {!isMobile && <input type="range" min={500} max={3000} step={100} value={sttSilenceHoldMs} onChange={(e) => setSttSilenceHoldMs(Number(e.target.value))} className={sliderClass} />}
-                                        <NumberInput value={sttSilenceHoldMs} onValueChange={setSttSilenceHoldMs} min={500} max={3000} step={100} className="w-20 tabular-nums" />
+                                        {!isMobile && <input type="range" min={500} max={3000} step={100} value={sttSilenceHoldMs} onChange={(e) => persistSttSilenceHoldMs(Number(e.target.value))} className={sliderClass} />}
+                                        <NumberInput value={sttSilenceHoldMs} onValueChange={persistSttSilenceHoldMs} min={500} max={3000} step={100} className="w-20 tabular-nums" />
                                         <span className="typography-meta text-muted-foreground">{t('settings.voice.page.field.millisecondsUnit')}</span>
                                     </div>
                                 </div>

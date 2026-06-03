@@ -159,6 +159,7 @@ const GITHUB_FEATURE_REQUEST_URL = 'https://github.com/openchamber/openchamber/i
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
+const OPENCODE_SHUTDOWN_GRACE_MS = 100;
 
 const { autoUpdater } = updaterPkg;
 
@@ -173,7 +174,11 @@ const state = {
   mainWindow: null,
   quitRequested: false,
   quitConfirmed: false,
+  quitInProgress: false,
   quitConfirmationPending: false,
+  backgroundShutdownComplete: false,
+  backgroundShutdownPromise: null,
+  sshShutdownPromise: null,
   installingUpdate: false,
   pendingUpdate: null,
   unreachableHosts: new Set(),
@@ -218,7 +223,49 @@ const quitConfirmationMessage = () => {
   return `OpenChamber detected ${reasons.join(', ')}. Quitting now will stop sidecar/background processes and may interrupt pending work.`;
 };
 
-const prepareForQuit = ({ installingUpdate = false } = {}) => {
+const shutdownBackgroundServices = async ({ allowDuringUpdate = false } = {}) => {
+  if (state.backgroundShutdownComplete) return;
+  if (state.backgroundShutdownPromise) {
+    await state.backgroundShutdownPromise;
+    return;
+  }
+
+  state.backgroundShutdownPromise = (async () => {
+    try {
+      if (!allowDuringUpdate && state.installingUpdate) {
+        return;
+      }
+      await killSidecar();
+      if (state.notificationListener) {
+        state.notificationListener.stop();
+        state.notificationListener = null;
+      }
+      await shutdownSshSessions();
+    } finally {
+      state.backgroundShutdownComplete = true;
+      state.backgroundShutdownPromise = null;
+    }
+  })();
+
+  await state.backgroundShutdownPromise;
+};
+
+const shutdownSshSessions = async () => {
+  if (state.sshShutdownPromise) {
+    await state.sshShutdownPromise;
+    return;
+  }
+
+  state.sshShutdownPromise = sshManager.shutdownAll().catch((error) => {
+    log.warn('[electron] failed to stop SSH sessions:', error);
+  }).finally(() => {
+    state.sshShutdownPromise = null;
+  });
+
+  await state.sshShutdownPromise;
+};
+
+const prepareForQuit = async ({ installingUpdate = false } = {}) => {
   state.quitRequested = true;
   state.quitConfirmed = true;
   state.installingUpdate = installingUpdate;
@@ -231,38 +278,27 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
     }
   }
 
-  if (!installingUpdate) {
-    try {
-      killSidecar();
-    } catch {
-    }
-    void sshManager.shutdownAll().catch(() => {});
-    if (state.notificationListener) {
-      state.notificationListener.stop();
-      state.notificationListener = null;
-    }
+  if (installingUpdate) {
+    state.backgroundShutdownComplete = true;
+    return;
   }
+
+  await shutdownBackgroundServices();
 };
 
-const performConfirmedQuit = () => {
-  if (state.quitConfirmed) return;
-  prepareForQuit();
+const performConfirmedQuit = async () => {
+  if (state.quitInProgress) return;
+  state.quitInProgress = true;
 
-  // Safety net: force-exit if normal quit sequence stalls (e.g. background
-  // handles in electron-updater / fetch refs) after a short grace period.
-  const safety = setTimeout(() => {
-    app.exit(0);
-  }, 1500);
-  if (typeof safety?.unref === 'function') safety.unref();
-
-  app.quit();
+  await prepareForQuit();
+  app.exit(0);
 };
 
 const requestQuitWithConfirmation = async () => {
   await refreshQuitRiskFlags();
 
   if (!shouldRequireQuitConfirmation()) {
-    performConfirmedQuit();
+    void performConfirmedQuit();
     return;
   }
 
@@ -293,7 +329,7 @@ const requestQuitWithConfirmation = async () => {
     });
     state.quitConfirmationPending = false;
     if (result.response === 0) {
-      performConfirmedQuit();
+      void performConfirmedQuit();
     }
   } catch (error) {
     state.quitConfirmationPending = false;
@@ -1074,7 +1110,7 @@ const spawnLocalServer = async () => {
     uiPassword: desktopUiPassword || null,
     attachSignals: false,
     exitOnShutdown: false,
-    apiOnly: shouldUsePackagedUi() && !lanAccessEnabled,
+    apiOnly: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
   });
 
@@ -1091,18 +1127,82 @@ const spawnLocalServer = async () => {
   return url;
 };
 
-const killSidecar = () => {
-  if (state.serverHandle) {
+const launchDetachedOpenCodeKiller = (processInfo) => {
+  if (!processInfo?.managed) return;
+  const pid = Number(processInfo.pid);
+  const port = Number(processInfo.port);
+  const hasPid = Number.isFinite(pid) && pid > 0;
+  const hasPort = Number.isFinite(port) && port > 0;
+  if (!hasPid && !hasPort) return;
+  const normalizedPid = hasPid ? String(Math.trunc(pid)) : '0';
+  const normalizedPort = Number.isFinite(port) && port > 0 ? String(Math.trunc(port)) : '0';
+
+  if (process.platform === 'win32') {
+    if (!hasPid) return;
+    const command = [
+      `taskkill /pid ${normalizedPid} /t >nul 2>nul`,
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Milliseconds ${OPENCODE_SHUTDOWN_GRACE_MS}" >nul 2>nul`,
+      `taskkill /pid ${normalizedPid} /f /t >nul 2>nul`,
+    ].join(' & ');
+    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+    return;
+  }
+
+  if (hasPid) {
     try {
-      const result = state.serverHandle.stop({ exitProcess: false });
-      if (result && typeof result.then === 'function') {
-        result.catch(() => {});
-      }
+      process.kill(-pid, 'SIGTERM');
     } catch {
     }
-    state.serverHandle = null;
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+    }
   }
+
+  const script = [
+    'pid="$1"',
+    'port="$2"',
+    'grace="$3"',
+    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -TERM "$pid" 2>/dev/null; kill -TERM "-$pid" 2>/dev/null; fi',
+    'sleep "$grace"',
+    'if [ "$pid" -gt 0 ] 2>/dev/null; then kill -KILL "-$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null; fi',
+    'if [ "$port" -gt 0 ] 2>/dev/null && command -v lsof >/dev/null 2>&1; then for target in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null; lsof -ti ":$port" 2>/dev/null); do [ "$target" = "$$" ] || kill -KILL "$target" 2>/dev/null; done; fi',
+  ].join('; ');
+  const child = spawn('/bin/sh', ['-c', script, 'openchamber-opencode-killer', normalizedPid, normalizedPort, String(OPENCODE_SHUTDOWN_GRACE_MS / 1000)], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.unref();
+};
+
+const killSidecar = async () => {
+  const handle = state.serverHandle;
+  state.serverHandle = null;
   state.sidecarUrl = null;
+  if (!handle) return;
+
+  let processInfo = null;
+  try {
+    processInfo = handle.getOpenCodeProcessInfo?.();
+  } catch {
+  }
+
+  try {
+    await handle.stop?.({ exitProcess: false });
+  } catch (error) {
+    log.warn('[electron] failed to stop embedded web runtime gracefully:', error);
+    try {
+      launchDetachedOpenCodeKiller(processInfo);
+    } catch (killerError) {
+      log.warn('[electron] failed to launch OpenCode killer:', killerError);
+    }
+  }
 };
 
 const macosMajorVersion = () => {
@@ -1612,6 +1712,20 @@ const dispatchCheckForUpdates = () => {
   }
 };
 
+const reloadMenuTargetWindow = () => {
+  const target = getMenuTargetWindow();
+  if (!target || target.isDestroyed()) return;
+  target.webContents.reload();
+};
+
+const relaunchFromMenu = () => {
+  void (async () => {
+    await prepareForQuit();
+    app.relaunch();
+    app.exit(0);
+  })();
+};
+
 const nextWindowLabel = () => {
   const value = state.windowCounter++;
   return value === 1 ? 'main' : `main-${value}`;
@@ -1777,11 +1891,15 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
       state.mainWindow = null;
     }
     if (BrowserWindow.getAllWindows().length === 0) {
-      if (!state.installingUpdate) {
-        killSidecar();
+      if (state.trayEnabled && !state.quitRequested) {
+        return;
       }
       if (process.platform !== 'darwin') {
-        app.quit();
+        if (state.installingUpdate) {
+          app.quit();
+        } else {
+          void requestQuitWithConfirmation();
+        }
       }
     }
   });
@@ -2195,11 +2313,6 @@ const showOrCreateMainWindow = () => {
 };
 
 const quitFromTray = () => {
-  state.quitRequested = true;
-  if (state.notificationListener) {
-    state.notificationListener.stop();
-    state.notificationListener = null;
-  }
   app.quit();
 };
 
@@ -3208,16 +3321,20 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       // Without this, quitAndInstall() can race with the renderer's pending
       // invoke and the restart appears to do nothing from the UI side.
       setImmediate(() => {
-        try {
-          if (applyUpdate) {
-            autoUpdater.quitAndInstall();
-          } else {
-            app.relaunch();
-            app.exit(0);
+        void (async () => {
+          try {
+            if (applyUpdate) {
+              await shutdownBackgroundServices({ allowDuringUpdate: true });
+              autoUpdater.quitAndInstall();
+            } else {
+              await prepareForQuit();
+              app.relaunch();
+              app.exit(0);
+            }
+          } catch (err) {
+            log.error('[electron] desktop_restart failed', err);
           }
-        } catch (err) {
-          log.error('[electron] desktop_restart failed', err);
-        }
+        })();
       });
       return null;
     }
@@ -3732,23 +3849,34 @@ app.on('window-all-closed', () => {
   if (state.trayEnabled && !state.quitRequested) {
     return;
   }
-
-  if (!state.installingUpdate) {
-    killSidecar();
-    void sshManager.shutdownAll();
-  }
   if (process.platform !== 'darwin') {
-    app.quit();
+    if (state.installingUpdate) {
+      app.quit();
+    } else {
+      void requestQuitWithConfirmation();
+    }
   }
 });
 
 app.on('before-quit', (event) => {
-  if (state.quitConfirmed || state.installingUpdate || process.platform !== 'darwin') {
+  if (state.installingUpdate) {
     state.quitRequested = true;
     return;
   }
-  event.preventDefault();
-  void requestQuitWithConfirmation();
+
+  if (!state.quitConfirmed) {
+    event.preventDefault();
+    state.quitRequested = false;
+    void requestQuitWithConfirmation();
+    return;
+  }
+
+  state.quitRequested = true;
+
+  if (!state.backgroundShutdownComplete) {
+    event.preventDefault();
+    void performConfirmedQuit();
+  }
 });
 
 app.on('second-instance', (_event, argv) => {

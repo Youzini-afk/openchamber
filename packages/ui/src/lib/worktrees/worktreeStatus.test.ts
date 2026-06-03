@@ -20,9 +20,17 @@ mock.module('@/lib/execCommands', () => ({
 }));
 
 mock.module('@/lib/gitApi', () => ({
+  deleteRemoteBranch: mock(() => Promise.resolve({ success: true })),
   getGitStatus: (directory: string) => {
     statusCalls.push(directory);
     return Promise.resolve(statusImpl(directory));
+  },
+  git: {
+    worktree: {
+      list: mock(() => Promise.resolve([])),
+      create: mock(),
+      remove: mock(),
+    },
   },
 }));
 

@@ -61,7 +61,9 @@ function formatSdkError(error: unknown): string {
 function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undefined {
   if (!result.error) return result.data
   const status = result.response?.status
-  throw new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`)
+  const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number }
+  if (status !== undefined) error.status = status
+  throw error
 }
 
 function assertSdkData<T>(result: SdkResult<T>, operation: string): T {
@@ -263,6 +265,56 @@ function resolveDirectoryForBlockingRequest(
   return null
 }
 
+export function isQuestionRequestNotFoundError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const status = (error as { status?: unknown }).status
+    if (status === 404) return true
+  }
+
+  let message = ""
+  if (error instanceof Error) {
+    message = error.message
+  } else if (typeof error === "string") {
+    message = error
+  }
+
+  return /Question(?:\.)?NotFoundError|Question request not found/i.test(message)
+}
+
+function removeQuestionRequestFromChildStores(sessionId: string, requestId: string): boolean {
+  const stores = _childStores
+  if (!stores || !requestId) return false
+
+  let removed = false
+  for (const [, store] of stores.children) {
+    const current = store.getState().question ?? {}
+    let nextQuestion: typeof current | null = null
+    const sessionIds = new Set([sessionId, ...Object.keys(current)].filter(Boolean))
+
+    for (const candidateSessionId of sessionIds) {
+      const requests = current[candidateSessionId]
+      if (!requests?.length) continue
+
+      const nextRequests = requests.filter((request) => request.id !== requestId)
+      if (nextRequests.length === requests.length) continue
+
+      nextQuestion ??= { ...current }
+      if (nextRequests.length > 0) {
+        nextQuestion[candidateSessionId] = nextRequests
+      } else {
+        delete nextQuestion[candidateSessionId]
+      }
+      removed = true
+    }
+
+    if (nextQuestion) {
+      store.setState({ question: nextQuestion })
+    }
+  }
+
+  return removed
+}
+
 function getRequestReplyClient(
   type: "permission" | "question",
   sessionId: string,
@@ -290,16 +342,16 @@ export async function createSession(
       parentID: parentID ?? undefined,
     }, directoryOverride ?? dir())
 
-      const sessionDirectory = (session as { directory?: string }).directory ?? directoryOverride ?? null
-      // Pre-populate routing index so SSE events arriving before session.created
-      // can be routed to the correct child store
-      if (sessionDirectory) {
-        registerSessionDirectory(session.id, sessionDirectory)
-      }
-      useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
-      useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
-      useGlobalSessionsStore.getState().upsertSession(session)
-      return session
+    const sessionDirectory = (session as { directory?: string | null }).directory ?? directoryOverride ?? null
+    // Pre-populate routing index so SSE events arriving before session.created
+    // can be routed to the correct child store
+    if (sessionDirectory) {
+      registerSessionDirectory(session.id, sessionDirectory)
+    }
+    useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
+    useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
+    useGlobalSessionsStore.getState().upsertSession(session)
+    return session
   } catch (error) {
     console.error("[session-actions] createSession failed", error)
     return null
@@ -591,7 +643,12 @@ export async function respondToPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  if (await opencodeClient.replyToPermission(requestId, response, { directory }) !== true) {
+  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
+    requestID: requestId,
+    reply: response,
+    ...(directory ? { directory } : {}),
+  })
+  if (assertSdkData(result, "permission.reply") !== true) {
     throw new Error("Permission reply failed")
   }
 }
@@ -604,7 +661,12 @@ export async function dismissPermission(
   const directory = resolveDirectoryForBlockingRequest("permission", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  if (await opencodeClient.replyToPermission(requestId, "reject", { directory }) !== true) {
+  const result = await getRequestReplyClient("permission", sessionId, requestId).permission.reply({
+    requestID: requestId,
+    reply: "reject",
+    ...(directory ? { directory } : {}),
+  })
+  if (assertSdkData(result, "permission.reply") !== true) {
     throw new Error("Permission dismissal failed")
   }
 }
@@ -622,8 +684,25 @@ export async function respondToQuestion(
   const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  if (await opencodeClient.replyToQuestion(requestId, answers, directory) !== true) {
-    throw new Error("Question reply failed")
+  try {
+    const normalizedAnswers = answers.length === 0
+      ? []
+      : Array.isArray(answers[0])
+        ? answers as string[][]
+        : [answers as string[]]
+    const result = await getRequestReplyClient("question", sessionId, requestId).question.reply({
+      requestID: requestId,
+      answers: normalizedAnswers,
+      ...(directory ? { directory } : {}),
+    })
+    if (assertSdkData(result, "question.reply") !== true) {
+      throw new Error("Question reply failed")
+    }
+  } catch (error) {
+    if (isQuestionRequestNotFoundError(error)) {
+      removeQuestionRequestFromChildStores(sessionId, requestId)
+    }
+    throw error
   }
 }
 
@@ -635,12 +714,19 @@ export async function rejectQuestion(
   const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
-  const result = await getRequestReplyClient("question", sessionId, requestId).question.reject({
-    requestID: requestId,
-    ...(directory ? { directory } : {}),
-  })
-  if (assertSdkData(result, "question.reject") !== true) {
-    throw new Error("Question rejection failed")
+  try {
+    const result = await getRequestReplyClient("question", sessionId, requestId).question.reject({
+      requestID: requestId,
+      ...(directory ? { directory } : {}),
+    })
+    if (assertSdkData(result, "question.reject") !== true) {
+      throw new Error("Question rejection failed")
+    }
+  } catch (error) {
+    if (isQuestionRequestNotFoundError(error)) {
+      removeQuestionRequestFromChildStores(sessionId, requestId)
+    }
+    throw error
   }
 }
 

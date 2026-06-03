@@ -18,6 +18,7 @@ import {
     RiTerminalBoxLine,
     RiToolsLine,
 } from '@remixicon/react';
+import { Icon } from '@/components/icon/Icon';
 
 export const getToolIcon = (toolName: string) => {
     const iconClass = 'h-3.5 w-3.5 flex-shrink-0';
@@ -73,6 +74,9 @@ export const getToolIcon = (toolName: string) => {
     }
     if (tool === 'question') {
         return <RiSurveyLine className={iconClass} />;
+    }
+    if (tool === 'lsp') {
+        return <Icon name="scan-2" className={iconClass} />;
     }
     if (tool === 'plan_enter') {
         return <RiFileList2Line className={iconClass} />;

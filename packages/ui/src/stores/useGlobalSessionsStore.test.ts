@@ -1,40 +1,21 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
+import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from './useGlobalSessionsStore';
 
-import { create } from 'zustand';
+type SessionExtra = Partial<Session> & {
+  directory?: string | null;
+  project?: { worktree?: string | null } | null;
+};
 
-const buildSession = (shareUrl: string): Session => ({
+const buildSession = (shareUrl: string, extra: SessionExtra = {}): Session => ({
   id: 'ses_1',
   title: 'Shared session',
   time: { created: 1, updated: 2 },
   share: { url: shareUrl },
+  ...extra,
 } as Session);
 
 describe('useGlobalSessionsStore', () => {
-  const useGlobalSessionsStore = create<{
-    activeSessions: Session[];
-    archivedSessions: Session[];
-    sessionsByDirectory: Map<string, Session[]>;
-    hasLoaded: boolean;
-    status: string;
-    upsertSession: (session: Session) => void;
-  }>((set) => ({
-    activeSessions: [],
-    archivedSessions: [],
-    sessionsByDirectory: new Map(),
-    hasLoaded: false,
-    status: 'idle',
-    upsertSession: (session) => set((state) => {
-      const index = state.activeSessions.findIndex((candidate) => candidate.id === session.id);
-      if (index === -1) {
-        return { activeSessions: [session, ...state.activeSessions] };
-      }
-      const next = [...state.activeSessions];
-      next[index] = session;
-      return { activeSessions: next };
-    }),
-  }));
-
   beforeEach(() => {
     useGlobalSessionsStore.setState({
       activeSessions: [],
@@ -50,5 +31,50 @@ describe('useGlobalSessionsStore', () => {
     useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/b'));
 
     expect(useGlobalSessionsStore.getState().activeSessions[0]?.share?.url).toBe('https://share.example/b');
+  });
+
+  test('preserves directory metadata when a live update omits it', () => {
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { directory: '/repo/app' }));
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/b', {
+      time: { created: 1, updated: 3 },
+    }));
+
+    const session = useGlobalSessionsStore.getState().activeSessions[0];
+    expect(resolveGlobalSessionDirectory(session)).toBe('/repo/app');
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.[0]?.id).toBe('ses_1');
+  });
+
+  test('preserves raw directory metadata when a live update only has project worktree', () => {
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { directory: '/repo/app' }));
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/b', {
+      project: { worktree: '/repo/app' },
+      time: { created: 1, updated: 3 },
+    }));
+
+    const session = useGlobalSessionsStore.getState().activeSessions[0] as Session & { directory?: string | null };
+    expect(session.directory).toBe('/repo/app');
+    expect(resolveGlobalSessionDirectory(session)).toBe('/repo/app');
+  });
+
+  test('trusts explicit incoming raw directory metadata', () => {
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { directory: '/repo/app' }));
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/b', {
+      directory: '/repo/app-worktree',
+      time: { created: 1, updated: 3 },
+    }));
+
+    expect(resolveGlobalSessionDirectory(useGlobalSessionsStore.getState().activeSessions[0])).toBe('/repo/app-worktree');
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')).toBe(undefined);
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app-worktree')?.[0]?.id).toBe('ses_1');
+  });
+
+  test('preserves directory metadata when moving a session to archived', () => {
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { directory: '/repo/app' }));
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/b', {
+      time: { created: 1, updated: 3, archived: 4 },
+    }));
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+    expect(resolveGlobalSessionDirectory(useGlobalSessionsStore.getState().archivedSessions[0])).toBe('/repo/app');
   });
 });

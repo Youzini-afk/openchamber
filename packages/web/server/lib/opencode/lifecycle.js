@@ -155,6 +155,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return;
     }
 
+    const signalProcessTree = (signal) => {
+      if (process.platform !== 'win32') {
+        try {
+          process.kill(-pid, signal);
+        } catch {
+        }
+      }
+
+      try {
+        child.kill(signal);
+      } catch {
+      }
+    };
+
     if (process.platform === 'win32') {
       try {
         child.kill();
@@ -191,19 +205,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return;
     }
 
-    try {
-      child.kill('SIGTERM');
-    } catch {
-    }
+    signalProcessTree('SIGTERM');
 
     if (await waitForChildProcessClose(child, 2500)) {
       return;
     }
 
-    try {
-      child.kill('SIGKILL');
-    } catch {
-    }
+    signalProcessTree('SIGKILL');
 
     await waitForChildProcessClose(child, 1000);
   };
@@ -277,6 +285,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const child = spawnProcess(binary, args, {
       cwd,
       env: processEnv,
+      detached: process.platform !== 'win32',
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -339,6 +348,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     return {
       url,
+      pid: child.pid || null,
       async close() {
         await closeManagedOpenCodeChild(child);
       },
