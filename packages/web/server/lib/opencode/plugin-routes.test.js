@@ -97,7 +97,33 @@ describe('opencode plugin routes', () => {
   test('GET /api/config/plugins empty returns entries and files arrays', async () => {
     const response = await request(app).get('/api/config/plugins').expect(200);
 
-    expect(response.body).toEqual({ entries: [], files: [] });
+    expect(response.body).toEqual({ entries: [], files: [], managementSurfaces: [] });
+  });
+
+  test('GET /api/config/plugins returns agent provider management surfaces', async () => {
+    await createEntry('oh-my-opencode-slim');
+    await createEntry('oh-my-openagent@1.2.3');
+
+    const response = await request(app).get('/api/config/plugins').expect(200);
+
+    expect(response.body.managementSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'slim-agent-provider-settings',
+        title: 'Oh My OpenCode Slim',
+        kind: 'agent-orchestration-provider-config',
+        providerId: 'oh-my-opencode-slim',
+        panel: { kind: 'slim-orchestration-config' },
+        status: 'available',
+      }),
+      expect.objectContaining({
+        id: 'openagent-agent-provider-settings',
+        title: 'Oh My OpenAgent',
+        kind: 'agent-orchestration-provider-config',
+        providerId: 'oh-my-openagent',
+        panel: { kind: 'openagent-config' },
+        status: 'available',
+      }),
+    ]);
   });
 
   test('GET /registry with empty specs returns empty results', async () => {

@@ -1066,6 +1066,20 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     }
   }
 
+  if (normalizedPathname === '/api/agent-orchestration/provider' && method === 'PATCH') {
+    try {
+      const body = await readJsonBody(init);
+      const data = await sendBridgeMessage('api:agent-orchestration:provider:set', {
+        ...body,
+        directory: getRequestedDirectory(url, init),
+      });
+      return jsonResponse(data, bridgePayloadStatus(data));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 500);
+    }
+  }
+
   if (normalizedPathname === '/api/agent-orchestration/slim/config' && method === 'GET') {
     try {
       const data = await sendBridgeMessage('api:agent-orchestration:slim-config:get', {

@@ -8,11 +8,15 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { RegistryBanner } from './RegistryBanner';
+import { SlimPanel } from '@/components/sections/agent-orchestration/AgentOrchestrationPage';
+import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
 import {
   usePluginsStore,
+  getSurfaceIdFromSelection,
   type PluginDraft,
   type PluginEntry,
   type PluginFile,
+  type PluginManagementSurface,
   type PluginScope,
 } from '@/stores/usePluginsStore';
 
@@ -87,6 +91,8 @@ export const PluginsPage: React.FC = () => {
   const selectedId = usePluginsStore((s) => s.selectedId);
   const entries = usePluginsStore((s) => s.entries);
   const files = usePluginsStore((s) => s.files);
+  const managementSurfaces = usePluginsStore((s) => s.managementSurfaces);
+  const isLoading = usePluginsStore((s) => s.isLoading);
   const draft = usePluginsStore((s) => s.draft);
   const setDraft = usePluginsStore((s) => s.setDraft);
   const updateEntry = usePluginsStore((s) => s.updateEntry);
@@ -101,6 +107,10 @@ export const PluginsPage: React.FC = () => {
     () => (selectedId ? files.find((f) => f.id === selectedId) ?? null : null),
     [files, selectedId],
   );
+  const selectedSurface = React.useMemo(() => {
+    const surfaceId = getSurfaceIdFromSelection(selectedId);
+    return surfaceId ? managementSurfaces.find((surface) => surface.id === surfaceId) ?? null : null;
+  }, [managementSurfaces, selectedId]);
 
   const [isSaving, setIsSaving] = React.useState(false);
   const [isLoadingFile, setIsLoadingFile] = React.useState(false);
@@ -108,6 +118,13 @@ export const PluginsPage: React.FC = () => {
 
   React.useEffect(() => {
     let cancelled = false;
+
+    if (selectedSurface) {
+      setDraft(null);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     if (selectedEntry) {
       setDraft(buildEntryDraft(selectedEntry));
@@ -135,7 +152,7 @@ export const PluginsPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedEntry, selectedFile, readFile, setDraft]);
+  }, [selectedEntry, selectedFile, selectedSurface, readFile, setDraft]);
 
   if (!selectedId) {
     return (
@@ -149,6 +166,10 @@ export const PluginsPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (selectedSurface) {
+    return <PluginManagementSurfacePanel surface={selectedSurface} />;
   }
 
   if (selectedEntry && draft && draft.mode === 'entry') {
@@ -376,11 +397,39 @@ export const PluginsPage: React.FC = () => {
     );
   }
 
+  if (selectedId && !isLoading) {
+    return (
+      <SettingsPageLayout>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <Icon name="plug" className="mx-auto mb-3 h-10 w-10 opacity-40" />
+            <p className="typography-ui-label font-medium text-foreground">{t('settings.plugins.page.empty.select')}</p>
+            <p className="typography-meta mt-1 opacity-75">{t('settings.plugins.page.empty.add')}</p>
+          </div>
+        </div>
+      </SettingsPageLayout>
+    );
+  }
+
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center text-muted-foreground">
         <Icon name="loader-4" className="mx-auto mb-3 h-6 w-6 animate-spin opacity-50" />
       </div>
     </div>
+  );
+};
+
+const PluginManagementSurfacePanel: React.FC<{ surface: PluginManagementSurface }> = ({ surface }) => {
+  const { t } = useI18n();
+  return (
+    <SettingsPageLayout>
+      <div className="space-y-1">
+        <h2 className="typography-ui-header font-semibold text-foreground">{surface.title}</h2>
+        <p className="typography-ui text-muted-foreground">{t('settings.plugins.management.agentProvider.description')}</p>
+      </div>
+      {surface.panel.kind === 'slim-orchestration-config' ? <SlimPanel /> : null}
+      {surface.panel.kind === 'openagent-config' ? <OpenAgentPage embedded /> : null}
+    </SettingsPageLayout>
   );
 };

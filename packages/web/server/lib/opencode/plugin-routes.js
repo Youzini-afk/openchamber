@@ -3,6 +3,10 @@ import os from 'os';
 
 import { getNpmInfo as defaultGetNpmInfo } from './npm-registry.js';
 import { isExactSemver as defaultIsExactSemver, isPathSpec as defaultIsPathSpec, parseNpmSpec as defaultParseNpmSpec, parsePathSpec as defaultParsePathSpec } from './plugin-spec.js';
+import {
+  AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS,
+  getAgentOrchestrationProviderForSpec,
+} from './agent-orchestration-providers.js';
 
 const ENTRY_EXISTS_CODES = new Set(['ENTRY_EXISTS', 'EEXIST']);
 const FILE_EXISTS_CODES = new Set(['FILE_EXISTS', 'EEXIST']);
@@ -33,6 +37,37 @@ export const registerPluginRoutes = (app, dependencies) => {
   } = dependencies;
 
   const parsedKindForSpec = (spec) => (isPathSpec(spec) ? 'path' : 'npm');
+
+  const listPluginManagementSurfaces = (entries) => {
+    const entriesByProvider = new Map();
+    for (const entry of entries) {
+      const provider = getAgentOrchestrationProviderForSpec(entry.spec);
+      if (!provider) continue;
+      const existing = entriesByProvider.get(provider.id) ?? [];
+      existing.push(entry);
+      entriesByProvider.set(provider.id, existing);
+    }
+
+    return AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.flatMap((provider) => {
+      const providerEntries = entriesByProvider.get(provider.id) ?? [];
+      if (providerEntries.length === 0 || !provider.managementSurfaceId) return [];
+      const primaryEntry = providerEntries[0] ?? null;
+      const scopes = new Set(providerEntries.map((entry) => entry.scope));
+      return [{
+        id: provider.managementSurfaceId,
+        title: provider.title,
+        kind: 'agent-orchestration-provider-config',
+        panel: {
+          kind: provider.legacyMode === 'slim' ? 'slim-orchestration-config' : 'openagent-config',
+        },
+        providerId: provider.id,
+        pluginEntryId: primaryEntry?.id ?? null,
+        spec: primaryEntry?.spec ?? null,
+        scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
+        status: 'available',
+      }];
+    });
+  };
 
   const resolveDirectory = async (req, res) => {
     const { directory, error } = await resolveOptionalProjectDirectory(req);
@@ -112,9 +147,11 @@ export const registerPluginRoutes = (app, dependencies) => {
       const directory = await resolveDirectory(req, res);
       if (directory === null && res.headersSent) return;
 
+      const entries = listPluginEntries(directory);
       res.json({
-        entries: listPluginEntries(directory),
+        entries,
         files: listPluginDirFiles(directory),
+        managementSurfaces: listPluginManagementSurfaces(entries),
       });
     } catch (error) {
       console.error('[API:GET /api/config/plugins] Failed:', error);

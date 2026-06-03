@@ -63,6 +63,18 @@ export type PluginFile = {
   kind: 'file';
 };
 
+export type PluginManagementSurface = {
+  id: string;
+  title: string;
+  kind: 'agent-orchestration-provider-config';
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' };
+  providerId: string;
+  pluginEntryId: string | null;
+  spec: string | null;
+  scope: PluginScope | 'mixed' | 'runtime';
+  status: 'available';
+};
+
 export type PluginRegistryResult =
   | { kind: 'npm-ok'; spec: string; name: string; currentVersion: string | null; latestVersion: string | null; versions: string[]; hasUpdate: boolean }
   | { kind: 'npm-missing-version'; spec: string; name: string; currentVersion: string; latestVersion: string | null; versions: string[] }
@@ -937,6 +949,51 @@ export const listPluginEntries = (workingDirectory?: string): PluginEntry[] => {
     }
   }
   return entries;
+};
+
+const AGENT_PROVIDER_SURFACE_DESCRIPTORS = [
+  {
+    id: 'slim-agent-provider-settings',
+    providerId: 'oh-my-opencode-slim',
+    title: 'Oh My OpenCode Slim',
+    packageNames: ['oh-my-opencode-slim'],
+    panelKind: 'slim-orchestration-config' as const,
+  },
+  {
+    id: 'openagent-agent-provider-settings',
+    providerId: 'oh-my-openagent',
+    title: 'Oh My OpenAgent',
+    packageNames: ['oh-my-openagent', 'oh-my-opencode'],
+    panelKind: 'openagent-config' as const,
+  },
+] as const;
+
+const getPluginBasename = (spec: string): string => spec.trim().replace(/\\/g, '/').split('/').pop() ?? spec.trim();
+
+const entryMatchesProvider = (entry: PluginEntry, packageNames: readonly string[]): boolean => {
+  const basename = getPluginBasename(entry.spec);
+  return packageNames.some((name) => basename === name || basename.startsWith(`${name}@`));
+};
+
+export const listPluginManagementSurfaces = (workingDirectory?: string): PluginManagementSurface[] => {
+  const entries = listPluginEntries(workingDirectory);
+  return AGENT_PROVIDER_SURFACE_DESCRIPTORS.flatMap((descriptor) => {
+    const matchingEntries = entries.filter((entry) => entryMatchesProvider(entry, descriptor.packageNames));
+    if (matchingEntries.length === 0) return [];
+    const primaryEntry = matchingEntries[0] ?? null;
+    const scopes = new Set(matchingEntries.map((entry) => entry.scope));
+    return [{
+      id: descriptor.id,
+      title: descriptor.title,
+      kind: 'agent-orchestration-provider-config',
+      panel: { kind: descriptor.panelKind },
+      providerId: descriptor.providerId,
+      pluginEntryId: primaryEntry?.id ?? null,
+      spec: primaryEntry?.spec ?? null,
+      scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
+      status: 'available',
+    }];
+  });
 };
 
 export const getPluginEntry = (id: string, workingDirectory?: string): PluginEntry | null =>

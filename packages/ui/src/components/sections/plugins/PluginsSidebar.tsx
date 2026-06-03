@@ -20,8 +20,10 @@ import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSideba
 import { useI18n } from '@/lib/i18n';
 import {
   usePluginsStore,
+  buildSurfaceSelectionId,
   type PluginEntry,
   type PluginFile,
+  type PluginManagementSurface,
 } from '@/stores/usePluginsStore';
 
 interface PluginsSidebarProps {
@@ -43,11 +45,12 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
 }) => {
   const { t } = useI18n();
 
-  const { entries, files, selectedId, setSelected, deleteEntry, deleteFile, loadPlugins } =
+  const { entries, files, managementSurfaces, selectedId, setSelected, deleteEntry, deleteFile, loadPlugins } =
     usePluginsStore(
       useShallow((s) => ({
         entries: s.entries,
         files: s.files,
+        managementSurfaces: s.managementSurfaces,
         selectedId: s.selectedId,
         setSelected: s.setSelected,
         deleteEntry: s.deleteEntry,
@@ -242,6 +245,25 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
     />
   );
 
+  const renderSurface = (surface: PluginManagementSurface) => {
+    const selectionId = buildSurfaceSelectionId(surface.id);
+    return (
+      <SettingsSidebarItem
+        key={surface.id}
+        title={surface.title}
+        metadata={t('settings.plugins.sidebar.kind.managementSurface')}
+        selected={selectedId === selectionId}
+        onSelect={() => handleSelect(selectionId)}
+        icon={
+          <Icon
+            name="plug"
+            className="h-4 w-4 flex-shrink-0 text-muted-foreground/70"
+          />
+        }
+      />
+    );
+  };
+
   const renderGroup = (
     label: string,
     children: React.ReactNode,
@@ -326,6 +348,11 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
           </div>
         ) : (
           <>
+            {managementSurfaces.length > 0 &&
+              renderGroup(
+                t('settings.plugins.sidebar.group.managementSurfaces'),
+                managementSurfaces.map(renderSurface),
+              )}
             {userEntries.length > 0 &&
               renderGroup(
                 t('settings.plugins.sidebar.group.userEntries'),

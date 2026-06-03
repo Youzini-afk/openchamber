@@ -29,6 +29,18 @@ export interface PluginFile {
   kind: 'file';
 }
 
+export interface PluginManagementSurface {
+  id: string;
+  title: string;
+  kind: 'agent-orchestration-provider-config';
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' };
+  providerId: string;
+  pluginEntryId: string | null;
+  spec: string | null;
+  scope: PluginScope | 'mixed' | 'runtime';
+  status: 'available';
+}
+
 export interface PluginDraft {
   mode: 'entry' | 'file';
   scope: PluginScope;
@@ -58,6 +70,7 @@ export type RegistryResult =
 export interface PluginsStore {
   entries: PluginEntry[];
   files: PluginFile[];
+  managementSurfaces: PluginManagementSurface[];
   selectedId: string | null;
   isLoading: boolean;
   registryInfo: Record<string, RegistryResult>;
@@ -65,6 +78,7 @@ export interface PluginsStore {
   draft: PluginDraft | null;
 
   setSelected: (id: string | null) => void;
+  selectSurface: (surfaceId: string) => void;
   setDraft: (draft: PluginDraft | null) => void;
   loadPlugins: (options?: { force?: boolean }) => Promise<boolean>;
   loadRegistryInfo: (opts?: { specs?: string[]; force?: boolean }) => Promise<void>;
@@ -76,12 +90,13 @@ export interface PluginsStore {
   createFile: (input: { fileName: string; content: string; scope: PluginScope }) => Promise<PluginMutationResult>;
   updateFile: (id: string, input: { content: string }) => Promise<PluginMutationResult>;
   deleteFile: (id: string) => Promise<PluginMutationResult>;
-  getById: (id: string) => PluginEntry | PluginFile | undefined;
+  getById: (id: string) => PluginEntry | PluginFile | PluginManagementSurface | undefined;
 }
 
 type PluginsListResponse = {
   entries?: PluginEntry[];
   files?: PluginFile[];
+  managementSurfaces?: PluginManagementSurface[];
 };
 
 type RegistryInfoResponse = {
@@ -102,6 +117,18 @@ type PluginFileContent = {
   fileName: string;
   scope: PluginScope;
   content: string;
+};
+
+const isValidPluginSelection = (
+  selectedId: string | null,
+  entries: PluginEntry[],
+  files: PluginFile[],
+  managementSurfaces: PluginManagementSurface[],
+): boolean => {
+  if (!selectedId) return true;
+  return entries.some((entry) => entry.id === selectedId)
+    || files.some((file) => file.id === selectedId)
+    || managementSurfaces.some((surface) => buildSurfaceSelectionId(surface.id) === selectedId);
 };
 
 const getConfigDirectory = (): string | null => {
@@ -143,6 +170,7 @@ export const usePluginsStore = create<PluginsStore>()(
       (set, get) => ({
         entries: [],
         files: [],
+        managementSurfaces: [],
         selectedId: null,
         isLoading: false,
         registryInfo: {},
@@ -151,6 +179,8 @@ export const usePluginsStore = create<PluginsStore>()(
 
         setSelected: (id) => set({ selectedId: id }),
 
+        selectSurface: (surfaceId) => set({ selectedId: buildSurfaceSelectionId(surfaceId) }),
+
         setDraft: (draft) => set({ draft }),
 
         loadPlugins: async (options) => {
@@ -158,7 +188,7 @@ export const usePluginsStore = create<PluginsStore>()(
           const cacheKey = getPluginCacheKey(configDirectory);
           const now = Date.now();
           const loadedAt = pluginsLastLoadedAt.get(cacheKey) ?? 0;
-          const hasCachedPlugins = get().entries.length > 0 || get().files.length > 0;
+          const hasCachedPlugins = get().entries.length > 0 || get().files.length > 0 || get().managementSurfaces.length > 0;
 
           if (!options?.force && hasCachedPlugins && now - loadedAt < PLUGINS_LOAD_CACHE_TTL_MS) {
             return true;
@@ -179,7 +209,17 @@ export const usePluginsStore = create<PluginsStore>()(
                 throw new Error('Failed to load plugins');
               }
               const data = await readJson<PluginsListResponse>(response);
-              set({ entries: data.entries ?? [], files: data.files ?? [], isLoading: false });
+              const entries = data.entries ?? [];
+              const files = data.files ?? [];
+              const managementSurfaces = data.managementSurfaces ?? [];
+              const selectedId = get().selectedId;
+              set({
+                entries,
+                files,
+                managementSurfaces,
+                selectedId: isValidPluginSelection(selectedId, entries, files, managementSurfaces) ? selectedId : null,
+                isLoading: false,
+              });
               pluginsLastLoadedAt.set(cacheKey, Date.now());
               if (!options?.force) {
                 void get().loadRegistryInfo();
@@ -347,7 +387,9 @@ export const usePluginsStore = create<PluginsStore>()(
         },
 
         getById: (id) => {
-          return get().entries.find((plugin) => plugin.id === id) ?? get().files.find((plugin) => plugin.id === id);
+          return get().entries.find((plugin) => plugin.id === id)
+            ?? get().files.find((plugin) => plugin.id === id)
+            ?? get().managementSurfaces.find((surface) => buildSurfaceSelectionId(surface.id) === id);
         },
       }),
       {
@@ -359,6 +401,14 @@ export const usePluginsStore = create<PluginsStore>()(
     { name: 'plugins-store' },
   ),
 );
+
+export function buildSurfaceSelectionId(surfaceId: string): string {
+  return `surface:${surfaceId}`;
+}
+
+export function getSurfaceIdFromSelection(selectedId: string | null): string | null {
+  return selectedId?.startsWith('surface:') ? selectedId.slice('surface:'.length) : null;
+}
 
 function buildPluginsUrl(path: string, directory: string | null): string {
   const queryParams = directory ? `?directory=${encodeURIComponent(directory)}` : '';

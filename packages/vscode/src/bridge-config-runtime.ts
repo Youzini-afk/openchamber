@@ -34,6 +34,7 @@ import {
   listMcpConfigs,
   listPluginDirFiles,
   listPluginEntries,
+  listPluginManagementSurfaces,
   getPluginEntry,
   createPluginEntry,
   updatePluginEntry,
@@ -60,7 +61,7 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 // Reuse the web runtime's config helpers so VS Code and web manage the same files
 // with the same validation and conflict checks.
 // @ts-expect-error The web package currently ships these helpers as JS modules.
-import { readAgentOrchestrationConfig, setAgentOrchestrationMode } from '../../web/server/lib/opencode/agent-orchestration-config.js';
+import { readAgentOrchestrationConfig, setAgentOrchestrationMode, setAgentOrchestrationProvider } from '../../web/server/lib/opencode/agent-orchestration-config.js';
 // @ts-expect-error The web package currently ships these helpers as JS modules.
 import { readOpenAgentConfig, saveOpenAgentConfig, setOpenAgentPluginEnabled } from '../../web/server/lib/opencode/openagent-config.js';
 // @ts-expect-error The web package currently ships these helpers as JS modules.
@@ -323,6 +324,42 @@ export async function handleConfigBridgeMessage(
           type,
           success: true,
           data: configErrorPayload(error, 'Failed to update agent orchestration mode'),
+        };
+      }
+    }
+
+    case 'api:agent-orchestration:provider:set': {
+      const request = (payload || {}) as {
+        directory?: string;
+        providerId?: string | null;
+        expectedMtimeMsByPath?: Record<string, number | null>;
+      };
+      const workingDirectory = resolveWorkingDirectory(ctx, request.directory);
+      try {
+        const config = setAgentOrchestrationProvider({
+          directory: workingDirectory,
+          providerId: request.providerId ?? null,
+          expectedMtimeMsByPath: request.expectedMtimeMsByPath,
+        });
+        await ctx?.manager?.restart();
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            requiresReload: true,
+            message: 'Agent orchestration provider updated. Refreshing interface...',
+            reloadDelayMs: deps.clientReloadDelayMs,
+            config,
+          },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: true,
+          data: configErrorPayload(error, 'Failed to update agent orchestration provider'),
         };
       }
     }
@@ -760,6 +797,7 @@ export async function handleConfigBridgeMessage(
           data: {
             entries: listPluginEntries(workingDirectory),
             files: listPluginDirFiles(workingDirectory),
+            managementSurfaces: listPluginManagementSurfaces(workingDirectory),
           },
         };
       }

@@ -28,12 +28,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
-import { OpenAgentPage } from '@/components/sections/openagent/OpenAgentPage';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useAgentOrchestrationStore } from '@/stores/useAgentOrchestrationStore';
-import { useOpenAgentConfigStore } from '@/stores/useOpenAgentConfigStore';
 import { useSlimConfigStore } from '@/stores/useSlimConfigStore';
+import { usePluginsStore } from '@/stores/usePluginsStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import {
@@ -608,7 +608,7 @@ function FeatureAdvancedSection() {
   );
 }
 
-function SlimPanel() {
+export function SlimPanel() {
   const { t } = useI18n();
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const config = useSlimConfigStore((state) => state.config);
@@ -735,11 +735,6 @@ export const AgentOrchestrationPage: React.FC = () => {
     void loadConfig({ force: true });
   }, [activeProjectId, loadConfig]);
 
-  React.useEffect(() => {
-    if (effectiveMode === 'slim') void useSlimConfigStore.getState().loadConfig({ force: true });
-    if (effectiveMode === 'omo') void useOpenAgentConfigStore.getState().loadConfig({ force: true });
-  }, [effectiveMode]);
-
   const handleModeSelect = async (mode: Exclude<SlimMode, 'conflict'>) => {
     if (mode === effectiveMode) return;
     const result = await setMode(mode);
@@ -748,6 +743,21 @@ export const AgentOrchestrationPage: React.FC = () => {
       return;
     }
     toast.success(t('settings.agentOrchestration.toast.modeUpdated'));
+  };
+
+  const providers = config?.providers ?? [];
+  const activeProvider = providers.find((provider) => provider.active) ?? null;
+  const handleConfigureProvider = async () => {
+    const surfaceId = activeProvider?.managementSurfaceId;
+    if (!surfaceId) return;
+    useUIStore.getState().setSettingsPage('plugins');
+    const loaded = await usePluginsStore.getState().loadPlugins({ force: true });
+    const surfaceExists = usePluginsStore.getState().managementSurfaces.some((surface) => surface.id === surfaceId);
+    if (loaded && surfaceExists) {
+      usePluginsStore.getState().selectSurface(surfaceId);
+      return;
+    }
+    toast.error(t('settings.plugins.page.empty.select'));
   };
 
   return (
@@ -796,8 +806,18 @@ export const AgentOrchestrationPage: React.FC = () => {
         </div>
       ) : null}
 
-      {effectiveMode === 'slim' ? <SlimPanel /> : null}
-      {effectiveMode === 'omo' ? <OpenAgentPage embedded /> : null}
+      {(effectiveMode === 'slim' || effectiveMode === 'omo') ? (
+        <div className="rounded-lg border border-border/70 bg-background px-4 py-8 text-center">
+          <RiSparklingLine className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
+          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.providerSettings.title')}</div>
+          <p className="mx-auto mt-1 max-w-xl typography-ui text-muted-foreground">{t('settings.agentOrchestration.providerSettings.description')}</p>
+          <div className="mt-4 flex justify-center">
+            <Button type="button" size="sm" variant="outline" onClick={() => void handleConfigureProvider()} disabled={!activeProvider?.managementSurfaceId}>
+              {t('settings.agentOrchestration.providerSettings.action')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {effectiveMode === 'conflict' ? (
         <div className="rounded-lg border border-[var(--status-error)]/40 bg-[var(--status-error)]/5 px-4 py-8 text-center typography-ui text-[var(--status-error)]">
           {t('settings.agentOrchestration.conflict.description')}
