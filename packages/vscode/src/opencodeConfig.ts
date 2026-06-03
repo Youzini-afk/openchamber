@@ -3,6 +3,9 @@ import path from 'node:path';
 import os from 'node:os';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
+// Reuse the web runtime helper so remembered provider surfaces match web.
+// @ts-expect-error The web package currently ships these helpers as JS modules.
+import { readAgentOrchestrationConfig } from '../../web/server/lib/opencode/agent-orchestration-config.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -72,7 +75,20 @@ export type PluginManagementSurface = {
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';
-  status: 'available';
+  status: 'available' | 'inactive';
+  configurable?: boolean;
+  installed?: boolean;
+  remembered?: boolean;
+};
+
+type AgentOrchestrationProviderInfo = {
+  id: string;
+  legacyMode: 'slim' | 'omo' | null;
+  title: string;
+  active?: boolean;
+  installed?: boolean;
+  remembered?: boolean;
+  managementSurfaceId?: string | null;
   configurable?: boolean;
 };
 
@@ -1017,12 +1033,13 @@ const getGenericAgentProviderCandidate = (entry: PluginEntry) => {
 
 export const listPluginManagementSurfaces = (workingDirectory?: string): PluginManagementSurface[] => {
   const entries = listPluginEntries(workingDirectory);
-  const agentProviderSurfaces: PluginManagementSurface[] = AGENT_PROVIDER_SURFACE_DESCRIPTORS.flatMap((descriptor) => {
+  const entryBackedAgentProviderSurfaces = new Map<string, PluginManagementSurface>();
+  for (const descriptor of AGENT_PROVIDER_SURFACE_DESCRIPTORS) {
     const matchingEntries = entries.filter((entry) => entryMatchesProvider(entry, descriptor.packageNames));
-    if (matchingEntries.length === 0) return [];
+    if (matchingEntries.length === 0) continue;
     const primaryEntry = matchingEntries[0] ?? null;
     const scopes = new Set(matchingEntries.map((entry) => entry.scope));
-    return [{
+    entryBackedAgentProviderSurfaces.set(descriptor.providerId, {
       id: descriptor.id,
       title: descriptor.title,
       kind: 'agent-orchestration-provider-config' as const,
@@ -1032,8 +1049,41 @@ export const listPluginManagementSurfaces = (workingDirectory?: string): PluginM
       spec: primaryEntry?.spec ?? null,
       scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
       status: 'available' as const,
-    }];
-  });
+      installed: Boolean(primaryEntry),
+      remembered: false,
+    });
+  }
+
+  const orchestrationConfig = readAgentOrchestrationConfig({ directory: workingDirectory }) as { providers?: AgentOrchestrationProviderInfo[] };
+  const descriptorBackedAgentProviderSurfaces: PluginManagementSurface[] = (orchestrationConfig.providers ?? [])
+    .flatMap((provider): PluginManagementSurface[] => {
+      if (!provider.managementSurfaceId || !(provider.installed || provider.active || provider.remembered)) return [];
+      const entryBackedSurface = entryBackedAgentProviderSurfaces.get(provider.id);
+      if (entryBackedSurface) return [entryBackedSurface];
+      return [{
+      id: provider.managementSurfaceId,
+      title: provider.title,
+      kind: 'agent-orchestration-provider-config' as const,
+      panel: {
+        kind: provider.legacyMode === 'slim'
+          ? 'slim-orchestration-config'
+          : provider.legacyMode === 'omo' ? 'openagent-config' : 'generic-provider-config',
+      },
+      providerId: provider.id,
+      pluginEntryId: null,
+      spec: null,
+      scope: 'runtime' as const,
+      status: provider.active ? 'available' as const : 'inactive' as const,
+      installed: provider.installed === true,
+      remembered: provider.remembered === true,
+      configurable: provider.configurable === true,
+      }];
+    });
+  const descriptorSurfaceIds = new Set(descriptorBackedAgentProviderSurfaces.map((surface) => surface.id));
+  const agentProviderSurfaces = [
+    ...descriptorBackedAgentProviderSurfaces,
+    ...Array.from(entryBackedAgentProviderSurfaces.values()).filter((surface) => !descriptorSurfaceIds.has(surface.id)),
+  ];
 
   const knownProviderIds = new Set(agentProviderSurfaces.map((surface) => surface.providerId));
   const genericCandidatesByProvider = new Map<string, Array<{ entry: PluginEntry; candidate: ReturnType<typeof getGenericAgentProviderCandidate> }>>();

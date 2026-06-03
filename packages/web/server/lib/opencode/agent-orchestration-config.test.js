@@ -175,6 +175,24 @@ describe('agent orchestration config helpers', () => {
     expect(after.activeProviderId).toBe('third-party-agent-provider');
     expect(readJsoncObject(opencodePath).plugin).toEqual([genericEntry]);
     expect(readJsoncObject(tuiPath).plugin).toBeUndefined();
+
+    const nativeConfig = setAgentOrchestrationProvider({
+      providerId: null,
+      expectedMtimeMsByPath: after.mode.mtimeMsByPath,
+    });
+    expect(nativeConfig.providerState).toBe('native');
+    expect(readJsoncObject(opencodePath).plugin).toBeUndefined();
+    expect(nativeConfig.providers.find((provider) => provider.id === 'third-party-agent-provider')).toMatchObject({
+      remembered: true,
+      installed: false,
+    });
+
+    const restored = setAgentOrchestrationProvider({
+      providerId: 'third-party-agent-provider',
+      expectedMtimeMsByPath: nativeConfig.mode.mtimeMsByPath,
+    });
+    expect(restored.activeProviderId).toBe('third-party-agent-provider');
+    expect(readJsoncObject(opencodePath).plugin).toEqual([genericEntry]);
   });
 
   it('detects versioned and path-based orchestration plugin specs and removes them in native mode', async () => {
@@ -236,6 +254,15 @@ describe('agent orchestration config helpers', () => {
     expect(after.mode.effective).toBe('slim');
     expect(fs.readFileSync(opencodePath, 'utf8')).toContain('// keep opencode comment');
     expect(readJsoncObject(opencodePath).plugin).toEqual(['other-plugin', 'oh-my-opencode-slim']);
+    expect(readJsoncObject(opencodePath).openchamber.agentOrchestration.rememberedProviders).toEqual([
+      'oh-my-openagent',
+      'oh-my-opencode-slim',
+    ]);
+    expect(after.providers.find((provider) => provider.id === 'oh-my-openagent')).toMatchObject({
+      active: false,
+      installed: false,
+      remembered: true,
+    });
     expect(readJsoncObject(tuiPath).plugin).toEqual(['other-tui-plugin', 'oh-my-opencode-slim']);
   });
 

@@ -7,6 +7,7 @@ import {
   getAgentOrchestrationProviderCandidate,
 } from './agent-orchestration-providers.js';
 import { matchesMagicContextPlugin } from './magic-context-config.js';
+import { readAgentOrchestrationConfig as defaultReadAgentOrchestrationConfig } from './agent-orchestration-config.js';
 
 const ENTRY_EXISTS_CODES = new Set(['ENTRY_EXISTS', 'EEXIST']);
 const FILE_EXISTS_CODES = new Set(['FILE_EXISTS', 'EEXIST']);
@@ -34,11 +35,12 @@ export const registerPluginRoutes = (app, dependencies) => {
     parsePathSpec = defaultParsePathSpec,
     isExactSemver = defaultIsExactSemver,
     isPathSpec = defaultIsPathSpec,
+    readAgentOrchestrationConfig = defaultReadAgentOrchestrationConfig,
   } = dependencies;
 
   const parsedKindForSpec = (spec) => (isPathSpec(spec) ? 'path' : 'npm');
 
-  const listPluginManagementSurfaces = (entries) => {
+  const listPluginManagementSurfaces = (entries, directory) => {
     const entriesByProvider = new Map();
     for (const entry of entries) {
       const provider = getAgentOrchestrationProviderCandidate({ spec: entry.spec, options: entry.options });
@@ -48,13 +50,14 @@ export const registerPluginRoutes = (app, dependencies) => {
       entriesByProvider.set(provider.id, existing);
     }
 
-    const agentProviderSurfaces = Array.from(entriesByProvider.entries()).map(([providerId, providerItems]) => {
+    const entryBackedSurfaces = new Map();
+    for (const [providerId, providerItems] of entriesByProvider.entries()) {
       const provider = providerItems[0]?.provider ?? null;
       const providerEntries = providerItems.map((item) => item.entry);
-      if (!provider || !provider.managementSurfaceId) return null;
+      if (!provider || !provider.managementSurfaceId) continue;
       const primaryEntry = providerEntries[0] ?? null;
       const scopes = new Set(providerEntries.map((entry) => entry.scope));
-      return {
+      entryBackedSurfaces.set(providerId, {
         id: provider.managementSurfaceId,
         title: provider.title,
         kind: 'agent-orchestration-provider-config',
@@ -67,8 +70,37 @@ export const registerPluginRoutes = (app, dependencies) => {
         scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
         status: 'available',
         configurable: provider.configurable === true,
-      };
-    }).filter(Boolean);
+        installed: true,
+        remembered: false,
+      });
+    }
+
+    const orchestrationConfig = readAgentOrchestrationConfig({ directory });
+    const descriptorBackedSurfaces = orchestrationConfig.providers
+      .filter((provider) => provider.managementSurfaceId && (provider.installed || provider.active || provider.remembered))
+      .map((provider) => entryBackedSurfaces.get(provider.id) ?? ({
+        id: provider.managementSurfaceId,
+        title: provider.title,
+        kind: 'agent-orchestration-provider-config',
+        panel: {
+          kind: provider.legacyMode === 'slim'
+            ? 'slim-orchestration-config'
+            : provider.legacyMode === 'omo' ? 'openagent-config' : 'generic-provider-config',
+        },
+        providerId: provider.id,
+        pluginEntryId: null,
+        spec: null,
+        scope: 'runtime',
+        status: provider.active ? 'available' : 'inactive',
+        configurable: provider.configurable === true,
+        installed: provider.installed === true,
+        remembered: provider.remembered === true,
+      }));
+    const descriptorSurfaceIds = new Set(descriptorBackedSurfaces.map((surface) => surface.id));
+    const agentProviderSurfaces = [
+      ...descriptorBackedSurfaces,
+      ...Array.from(entryBackedSurfaces.values()).filter((surface) => !descriptorSurfaceIds.has(surface.id)),
+    ];
 
     const magicContextEntries = entries.filter((entry) => matchesMagicContextPlugin(entry.spec));
     const primaryMagicContextEntry = magicContextEntries[0] ?? null;
@@ -169,7 +201,7 @@ export const registerPluginRoutes = (app, dependencies) => {
       res.json({
         entries,
         files: listPluginDirFiles(directory),
-        managementSurfaces: listPluginManagementSurfaces(entries),
+        managementSurfaces: listPluginManagementSurfaces(entries, directory),
       });
     } catch (error) {
       console.error('[API:GET /api/config/plugins] Failed:', error);

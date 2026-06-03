@@ -38,8 +38,10 @@ export interface PluginManagementSurface {
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';
-  status: 'available';
+  status: 'available' | 'inactive';
   configurable?: boolean;
+  installed?: boolean;
+  remembered?: boolean;
 }
 
 export interface PluginDraft {

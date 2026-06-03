@@ -732,7 +732,15 @@ function getProviderSelectionId(provider: OrchestrationProvider): string {
   return provider.legacyMode ?? `provider:${provider.id}`;
 }
 
+function getProviderTitle(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string {
+  if (provider.id === 'oh-my-opencode-slim') return t('settings.agentOrchestration.provider.slim.title');
+  if (provider.id === 'oh-my-openagent') return t('settings.agentOrchestration.provider.openagent.title');
+  return provider.title;
+}
+
 function getProviderDescription(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string {
+  if (provider.id === 'oh-my-opencode-slim') return t('settings.agentOrchestration.provider.slim.description');
+  if (provider.id === 'oh-my-openagent') return t('settings.agentOrchestration.provider.openagent.description');
   if (provider.description?.trim()) return provider.description.trim();
   if (provider.known === false) return t('settings.agentOrchestration.mode.generic.description');
   return t('settings.agentOrchestration.mode.provider.description');
@@ -740,8 +748,13 @@ function getProviderDescription(provider: OrchestrationProvider, t: ReturnType<t
 
 function getProviderMetadata(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string | null {
   if (provider.known === false) return t('settings.agentOrchestration.mode.generic.metadata');
+  if (provider.remembered && !provider.installed && !provider.active) return t('settings.agentOrchestration.mode.provider.inactive');
   if (!provider.installed) return t('settings.agentOrchestration.mode.provider.notInstalled');
   return null;
+}
+
+function shouldShowProvider(provider: OrchestrationProvider): boolean {
+  return provider.active || provider.installed || provider.remembered === true || provider.known === false;
 }
 
 export const AgentOrchestrationPage: React.FC = () => {
@@ -774,10 +787,10 @@ export const AgentOrchestrationPage: React.FC = () => {
     toast.success(t('settings.agentOrchestration.toast.modeUpdated'));
   };
 
-  const providers = config?.providers ?? [];
+  const providers = (config?.providers ?? []).filter(shouldShowProvider);
   const activeProvider = isProviderConflict ? null : (providers.find((provider) => provider.active) ?? null);
   const activeSelectionId = isProviderConflict ? 'conflict' : (activeProvider ? getProviderSelectionId(activeProvider) : effectiveMode);
-  const currentLabel = isProviderConflict ? t('settings.agentOrchestration.badge.conflict') : (activeProvider?.title ?? effectiveMode);
+  const currentLabel = isProviderConflict ? t('settings.agentOrchestration.badge.conflict') : (activeProvider ? getProviderTitle(activeProvider, t) : effectiveMode);
   const handleConfigureProvider = async () => {
     const surfaceId = activeProvider?.managementSurfaceId;
     if (!surfaceId) return;
@@ -815,10 +828,10 @@ export const AgentOrchestrationPage: React.FC = () => {
               id={getProviderSelectionId(provider)}
               active={provider.active}
               current={activeSelectionId}
-              title={provider.title}
+              title={getProviderTitle(provider, t)}
               description={getProviderDescription(provider, t)}
               metadata={getProviderMetadata(provider, t)}
-              disabled={isSavingMode || (!provider.installed && provider.legacyMode == null)}
+              disabled={isSavingMode || (!provider.installed && !provider.remembered && provider.legacyMode == null)}
               onSelect={handleProviderSelect}
             />
           ))}
@@ -859,7 +872,7 @@ export const AgentOrchestrationPage: React.FC = () => {
       {activeProvider ? (
         <div className="rounded-lg border border-border/70 bg-background px-4 py-8 text-center">
           <RiSparklingLine className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.providerSettings.title', { provider: activeProvider.title })}</div>
+          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.providerSettings.title', { provider: getProviderTitle(activeProvider, t) })}</div>
           <p className="mx-auto mt-1 max-w-xl typography-ui text-muted-foreground">{t('settings.agentOrchestration.providerSettings.description')}</p>
           <div className="mt-4 flex justify-center">
             <Button type="button" size="sm" variant="outline" onClick={() => void handleConfigureProvider()} disabled={!activeProvider?.managementSurfaceId}>

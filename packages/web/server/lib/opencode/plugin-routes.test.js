@@ -39,6 +39,7 @@ function createApp(overrides = {}) {
     deletePluginDirFile: plugins.deletePluginDirFile,
     encodePluginId: plugins.encodePluginId,
     decodePluginId: plugins.decodePluginId,
+    readAgentOrchestrationConfig: () => ({ providers: [] }),
     ...overrides,
   });
   return testApp;
@@ -161,6 +162,65 @@ describe('opencode plugin routes', () => {
         status: 'available',
       }),
     ]);
+  });
+
+  test('GET /api/config/plugins keeps descriptor-backed provider surfaces for remembered inactive providers', async () => {
+    const previousConfig = process.env.OPENCODE_CONFIG;
+    const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    const configDir = fs.mkdtempSync(path.join(rootDir, 'remembered-provider-config-'));
+
+    delete process.env.OPENCODE_CONFIG;
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    fs.writeFileSync(path.join(configDir, 'opencode.json'), JSON.stringify({
+      openchamber: {
+        agentOrchestration: {
+          rememberedProviders: ['oh-my-openagent'],
+        },
+      },
+    }, null, 2));
+
+    try {
+      app = createApp({
+        readAgentOrchestrationConfig: () => ({
+          providers: [{
+            id: 'oh-my-openagent',
+            legacyMode: 'omo',
+            title: 'Oh My OpenAgent',
+            managementSurfaceId: 'openagent-agent-provider-settings',
+            active: false,
+            installed: false,
+            remembered: true,
+            configurable: true,
+          }],
+        }),
+      });
+      const response = await request(app).get('/api/config/plugins').expect(200);
+
+      expect(response.body.entries).toEqual([]);
+      expect(response.body.managementSurfaces).toEqual([
+        expect.objectContaining({
+          id: 'openagent-agent-provider-settings',
+          providerId: 'oh-my-openagent',
+          panel: { kind: 'openagent-config' },
+          pluginEntryId: null,
+          spec: null,
+          status: 'inactive',
+          installed: false,
+          remembered: true,
+        }),
+      ]);
+    } finally {
+      if (previousConfig === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = previousConfig;
+      }
+      if (previousConfigDir === undefined) {
+        delete process.env.OPENCODE_CONFIG_DIR;
+      } else {
+        process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
+      }
+    }
   });
 
   test('GET /api/config/plugins prefers canonical opencode config over legacy config.json', async () => {

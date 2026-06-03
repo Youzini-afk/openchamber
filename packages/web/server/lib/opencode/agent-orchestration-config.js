@@ -18,7 +18,9 @@ import {
   MODE_NATIVE,
   MODE_OMO,
   MODE_SLIM,
+  getAgentOrchestrationProviderById,
   getAgentOrchestrationProviderCandidate,
+  getAgentOrchestrationProviderCandidateForDescriptor,
   getDefaultSpecForLegacyMode,
   getLegacyModeForProviderId,
   getProviderIdForLegacyMode,
@@ -164,6 +166,122 @@ function getPreferredPluginArrayKey(config) {
   return 'plugin';
 }
 
+function normalizeRememberedProviderRecord(value) {
+  if (typeof value === 'string') {
+    const id = normalizeString(value);
+    return id ? { id } : null;
+  }
+  if (!isPlainObject(value)) return null;
+  const id = normalizeString(value.id);
+  if (!id) return null;
+  return {
+    id,
+    title: normalizeString(value.title) || undefined,
+    description: normalizeString(value.description) || undefined,
+    expectedAgentName: normalizeString(value.expectedAgentName) || undefined,
+    managementSurfaceId: normalizeString(value.managementSurfaceId) || undefined,
+    rawEntry: value.rawEntry,
+  };
+}
+
+function serializeRememberedProviderRecord(record) {
+  if (getAgentOrchestrationProviderById(record.id)) return record.id;
+  const value = { id: record.id };
+  if (record.title) value.title = record.title;
+  if (record.description) value.description = record.description;
+  if (record.expectedAgentName) value.expectedAgentName = record.expectedAgentName;
+  if (record.managementSurfaceId) value.managementSurfaceId = record.managementSurfaceId;
+  if (record.rawEntry !== undefined) value.rawEntry = record.rawEntry;
+  return value;
+}
+
+function getRememberedProviderRecordsFromConfig(config) {
+  const remembered = config?.openchamber?.agentOrchestration?.rememberedProviders;
+  if (!Array.isArray(remembered)) return [];
+  const records = [];
+  const seen = new Set();
+  for (const item of remembered) {
+    const record = normalizeRememberedProviderRecord(item);
+    if (!record || seen.has(record.id)) continue;
+    records.push(record);
+    seen.add(record.id);
+  }
+  return records;
+}
+
+function getRememberedProviderIdsFromFile(filePath) {
+  try {
+    return getRememberedProviderRecordsFromConfig(readJsoncFile(filePath));
+  } catch {
+    return [];
+  }
+}
+
+function getRememberedProviderRecords(paths) {
+  const recordsById = new Map();
+  for (const record of paths.flatMap((filePath) => getRememberedProviderIdsFromFile(filePath))) {
+    recordsById.set(record.id, { ...recordsById.get(record.id), ...record });
+  }
+  return Array.from(recordsById.values());
+}
+
+function createRememberedProviderRecord(input) {
+  if (!input) return null;
+  if (typeof input === 'string') {
+    const id = normalizeString(input);
+    return id ? { id } : null;
+  }
+  const id = normalizeString(input.id);
+  if (!id) return null;
+  return {
+    id,
+    title: normalizeString(input.title) || undefined,
+    description: normalizeString(input.description) || undefined,
+    expectedAgentName: normalizeString(input.expectedAgentName) || undefined,
+    managementSurfaceId: normalizeString(input.managementSurfaceId) || undefined,
+    rawEntry: input.rawEntry,
+  };
+}
+
+function providerEntryToRememberedRecord(entry) {
+  if (!entry?.providerId || !entry.provider) return null;
+  return createRememberedProviderRecord({
+    id: entry.providerId,
+    title: entry.provider.title,
+    description: entry.provider.description,
+    expectedAgentName: entry.provider.expectedAgentName,
+    managementSurfaceId: entry.provider.managementSurfaceId,
+    rawEntry: entry.rawEntry ?? entry.entry,
+  });
+}
+
+function validateRememberedProviderRawEntry(record, providerId) {
+  if (!record?.rawEntry) return false;
+  const provider = getAgentOrchestrationProviderCandidate({
+    spec: getPluginSpec(record.rawEntry),
+    options: getPluginOptions(record.rawEntry),
+  });
+  return provider?.id === providerId;
+}
+
+function updateRememberedProviderRecords(filePath, records) {
+  let content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '{\n}\n';
+  if (!content.trim()) content = '{\n}\n';
+  const config = parseJsoncObject(content, filePath);
+  const recordsById = new Map(getRememberedProviderRecordsFromConfig(config).map((record) => [record.id, record]));
+  for (const item of records) {
+    const record = createRememberedProviderRecord(item);
+    if (record) recordsById.set(record.id, { ...recordsById.get(record.id), ...record });
+  }
+  const nextRecords = Array.from(recordsById.values()).map(serializeRememberedProviderRecord);
+  const nextContent = applyEdits(content, modifyJsonc(content, ['openchamber', 'agentOrchestration', 'rememberedProviders'], nextRecords.length > 0 ? nextRecords : undefined, {
+    formattingOptions: JSONC_FORMATTING_OPTIONS,
+  }));
+  if (nextContent !== content || !fs.existsSync(filePath)) {
+    writeJsoncContent(filePath, nextContent);
+  }
+}
+
 function scanConfigPlugins(filePath, scope, surface = 'opencode') {
   if (!fs.existsSync(filePath)) return [];
   const result = [];
@@ -208,6 +326,7 @@ function getConfigScan(directory) {
   const projectEntries = projectPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'project', 'opencode'));
   const tuiEntries = tuiPaths.flatMap((filePath) => scanConfigPlugins(filePath, 'user', 'tui'));
   const allEntries = [...userEntries, ...projectEntries, ...tuiEntries];
+  const rememberedProviderRecords = getRememberedProviderRecords([...userPaths, ...legacyUserPaths, ...projectPaths]);
   const configPaths = Array.from(new Set([
     ...userPaths.filter((filePath) => fs.existsSync(filePath)),
     ...projectPaths.filter((filePath) => fs.existsSync(filePath)),
@@ -236,6 +355,7 @@ function getConfigScan(directory) {
     projectEntries,
     tuiEntries,
     allEntries,
+    rememberedProviderRecords,
     configPaths,
     tuiConfigPath,
     mtimeMsByPath,
@@ -280,7 +400,8 @@ function getProviderStateForMode(mode) {
   return 'active';
 }
 
-function getProviderInfo(mode, entries) {
+function getProviderInfo(mode, entries, rememberedProviderRecords = []) {
+  const rememberedProviderIds = rememberedProviderRecords.map((record) => record.id);
   const providerIds = getActiveProviderIds(entries.filter((entry) => entry.surface !== 'tui'));
   const providerState = mode.effective === MODE_CONFLICT || providerIds.length > 1
     ? 'conflict'
@@ -290,6 +411,7 @@ function getProviderInfo(mode, entries) {
     : null;
   const providersById = new Map();
   for (const descriptor of AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS) {
+    const remembered = rememberedProviderIds.includes(descriptor.id);
     providersById.set(descriptor.id, {
       id: descriptor.id,
       legacyMode: descriptor.legacyMode,
@@ -301,6 +423,7 @@ function getProviderInfo(mode, entries) {
       expectedAgentName: descriptor.expectedAgentName ?? null,
       known: true,
       configurable: Boolean(descriptor.managementSurfaceId),
+      remembered,
     });
   }
   for (const entry of entries.filter((item) => item.surface !== 'tui')) {
@@ -316,6 +439,27 @@ function getProviderInfo(mode, entries) {
       expectedAgentName: entry.provider.expectedAgentName ?? null,
       known: entry.provider.known === true,
       configurable: entry.provider.configurable === true,
+      remembered: rememberedProviderIds.includes(entry.provider.id),
+    });
+  }
+  for (const record of rememberedProviderRecords) {
+    const providerId = record.id;
+    if (providersById.has(providerId)) continue;
+    const descriptor = getAgentOrchestrationProviderById(providerId);
+    const provider = getAgentOrchestrationProviderCandidateForDescriptor(descriptor);
+    if (!provider && !record.rawEntry) continue;
+    providersById.set(providerId, {
+      id: provider?.id ?? record.id,
+      legacyMode: provider?.legacyMode ?? null,
+      title: provider?.title ?? record.title ?? 'Agent provider plugin',
+      description: provider?.description ?? record.description ?? null,
+      active: false,
+      installed: false,
+      managementSurfaceId: provider?.managementSurfaceId ?? record.managementSurfaceId ?? `generic-agent-provider:${record.id}`,
+      expectedAgentName: provider?.expectedAgentName ?? record.expectedAgentName ?? null,
+      known: provider ? true : false,
+      configurable: provider?.configurable === true,
+      remembered: true,
     });
   }
   const providers = Array.from(providersById.values()).map((provider) => {
@@ -324,6 +468,7 @@ function getProviderInfo(mode, entries) {
       ...provider,
       active: activeProviderId === provider.id,
       installed: matchingEntries.length > 0,
+      remembered: provider.remembered === true,
     };
   });
   return {
@@ -423,6 +568,7 @@ function setAgentOrchestrationMode(input = {}) {
 
   const userTarget = getPrimaryUserOpenCodeConfigPath();
   const tuiTarget = getPrimaryUserTuiConfigPath();
+  const scan = getConfigScan(directory);
   const existingPathsToClean = Array.from(new Set([
     ...getPathsWithKnownEntries(getUserOpenCodeConfigCandidates()),
     ...getPathsWithKnownEntries(getLegacyUserOpenCodeConfigCandidates()),
@@ -431,6 +577,7 @@ function setAgentOrchestrationMode(input = {}) {
   const existingTuiPathsToClean = Array.from(new Set(getPathsWithKnownEntries(getUserTuiConfigCandidates())));
   const pathsToWrite = Array.from(new Set([
     ...existingPathsToClean,
+    userTarget,
     ...(mode === MODE_NATIVE ? [] : [userTarget]),
     ...existingTuiPathsToClean,
     ...(legacyModeUsesTui(mode) ? [tuiTarget] : []),
@@ -438,6 +585,12 @@ function setAgentOrchestrationMode(input = {}) {
 
   assertNoExpectedMtimeMismatches(input.expectedMtimeMsByPath);
   assertNoMtimeMismatches(pathsToWrite, input.expectedMtimeMsByPath);
+
+  const activeProviderRecords = [
+    ...scan.userEntries,
+    ...scan.projectEntries,
+  ].map(providerEntryToRememberedRecord).filter(Boolean);
+  const targetProviderId = getProviderIdForLegacyMode(mode);
 
   for (const filePath of existingPathsToClean) {
     updateConfigPluginEntries(filePath, MODE_NATIVE, { allowAdd: false, surface: 'opencode' });
@@ -452,6 +605,8 @@ function setAgentOrchestrationMode(input = {}) {
   if (legacyModeUsesTui(mode)) {
     updateConfigPluginEntries(tuiTarget, mode, { allowAdd: true, surface: 'tui' });
   }
+
+  updateRememberedProviderRecords(userTarget, [...activeProviderRecords, targetProviderId].filter(Boolean));
 
   return readAgentOrchestrationConfig({ directory });
 }
@@ -469,7 +624,8 @@ function setAgentOrchestrationProvider(input = {}) {
     const directory = normalizeString(input.directory);
     const scan = getConfigScan(directory);
     const existingEntry = [...scan.userEntries, ...scan.projectEntries].find((entry) => entry.providerId === providerId);
-    if (!existingEntry) {
+    const rememberedRecord = scan.rememberedProviderRecords.find((record) => record.id === providerId && validateRememberedProviderRawEntry(record, providerId)) ?? null;
+    if (!existingEntry && !rememberedRecord) {
       const error = new Error('Invalid agent orchestration provider.');
       error.code = 'INVALID_PROVIDER';
       throw error;
@@ -489,7 +645,11 @@ function setAgentOrchestrationProvider(input = {}) {
     for (const filePath of tuiPathsToClean) {
       updateConfigPluginEntries(filePath, MODE_NATIVE, { allowAdd: false, surface: 'tui' });
     }
-    updateConfigPluginEntries(userTarget, MODE_NATIVE, { allowAdd: true, surface: 'opencode', addEntry: existingEntry.rawEntry ?? existingEntry.entry });
+    updateConfigPluginEntries(userTarget, MODE_NATIVE, { allowAdd: true, surface: 'opencode', addEntry: existingEntry?.rawEntry ?? existingEntry?.entry ?? rememberedRecord.rawEntry });
+    updateRememberedProviderRecords(userTarget, [
+      ...[...scan.userEntries, ...scan.projectEntries].map(providerEntryToRememberedRecord).filter(Boolean),
+      providerEntryToRememberedRecord(existingEntry) ?? rememberedRecord ?? providerId,
+    ]);
     return readAgentOrchestrationConfig({ directory });
   }
   return setAgentOrchestrationMode({
@@ -505,7 +665,7 @@ function readAgentOrchestrationConfig(options = {}) {
   const mode = getModeInfoFromScan(scan);
   return {
     mode,
-    ...getProviderInfo(mode, [...scan.userEntries, ...scan.projectEntries, ...scan.tuiEntries]),
+    ...getProviderInfo(mode, [...scan.userEntries, ...scan.projectEntries, ...scan.tuiEntries], scan.rememberedProviderRecords),
     omo: readOpenAgentConfig({ directory }),
     slim: readSlimConfig({ directory }),
   };

@@ -61,6 +61,24 @@ function getAgentOrchestrationProviderById(providerId) {
   return AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.find((descriptor) => descriptor.id === providerId) ?? null;
 }
 
+function getAgentOrchestrationProviderCandidateForDescriptor(descriptor) {
+  if (!descriptor) return null;
+  return {
+    id: descriptor.id,
+    legacyMode: descriptor.legacyMode,
+    title: descriptor.title,
+    description: descriptor.description ?? null,
+    defaultSpec: descriptor.defaultSpec,
+    packageNames: descriptor.packageNames,
+    aliases: descriptor.aliases ?? Object.freeze([]),
+    expectedAgentName: descriptor.expectedAgentName ?? null,
+    managementSurfaceId: descriptor.managementSurfaceId ?? null,
+    known: true,
+    configurable: Boolean(descriptor.managementSurfaceId),
+    panelKind: descriptor.legacyMode === MODE_SLIM ? 'slim-orchestration-config' : 'openagent-config',
+  };
+}
+
 function getAgentOrchestrationProviderByLegacyMode(mode) {
   return AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.find((descriptor) => descriptor.legacyMode === mode) ?? null;
 }
@@ -144,20 +162,7 @@ function getAgentOrchestrationProviderCandidate(input = {}) {
   if (!spec) return null;
   const descriptor = getAgentOrchestrationProviderForSpec(spec);
   if (descriptor) {
-    return {
-      id: descriptor.id,
-      legacyMode: descriptor.legacyMode,
-      title: descriptor.title,
-      description: descriptor.description ?? null,
-      defaultSpec: descriptor.defaultSpec,
-      packageNames: descriptor.packageNames,
-      aliases: descriptor.aliases ?? Object.freeze([]),
-      expectedAgentName: descriptor.expectedAgentName ?? null,
-      managementSurfaceId: descriptor.managementSurfaceId ?? null,
-      known: true,
-      configurable: Boolean(descriptor.managementSurfaceId),
-      panelKind: descriptor.legacyMode === MODE_SLIM ? 'slim-orchestration-config' : 'openagent-config',
-    };
+    return getAgentOrchestrationProviderCandidateForDescriptor(descriptor);
   }
 
   const capability = getDeclaredAgentProviderCapability(input.options);
@@ -187,6 +192,7 @@ export {
   PROVIDER_OMO,
   PROVIDER_SLIM,
   getAgentOrchestrationProviderById,
+  getAgentOrchestrationProviderCandidateForDescriptor,
   getAgentOrchestrationProviderByLegacyMode,
   getAgentOrchestrationProviderCandidate,
   getAgentOrchestrationProviderForSpec,
