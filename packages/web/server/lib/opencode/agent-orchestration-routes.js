@@ -6,6 +6,9 @@ import {
   readSlimConfig as defaultReadSlimConfig,
   saveSlimConfig as defaultSaveSlimConfig,
 } from './slim-config.js';
+import {
+  getExpectedAgentNameForLegacyMode,
+} from './agent-orchestration-providers.js';
 
 function getRequestedDirectory(req) {
   const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
@@ -24,13 +27,6 @@ async function resolveDirectory(req, resolveOptionalProjectDirectory) {
     return resolveOptionalProjectDirectory(req);
   }
   return { directory: requestedDirectory, error: null };
-}
-
-function getExpectedAgentNameForMode(mode) {
-  if (mode === 'slim') return 'orchestrator';
-  if (mode === 'omo') return 'sisyphus';
-  if (mode === 'native') return 'build';
-  return null;
 }
 
 export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
@@ -68,7 +64,7 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
 
       if (typeof refreshOpenCodeAfterConfigChange === 'function') {
         await refreshOpenCodeAfterConfigChange('agent orchestration mode updated', {
-          agentName: getExpectedAgentNameForMode(body.mode),
+          agentName: getExpectedAgentNameForLegacyMode(body.mode),
         });
       }
 

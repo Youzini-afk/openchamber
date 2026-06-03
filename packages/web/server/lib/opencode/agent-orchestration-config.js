@@ -13,15 +13,16 @@ import {
 import {
   readSlimConfig,
 } from './slim-config.js';
+import {
+  MODE_NATIVE,
+  MODE_OMO,
+  MODE_SLIM,
+  getAgentOrchestrationProviderForSpec,
+  getDefaultSpecForLegacyMode,
+  legacyModeUsesTui,
+} from './agent-orchestration-providers.js';
 
-const MODE_NATIVE = 'native';
-const MODE_SLIM = 'slim';
-const MODE_OMO = 'omo';
 const MODE_CONFLICT = 'conflict';
-
-const SLIM_PLUGIN_ENTRY = 'oh-my-opencode-slim';
-const OMO_PLUGIN_ENTRY = 'oh-my-openagent';
-const OMO_LEGACY_PLUGIN_ENTRY = 'oh-my-opencode';
 
 const JSONC_FORMATTING_OPTIONS = {
   insertSpaces: true,
@@ -146,30 +147,8 @@ function getPluginSpec(entry) {
   return '';
 }
 
-function getPluginBasename(spec) {
-  const normalized = normalizeString(spec).replace(/\\/g, '/');
-  return normalized.split('/').pop() ?? normalized;
-}
-
-function isSlimSpec(spec) {
-  const basename = getPluginBasename(spec);
-  return basename === SLIM_PLUGIN_ENTRY || basename.startsWith(`${SLIM_PLUGIN_ENTRY}@`);
-}
-
-function isOmoSpec(spec) {
-  const basename = getPluginBasename(spec);
-  return (
-    basename === OMO_PLUGIN_ENTRY ||
-    basename.startsWith(`${OMO_PLUGIN_ENTRY}@`) ||
-    basename === OMO_LEGACY_PLUGIN_ENTRY ||
-    basename.startsWith(`${OMO_LEGACY_PLUGIN_ENTRY}@`)
-  );
-}
-
 function getSpecMode(spec) {
-  if (isSlimSpec(spec)) return MODE_SLIM;
-  if (isOmoSpec(spec)) return MODE_OMO;
-  return null;
+  return getAgentOrchestrationProviderForSpec(spec)?.legacyMode ?? null;
 }
 
 function getPluginArray(config, key) {
@@ -335,12 +314,9 @@ function updateConfigPluginEntries(filePath, desiredMode, { allowAdd = false, su
     const filtered = removeKnownOrchestrationEntries(existing);
     let nextEntries = filtered;
     if (allowAdd && key === preferredKey) {
-      if (surface === 'tui') {
-        if (desiredMode === MODE_SLIM) nextEntries = [...filtered, SLIM_PLUGIN_ENTRY];
-      } else if (desiredMode === MODE_SLIM) {
-        nextEntries = [...filtered, SLIM_PLUGIN_ENTRY];
-      } else if (desiredMode === MODE_OMO) {
-        nextEntries = [...filtered, OMO_PLUGIN_ENTRY];
+      const defaultSpec = getDefaultSpecForLegacyMode(desiredMode, { surface });
+      if (defaultSpec) {
+        nextEntries = [...filtered, defaultSpec];
       }
     }
     const equal = existing.length === nextEntries.length && existing.every((entry, index) => entry === nextEntries[index]);
@@ -380,7 +356,7 @@ function setAgentOrchestrationMode(input = {}) {
     ...existingPathsToClean,
     ...(mode === MODE_NATIVE ? [] : [userTarget]),
     ...existingTuiPathsToClean,
-    ...(mode === MODE_SLIM ? [tuiTarget] : []),
+    ...(legacyModeUsesTui(mode) ? [tuiTarget] : []),
   ]));
 
   assertNoExpectedMtimeMismatches(input.expectedMtimeMsByPath);
@@ -396,8 +372,8 @@ function setAgentOrchestrationMode(input = {}) {
   for (const filePath of existingTuiPathsToClean) {
     updateConfigPluginEntries(filePath, MODE_NATIVE, { allowAdd: false, surface: 'tui' });
   }
-  if (mode === MODE_SLIM) {
-    updateConfigPluginEntries(tuiTarget, MODE_SLIM, { allowAdd: true, surface: 'tui' });
+  if (legacyModeUsesTui(mode)) {
+    updateConfigPluginEntries(tuiTarget, mode, { allowAdd: true, surface: 'tui' });
   }
 
   return readAgentOrchestrationConfig({ directory });
