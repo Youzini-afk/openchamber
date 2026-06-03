@@ -55,6 +55,40 @@ describe('agent orchestration config helpers', () => {
     expect(readAgentOrchestrationConfig().mode.effective).toBe('conflict');
   });
 
+  it('exposes provider state alongside the legacy mode response', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+
+    const { readAgentOrchestrationConfig } = await loadModule();
+
+    const nativeConfig = readAgentOrchestrationConfig();
+    expect(nativeConfig.mode.effective).toBe('native');
+    expect(nativeConfig.activeProviderId).toBeNull();
+    expect(nativeConfig.providerState).toBe('native');
+    expect(nativeConfig.providers.every((provider) => !provider.active)).toBe(true);
+
+    fs.writeFileSync(opencodePath, '{ "plugin": ["oh-my-opencode-slim"] }\n');
+    const slimConfig = readAgentOrchestrationConfig();
+    expect(slimConfig.mode.effective).toBe('slim');
+    expect(slimConfig.activeProviderId).toBe('oh-my-opencode-slim');
+    expect(slimConfig.providerState).toBe('active');
+    expect(slimConfig.providers.find((provider) => provider.id === 'oh-my-opencode-slim')).toMatchObject({
+      active: true,
+      installed: true,
+      legacyMode: 'slim',
+      expectedAgentName: 'orchestrator',
+    });
+
+    fs.writeFileSync(opencodePath, '{ "plugin": ["oh-my-openagent", "oh-my-opencode-slim"] }\n');
+    const conflictConfig = readAgentOrchestrationConfig();
+    expect(conflictConfig.mode.effective).toBe('conflict');
+    expect(conflictConfig.activeProviderId).toBeNull();
+    expect(conflictConfig.providerState).toBe('conflict');
+    expect(conflictConfig.diagnostics.conflicts).toBe(conflictConfig.mode.conflicts);
+    expect(conflictConfig.diagnostics.mtimeMsByPath).toBe(conflictConfig.mode.mtimeMsByPath);
+  });
+
   it('detects versioned and path-based orchestration plugin specs and removes them in native mode', async () => {
     const configDir = process.env.OPENCODE_CONFIG_DIR;
     const opencodePath = path.join(configDir, 'opencode.jsonc');
@@ -227,5 +261,26 @@ describe('agent orchestration config helpers', () => {
     })).toThrow(/modified outside OpenChamber/);
 
     expect(readJsoncObject(opencodePath).plugin).toEqual(['external-plugin']);
+  });
+
+  it('switches orchestration providers through the provider API wrapper', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    const tuiPath = path.join(configDir, 'tui.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodePath, '{ "plugin": ["other-plugin", "oh-my-openagent"] }\n');
+    fs.writeFileSync(tuiPath, '{ "plugin": ["other-tui-plugin"] }\n');
+
+    const { readAgentOrchestrationConfig, setAgentOrchestrationProvider } = await loadModule();
+    const before = readAgentOrchestrationConfig();
+    const after = setAgentOrchestrationProvider({
+      providerId: 'oh-my-opencode-slim',
+      expectedMtimeMsByPath: before.mode.mtimeMsByPath,
+    });
+
+    expect(after.mode.effective).toBe('slim');
+    expect(after.activeProviderId).toBe('oh-my-opencode-slim');
+    expect(readJsoncObject(opencodePath).plugin).toEqual(['other-plugin', 'oh-my-opencode-slim']);
+    expect(readJsoncObject(tuiPath).plugin).toEqual(['other-tui-plugin', 'oh-my-opencode-slim']);
   });
 });

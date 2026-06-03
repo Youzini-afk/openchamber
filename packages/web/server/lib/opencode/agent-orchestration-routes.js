@@ -1,6 +1,7 @@
 import {
   readAgentOrchestrationConfig as defaultReadAgentOrchestrationConfig,
   setAgentOrchestrationMode as defaultSetAgentOrchestrationMode,
+  setAgentOrchestrationProvider as defaultSetAgentOrchestrationProvider,
 } from './agent-orchestration-config.js';
 import {
   readSlimConfig as defaultReadSlimConfig,
@@ -8,6 +9,7 @@ import {
 } from './slim-config.js';
 import {
   getExpectedAgentNameForLegacyMode,
+  getLegacyModeForProviderId,
 } from './agent-orchestration-providers.js';
 
 function getRequestedDirectory(req) {
@@ -34,6 +36,7 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
     clientReloadDelayMs = 800,
     readAgentOrchestrationConfig = defaultReadAgentOrchestrationConfig,
     setAgentOrchestrationMode = defaultSetAgentOrchestrationMode,
+    setAgentOrchestrationProvider = defaultSetAgentOrchestrationProvider,
     readSlimConfig = defaultReadSlimConfig,
     saveSlimConfig = defaultSaveSlimConfig,
     refreshOpenCodeAfterConfigChange,
@@ -81,6 +84,42 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
         console.error('Failed to update agent orchestration mode:', error);
       }
       return res.status(status).json({ error: error.message || 'Failed to update agent orchestration mode' });
+    }
+  });
+
+  app.patch('/api/agent-orchestration/provider', async (req, res) => {
+    try {
+      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
+      if (error) return res.status(400).json({ error });
+      const body = req.body ?? {};
+      const config = setAgentOrchestrationProvider({
+        directory,
+        providerId: body.providerId,
+        expectedMtimeMsByPath: body.expectedMtimeMsByPath ?? {},
+      });
+
+      if (typeof refreshOpenCodeAfterConfigChange === 'function') {
+        const mode = body.providerId == null || body.providerId === '' || body.providerId === 'native'
+          ? 'native'
+          : getLegacyModeForProviderId(body.providerId);
+        await refreshOpenCodeAfterConfigChange('agent orchestration provider updated', {
+          agentName: getExpectedAgentNameForLegacyMode(mode),
+        });
+      }
+
+      return res.json({
+        success: true,
+        requiresReload: true,
+        message: 'Agent orchestration provider updated. Refreshing interface...',
+        reloadDelayMs: clientReloadDelayMs,
+        config,
+      });
+    } catch (error) {
+      const status = error?.code === 'CONFIG_MODIFIED' ? 409 : 400;
+      if (status !== 409 && error?.code !== 'INVALID_PROVIDER') {
+        console.error('Failed to update agent orchestration provider:', error);
+      }
+      return res.status(status).json({ error: error.message || 'Failed to update agent orchestration provider' });
     }
   });
 

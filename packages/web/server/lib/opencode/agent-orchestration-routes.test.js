@@ -61,6 +61,7 @@ describe('agent orchestration routes', () => {
       clientReloadDelayMs: 25,
       readAgentOrchestrationConfig: vi.fn(),
       setAgentOrchestrationMode,
+      setAgentOrchestrationProvider: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig: vi.fn(),
       refreshOpenCodeAfterConfigChange,
@@ -103,6 +104,7 @@ describe('agent orchestration routes', () => {
     registerAgentOrchestrationRoutes(app, {
       readAgentOrchestrationConfig: vi.fn(),
       setAgentOrchestrationMode,
+      setAgentOrchestrationProvider: vi.fn(),
       readSlimConfig: vi.fn(),
       saveSlimConfig: vi.fn(),
       refreshOpenCodeAfterConfigChange,
@@ -117,6 +119,79 @@ describe('agent orchestration routes', () => {
     expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration mode updated', {
       agentName,
     });
+  });
+
+  it('switches provider, refreshes OpenCode, and returns the reloaded config', async () => {
+    const app = express();
+    app.use(express.json());
+    const setAgentOrchestrationProvider = vi.fn(() => createConfigPayload({
+      activeProviderId: 'oh-my-openagent',
+      providerState: 'active',
+      mode: { ...createConfigPayload().mode, effective: 'omo', user: 'omo' },
+    }));
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+
+    registerAgentOrchestrationRoutes(app, {
+      clientReloadDelayMs: 25,
+      readAgentOrchestrationConfig: vi.fn(),
+      setAgentOrchestrationMode: vi.fn(),
+      setAgentOrchestrationProvider,
+      readSlimConfig: vi.fn(),
+      saveSlimConfig: vi.fn(),
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: '/repo/project', error: null })),
+    });
+
+    const response = await request(app)
+      .patch('/api/agent-orchestration/provider?directory=%2Frepo%2Fproject')
+      .send({
+        providerId: 'oh-my-openagent',
+        expectedMtimeMsByPath: { '/tmp/opencode.jsonc': 123 },
+      })
+      .expect(200);
+
+    expect(setAgentOrchestrationProvider).toHaveBeenCalledWith({
+      directory: '/repo/project',
+      providerId: 'oh-my-openagent',
+      expectedMtimeMsByPath: { '/tmp/opencode.jsonc': 123 },
+    });
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration provider updated', {
+      agentName: 'sisyphus',
+    });
+    expect(response.body).toMatchObject({
+      success: true,
+      requiresReload: true,
+      reloadDelayMs: 25,
+      config: { activeProviderId: 'oh-my-openagent' },
+    });
+  });
+
+  it('returns 400 and skips reload for invalid providers', async () => {
+    const app = express();
+    app.use(express.json());
+    const error = new Error('Invalid agent orchestration provider.');
+    error.code = 'INVALID_PROVIDER';
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+
+    registerAgentOrchestrationRoutes(app, {
+      readAgentOrchestrationConfig: vi.fn(),
+      setAgentOrchestrationMode: vi.fn(),
+      setAgentOrchestrationProvider: vi.fn(() => {
+        throw error;
+      }),
+      readSlimConfig: vi.fn(),
+      saveSlimConfig: vi.fn(),
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: null, error: null })),
+    });
+
+    const response = await request(app)
+      .patch('/api/agent-orchestration/provider')
+      .send({ providerId: 'unknown-provider', expectedMtimeMsByPath: {} })
+      .expect(400);
+
+    expect(response.body.error).toContain('Invalid agent orchestration provider');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   it('returns 409 when mode config changed on disk', async () => {

@@ -14,11 +14,15 @@ import {
   readSlimConfig,
 } from './slim-config.js';
 import {
+  AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS,
   MODE_NATIVE,
   MODE_OMO,
   MODE_SLIM,
   getAgentOrchestrationProviderForSpec,
   getDefaultSpecForLegacyMode,
+  getLegacyModeForProviderId,
+  getProviderIdForLegacyMode,
+  getProviderIdForSpec,
   legacyModeUsesTui,
 } from './agent-orchestration-providers.js';
 
@@ -172,7 +176,7 @@ function scanConfigPlugins(filePath, scope, surface = 'opencode') {
         const spec = getPluginSpec(entry);
         const mode = getSpecMode(spec);
         if (mode) {
-          result.push({ path: filePath, key, index, entry: spec, mode, scope, surface });
+          result.push({ path: filePath, key, index, entry: spec, mode, providerId: getProviderIdForSpec(spec), scope, surface });
         }
       });
     }
@@ -237,6 +241,10 @@ function getConfigScan(directory) {
 
 function getModeInfo(directory) {
   const scan = getConfigScan(directory);
+  return getModeInfoFromScan(scan);
+}
+
+function getModeInfoFromScan(scan) {
   const userMode = resolveMode(scan.userEntries);
   const projectMode = scan.projectEntries.length > 0 ? resolveMode(scan.projectEntries) : null;
   const allMode = resolveMode([...scan.userEntries, ...scan.projectEntries]);
@@ -259,6 +267,40 @@ function getModeInfo(directory) {
     configPaths: scan.configPaths,
     tuiConfigPath: scan.tuiConfigPath,
     mtimeMsByPath: scan.mtimeMsByPath,
+  };
+}
+
+function getProviderStateForMode(mode) {
+  if (mode === MODE_CONFLICT) return 'conflict';
+  if (mode === MODE_NATIVE) return 'native';
+  return 'active';
+}
+
+function getProviderInfo(mode, entries) {
+  const providerState = getProviderStateForMode(mode.effective);
+  const activeProviderId = providerState === 'active' ? getProviderIdForLegacyMode(mode.effective) : null;
+  const providers = AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.map((descriptor) => {
+    const matchingEntries = entries.filter((entry) => entry.providerId === descriptor.id);
+    return {
+      id: descriptor.id,
+      legacyMode: descriptor.legacyMode,
+      title: descriptor.title,
+      active: activeProviderId === descriptor.id,
+      installed: matchingEntries.length > 0,
+      managementSurfaceId: descriptor.managementSurfaceId,
+      expectedAgentName: descriptor.expectedAgentName ?? null,
+    };
+  });
+  return {
+    activeProviderId,
+    providerState,
+    providers,
+    diagnostics: {
+      conflicts: mode.conflicts,
+      configPaths: mode.configPaths,
+      tuiConfigPath: mode.tuiConfigPath,
+      mtimeMsByPath: mode.mtimeMsByPath,
+    },
   };
 }
 
@@ -379,10 +421,34 @@ function setAgentOrchestrationMode(input = {}) {
   return readAgentOrchestrationConfig({ directory });
 }
 
+function normalizeProviderId(value) {
+  const providerId = normalizeString(value);
+  if (!providerId || providerId === MODE_NATIVE) return null;
+  return providerId;
+}
+
+function setAgentOrchestrationProvider(input = {}) {
+  const providerId = normalizeProviderId(input.providerId);
+  const mode = providerId == null ? MODE_NATIVE : getLegacyModeForProviderId(providerId);
+  if (!mode) {
+    const error = new Error('Invalid agent orchestration provider.');
+    error.code = 'INVALID_PROVIDER';
+    throw error;
+  }
+  return setAgentOrchestrationMode({
+    directory: input.directory,
+    mode,
+    expectedMtimeMsByPath: input.expectedMtimeMsByPath,
+  });
+}
+
 function readAgentOrchestrationConfig(options = {}) {
   const directory = normalizeString(options.directory);
+  const scan = getConfigScan(directory);
+  const mode = getModeInfoFromScan(scan);
   return {
-    mode: getModeInfo(directory),
+    mode,
+    ...getProviderInfo(mode, [...scan.userEntries, ...scan.projectEntries, ...scan.tuiEntries]),
     omo: readOpenAgentConfig({ directory }),
     slim: readSlimConfig({ directory }),
   };
@@ -395,4 +461,5 @@ export {
   MODE_CONFLICT,
   readAgentOrchestrationConfig,
   setAgentOrchestrationMode,
+  setAgentOrchestrationProvider,
 };

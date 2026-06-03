@@ -84,6 +84,10 @@ function getExpectedAgentNameForLegacyMode(mode) {
   return getAgentOrchestrationProviderByLegacyMode(mode)?.expectedAgentName ?? null;
 }
 
+function getProviderIdForSpec(spec) {
+  return getAgentOrchestrationProviderForSpec(spec)?.id ?? null;
+}
+
 export {
   AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS,
   MODE_NATIVE,
@@ -97,6 +101,7 @@ export {
   getDefaultSpecForLegacyMode,
   getExpectedAgentNameForLegacyMode,
   getLegacyModeForProviderId,
+  getProviderIdForSpec,
   getProviderIdForLegacyMode,
   legacyModeUsesTui,
 };
