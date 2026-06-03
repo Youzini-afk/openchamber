@@ -70,15 +70,19 @@ function getActiveOpencodeConfigDir() {
   if (customConfigPath) {
     return path.dirname(path.resolve(customConfigPath));
   }
+  const customConfigDir = typeof process.env.OPENCODE_CONFIG_DIR === 'string' ? process.env.OPENCODE_CONFIG_DIR.trim() : '';
+  if (customConfigDir) {
+    return path.resolve(customConfigDir);
+  }
   return path.join(os.homedir(), '.config', 'opencode');
 }
 
 function getActiveUserConfigPaths() {
   const configDir = getActiveOpencodeConfigDir();
   return [
-    path.join(configDir, 'config.json'),
-    path.join(configDir, 'opencode.json'),
     path.join(configDir, 'opencode.jsonc'),
+    path.join(configDir, 'opencode.json'),
+    path.join(configDir, 'config.json'),
   ];
 }
 

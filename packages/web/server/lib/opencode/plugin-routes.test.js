@@ -135,6 +135,43 @@ describe('opencode plugin routes', () => {
     ]);
   });
 
+  test('GET /api/config/plugins prefers canonical opencode config over legacy config.json', async () => {
+    const previousConfig = process.env.OPENCODE_CONFIG;
+    const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    const configDir = fs.mkdtempSync(path.join(rootDir, 'canonical-config-'));
+
+    delete process.env.OPENCODE_CONFIG;
+    process.env.OPENCODE_CONFIG_DIR = configDir;
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ provider: { test: {} } }, null, 2));
+    fs.writeFileSync(path.join(configDir, 'opencode.json'), JSON.stringify({ plugin: ['oh-my-opencode-slim'] }, null, 2));
+
+    try {
+      const response = await request(app).get('/api/config/plugins').expect(200);
+
+      expect(response.body.entries).toEqual([
+        expect.objectContaining({
+          spec: 'oh-my-opencode-slim',
+          scope: 'user',
+          sourcePath: path.join(configDir, 'opencode.json'),
+        }),
+      ]);
+      expect(response.body.managementSurfaces).toEqual([
+        expect.objectContaining({ id: 'slim-agent-provider-settings' }),
+      ]);
+    } finally {
+      if (previousConfig === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = previousConfig;
+      }
+      if (previousConfigDir === undefined) {
+        delete process.env.OPENCODE_CONFIG_DIR;
+      } else {
+        process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
+      }
+    }
+  });
+
   test('GET /registry with empty specs returns empty results', async () => {
     const getNpmInfo = mock(async () => ({ ok: true, latest: '1.0.0', versions: ['1.0.0'], distTags: { latest: '1.0.0' } }));
     createRegistryApp(getNpmInfo);
