@@ -89,6 +89,94 @@ describe('agent orchestration config helpers', () => {
     expect(conflictConfig.diagnostics.mtimeMsByPath).toBe(conflictConfig.mode.mtimeMsByPath);
   });
 
+  it('exposes explicitly declared third-party agent provider plugins without hardcoding their package names', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodePath, JSON.stringify({
+      plugin: [
+        ['third-party-agent-provider', {
+          openchamber: {
+            capabilities: {
+              agentOrchestrationProvider: {
+                id: 'third-party-agent-provider',
+                title: 'Third Party Agent Provider',
+                description: 'Custom routing provider.',
+                expectedAgentName: 'third-agent',
+              },
+            },
+          },
+        }],
+      ],
+    }, null, 2));
+
+    const { readAgentOrchestrationConfig } = await loadModule();
+    const config = readAgentOrchestrationConfig();
+
+    expect(config.mode.effective).toBe('native');
+    expect(config.activeProviderId).toBe('third-party-agent-provider');
+    expect(config.providerState).toBe('active');
+    expect(config.providers.find((provider) => provider.id === 'third-party-agent-provider')).toMatchObject({
+      active: true,
+      installed: true,
+      known: false,
+      configurable: false,
+      legacyMode: null,
+      title: 'Third Party Agent Provider',
+      description: 'Custom routing provider.',
+      expectedAgentName: 'third-agent',
+    });
+  });
+
+  it('namespaces generic provider IDs that collide with reserved provider identifiers', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(opencodePath, JSON.stringify({
+      plugin: [[
+        'third-party-agent-provider',
+        { openchamber: { capabilities: { agentOrchestrationProvider: { id: 'native', title: 'Colliding Provider' } } } },
+      ]],
+    }, null, 2));
+
+    const { readAgentOrchestrationConfig } = await loadModule();
+    const config = readAgentOrchestrationConfig();
+
+    expect(config.activeProviderId).toBe('plugin:third-party-agent-provider');
+    expect(config.providers.find((provider) => provider.id === 'plugin:third-party-agent-provider')).toMatchObject({
+      known: false,
+      title: 'Colliding Provider',
+      installed: true,
+    });
+  });
+
+  it('switches to a generic provider while removing stale Slim OpenCode and TUI entries', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR;
+    const opencodePath = path.join(configDir, 'opencode.jsonc');
+    const tuiPath = path.join(configDir, 'tui.jsonc');
+    fs.mkdirSync(configDir, { recursive: true });
+    const genericEntry = [
+      'third-party-agent-provider',
+      { openchamber: { capabilities: { agentOrchestrationProvider: { id: 'third-party-agent-provider', title: 'Third Party Agent Provider' } } } },
+    ];
+    fs.writeFileSync(opencodePath, JSON.stringify({ plugin: ['oh-my-opencode-slim', genericEntry] }, null, 2));
+    fs.writeFileSync(tuiPath, JSON.stringify({ plugin: ['oh-my-opencode-slim'] }, null, 2));
+
+    const { readAgentOrchestrationConfig, setAgentOrchestrationProvider } = await loadModule();
+    const before = readAgentOrchestrationConfig();
+    expect(before.providerState).toBe('conflict');
+
+    const after = setAgentOrchestrationProvider({
+      providerId: 'third-party-agent-provider',
+      expectedMtimeMsByPath: before.mode.mtimeMsByPath,
+    });
+
+    expect(after.providerState).toBe('active');
+    expect(after.activeProviderId).toBe('third-party-agent-provider');
+    expect(readJsoncObject(opencodePath).plugin).toEqual([genericEntry]);
+    expect(readJsoncObject(tuiPath).plugin).toBeUndefined();
+  });
+
   it('detects versioned and path-based orchestration plugin specs and removes them in native mode', async () => {
     const configDir = process.env.OPENCODE_CONFIG_DIR;
     const opencodePath = path.join(configDir, 'opencode.jsonc');

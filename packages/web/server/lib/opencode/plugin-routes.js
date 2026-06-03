@@ -4,8 +4,7 @@ import os from 'os';
 import { getNpmInfo as defaultGetNpmInfo } from './npm-registry.js';
 import { isExactSemver as defaultIsExactSemver, isPathSpec as defaultIsPathSpec, parseNpmSpec as defaultParseNpmSpec, parsePathSpec as defaultParsePathSpec } from './plugin-spec.js';
 import {
-  AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS,
-  getAgentOrchestrationProviderForSpec,
+  getAgentOrchestrationProviderCandidate,
 } from './agent-orchestration-providers.js';
 import { matchesMagicContextPlugin } from './magic-context-config.js';
 
@@ -42,32 +41,34 @@ export const registerPluginRoutes = (app, dependencies) => {
   const listPluginManagementSurfaces = (entries) => {
     const entriesByProvider = new Map();
     for (const entry of entries) {
-      const provider = getAgentOrchestrationProviderForSpec(entry.spec);
+      const provider = getAgentOrchestrationProviderCandidate({ spec: entry.spec, options: entry.options });
       if (!provider) continue;
       const existing = entriesByProvider.get(provider.id) ?? [];
-      existing.push(entry);
+      existing.push({ entry, provider });
       entriesByProvider.set(provider.id, existing);
     }
 
-    const agentProviderSurfaces = AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.flatMap((provider) => {
-      const providerEntries = entriesByProvider.get(provider.id) ?? [];
-      if (providerEntries.length === 0 || !provider.managementSurfaceId) return [];
+    const agentProviderSurfaces = Array.from(entriesByProvider.entries()).map(([providerId, providerItems]) => {
+      const provider = providerItems[0]?.provider ?? null;
+      const providerEntries = providerItems.map((item) => item.entry);
+      if (!provider || !provider.managementSurfaceId) return null;
       const primaryEntry = providerEntries[0] ?? null;
       const scopes = new Set(providerEntries.map((entry) => entry.scope));
-      return [{
+      return {
         id: provider.managementSurfaceId,
         title: provider.title,
         kind: 'agent-orchestration-provider-config',
         panel: {
-          kind: provider.legacyMode === 'slim' ? 'slim-orchestration-config' : 'openagent-config',
+          kind: provider.panelKind,
         },
-        providerId: provider.id,
+        providerId,
         pluginEntryId: primaryEntry?.id ?? null,
         spec: primaryEntry?.spec ?? null,
         scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
         status: 'available',
-      }];
-    });
+        configurable: provider.configurable === true,
+      };
+    }).filter(Boolean);
 
     const magicContextEntries = entries.filter((entry) => matchesMagicContextPlugin(entry.spec));
     const primaryMagicContextEntry = magicContextEntries[0] ?? null;

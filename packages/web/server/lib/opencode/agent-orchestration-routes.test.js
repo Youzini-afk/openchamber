@@ -166,6 +166,44 @@ describe('agent orchestration routes', () => {
     });
   });
 
+  it('uses returned generic provider expected agent when switching provider', async () => {
+    const app = express();
+    app.use(express.json());
+    const setAgentOrchestrationProvider = vi.fn(() => createConfigPayload({
+      activeProviderId: 'third-party-agent-provider',
+      providerState: 'active',
+      providers: [{
+        id: 'third-party-agent-provider',
+        legacyMode: null,
+        title: 'Third Party Agent Provider',
+        active: true,
+        installed: true,
+        expectedAgentName: 'third-agent',
+        known: false,
+      }],
+    }));
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+
+    registerAgentOrchestrationRoutes(app, {
+      readAgentOrchestrationConfig: vi.fn(),
+      setAgentOrchestrationMode: vi.fn(),
+      setAgentOrchestrationProvider,
+      readSlimConfig: vi.fn(),
+      saveSlimConfig: vi.fn(),
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: null, error: null })),
+    });
+
+    await request(app)
+      .patch('/api/agent-orchestration/provider')
+      .send({ providerId: 'third-party-agent-provider', expectedMtimeMsByPath: {} })
+      .expect(200);
+
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('agent orchestration provider updated', {
+      agentName: 'third-agent',
+    });
+  });
+
   it('returns 400 and skips reload for invalid providers', async () => {
     const app = express();
     app.use(express.json());

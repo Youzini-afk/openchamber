@@ -18,11 +18,10 @@ import {
   MODE_NATIVE,
   MODE_OMO,
   MODE_SLIM,
-  getAgentOrchestrationProviderForSpec,
+  getAgentOrchestrationProviderCandidate,
   getDefaultSpecForLegacyMode,
   getLegacyModeForProviderId,
   getProviderIdForLegacyMode,
-  getProviderIdForSpec,
   legacyModeUsesTui,
 } from './agent-orchestration-providers.js';
 
@@ -151,8 +150,8 @@ function getPluginSpec(entry) {
   return '';
 }
 
-function getSpecMode(spec) {
-  return getAgentOrchestrationProviderForSpec(spec)?.legacyMode ?? null;
+function getPluginOptions(entry) {
+  return Array.isArray(entry) && isPlainObject(entry[1]) ? entry[1] : undefined;
 }
 
 function getPluginArray(config, key) {
@@ -174,9 +173,9 @@ function scanConfigPlugins(filePath, scope, surface = 'opencode') {
       const entries = getPluginArray(config, key);
       entries.forEach((entry, index) => {
         const spec = getPluginSpec(entry);
-        const mode = getSpecMode(spec);
-        if (mode) {
-          result.push({ path: filePath, key, index, entry: spec, mode, providerId: getProviderIdForSpec(spec), scope, surface });
+        const provider = getAgentOrchestrationProviderCandidate({ spec, options: getPluginOptions(entry) });
+        if (provider) {
+          result.push({ path: filePath, key, index, entry: spec, rawEntry: entry, mode: provider.legacyMode, providerId: provider.id, provider, scope, surface });
         }
       });
     }
@@ -193,6 +192,10 @@ function resolveMode(entries) {
   if (hasSlim) return MODE_SLIM;
   if (hasOmo) return MODE_OMO;
   return MODE_NATIVE;
+}
+
+function getActiveProviderIds(entries) {
+  return Array.from(new Set(entries.map((entry) => entry.providerId).filter(Boolean)));
 }
 
 function getConfigScan(directory) {
@@ -248,10 +251,11 @@ function getModeInfoFromScan(scan) {
   const userMode = resolveMode(scan.userEntries);
   const projectMode = scan.projectEntries.length > 0 ? resolveMode(scan.projectEntries) : null;
   const allMode = resolveMode([...scan.userEntries, ...scan.projectEntries]);
+  const providerIds = getActiveProviderIds([...scan.userEntries, ...scan.projectEntries]);
   const effective = allMode === MODE_CONFLICT ? MODE_CONFLICT : (projectMode && projectMode !== MODE_NATIVE ? projectMode : userMode);
   const conflicts = [];
-  if (allMode === MODE_CONFLICT) {
-    conflicts.push('OpenCode config contains both Slim and Oh My OpenAgent entries.');
+  if (allMode === MODE_CONFLICT || providerIds.length > 1) {
+    conflicts.push('OpenCode config contains multiple agent orchestration provider entries.');
   }
   if (scan.tuiEntries.some((entry) => entry.mode === MODE_SLIM) && effective !== MODE_SLIM) {
     conflicts.push('TUI config still contains oh-my-opencode-slim while Slim mode is not active.');
@@ -277,18 +281,49 @@ function getProviderStateForMode(mode) {
 }
 
 function getProviderInfo(mode, entries) {
-  const providerState = getProviderStateForMode(mode.effective);
-  const activeProviderId = providerState === 'active' ? getProviderIdForLegacyMode(mode.effective) : null;
-  const providers = AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS.map((descriptor) => {
-    const matchingEntries = entries.filter((entry) => entry.providerId === descriptor.id);
-    return {
+  const providerIds = getActiveProviderIds(entries.filter((entry) => entry.surface !== 'tui'));
+  const providerState = mode.effective === MODE_CONFLICT || providerIds.length > 1
+    ? 'conflict'
+    : providerIds.length === 1 ? 'active' : getProviderStateForMode(mode.effective);
+  const activeProviderId = providerState === 'active'
+    ? providerIds[0] ?? getProviderIdForLegacyMode(mode.effective)
+    : null;
+  const providersById = new Map();
+  for (const descriptor of AGENT_ORCHESTRATION_PROVIDER_DESCRIPTORS) {
+    providersById.set(descriptor.id, {
       id: descriptor.id,
       legacyMode: descriptor.legacyMode,
       title: descriptor.title,
+      description: descriptor.description ?? null,
       active: activeProviderId === descriptor.id,
-      installed: matchingEntries.length > 0,
+      installed: false,
       managementSurfaceId: descriptor.managementSurfaceId,
       expectedAgentName: descriptor.expectedAgentName ?? null,
+      known: true,
+      configurable: Boolean(descriptor.managementSurfaceId),
+    });
+  }
+  for (const entry of entries.filter((item) => item.surface !== 'tui')) {
+    if (!entry.providerId || !entry.provider) continue;
+    providersById.set(entry.providerId, {
+      id: entry.provider.id,
+      legacyMode: entry.provider.legacyMode,
+      title: entry.provider.title,
+      description: entry.provider.description ?? null,
+      active: activeProviderId === entry.provider.id,
+      installed: true,
+      managementSurfaceId: entry.provider.managementSurfaceId,
+      expectedAgentName: entry.provider.expectedAgentName ?? null,
+      known: entry.provider.known === true,
+      configurable: entry.provider.configurable === true,
+    });
+  }
+  const providers = Array.from(providersById.values()).map((provider) => {
+    const matchingEntries = entries.filter((entry) => entry.providerId === provider.id);
+    return {
+      ...provider,
+      active: activeProviderId === provider.id,
+      installed: matchingEntries.length > 0,
     };
   });
   return {
@@ -336,12 +371,12 @@ function assertNoExpectedMtimeMismatches(expectedMtimeMsByPath) {
 
 function removeKnownOrchestrationEntries(entries) {
   return entries.filter((entry) => {
-    const mode = getSpecMode(getPluginSpec(entry));
-    return mode !== MODE_SLIM && mode !== MODE_OMO;
+    const provider = getAgentOrchestrationProviderCandidate({ spec: getPluginSpec(entry), options: getPluginOptions(entry) });
+    return provider == null;
   });
 }
 
-function updateConfigPluginEntries(filePath, desiredMode, { allowAdd = false, surface = 'opencode' } = {}) {
+function updateConfigPluginEntries(filePath, desiredMode, { allowAdd = false, surface = 'opencode', addEntry } = {}) {
   let content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '{\n}\n';
   if (!content.trim()) content = '{\n}\n';
   const config = parseJsoncObject(content, filePath);
@@ -356,9 +391,9 @@ function updateConfigPluginEntries(filePath, desiredMode, { allowAdd = false, su
     const filtered = removeKnownOrchestrationEntries(existing);
     let nextEntries = filtered;
     if (allowAdd && key === preferredKey) {
-      const defaultSpec = getDefaultSpecForLegacyMode(desiredMode, { surface });
-      if (defaultSpec) {
-        nextEntries = [...filtered, defaultSpec];
+      const defaultEntry = addEntry ?? getDefaultSpecForLegacyMode(desiredMode, { surface });
+      if (defaultEntry) {
+        nextEntries = [...filtered, defaultEntry];
       }
     }
     const equal = existing.length === nextEntries.length && existing.every((entry, index) => entry === nextEntries[index]);
@@ -431,9 +466,31 @@ function setAgentOrchestrationProvider(input = {}) {
   const providerId = normalizeProviderId(input.providerId);
   const mode = providerId == null ? MODE_NATIVE : getLegacyModeForProviderId(providerId);
   if (!mode) {
-    const error = new Error('Invalid agent orchestration provider.');
-    error.code = 'INVALID_PROVIDER';
-    throw error;
+    const directory = normalizeString(input.directory);
+    const scan = getConfigScan(directory);
+    const existingEntry = [...scan.userEntries, ...scan.projectEntries].find((entry) => entry.providerId === providerId);
+    if (!existingEntry) {
+      const error = new Error('Invalid agent orchestration provider.');
+      error.code = 'INVALID_PROVIDER';
+      throw error;
+    }
+    const userTarget = getPrimaryUserOpenCodeConfigPath();
+    const pathsToClean = Array.from(new Set([
+      ...getPathsWithKnownEntries(getUserOpenCodeConfigCandidates()),
+      ...getPathsWithKnownEntries(getLegacyUserOpenCodeConfigCandidates()),
+      ...getPathsWithKnownEntries(getProjectOpenCodeConfigCandidates(directory)),
+    ]));
+    const tuiPathsToClean = Array.from(new Set(getPathsWithKnownEntries(getUserTuiConfigCandidates())));
+    assertNoExpectedMtimeMismatches(input.expectedMtimeMsByPath);
+    assertNoMtimeMismatches([...pathsToClean, ...tuiPathsToClean, userTarget], input.expectedMtimeMsByPath);
+    for (const filePath of pathsToClean) {
+      updateConfigPluginEntries(filePath, MODE_NATIVE, { allowAdd: false, surface: 'opencode' });
+    }
+    for (const filePath of tuiPathsToClean) {
+      updateConfigPluginEntries(filePath, MODE_NATIVE, { allowAdd: false, surface: 'tui' });
+    }
+    updateConfigPluginEntries(userTarget, MODE_NATIVE, { allowAdd: true, surface: 'opencode', addEntry: existingEntry.rawEntry ?? existingEntry.entry });
+    return readAgentOrchestrationConfig({ directory });
   }
   return setAgentOrchestrationMode({
     directory: input.directory,

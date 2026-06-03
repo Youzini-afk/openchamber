@@ -22,12 +22,15 @@ export interface AgentOrchestrationConfigResponse {
   providerState: 'native' | 'active' | 'conflict';
   providers: Array<{
     id: string;
-    legacyMode: Exclude<SlimMode, 'native' | 'conflict'>;
+    legacyMode: Exclude<SlimMode, 'native' | 'conflict'> | null;
     title: string;
+    description?: string | null;
     active: boolean;
     installed: boolean;
     managementSurfaceId?: string;
     expectedAgentName: string | null;
+    known?: boolean;
+    configurable?: boolean;
   }>;
   diagnostics: {
     conflicts: string[];
@@ -53,6 +56,7 @@ interface AgentOrchestrationStore {
   error: string | null;
   loadConfig: (options?: { force?: boolean }) => Promise<boolean>;
   setMode: (mode: Exclude<SlimMode, 'conflict'>) => Promise<MutationResult>;
+  setProvider: (providerId: string | null) => Promise<MutationResult>;
 }
 
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -84,11 +88,16 @@ const readApiError = async (response: Response, fallback: string): Promise<strin
   return typeof payload?.error === 'string' && payload.error.trim() ? payload.error : fallback;
 };
 
-const getExpectedAgentNameForMode = (mode: Exclude<SlimMode, 'conflict'>): string | undefined => {
-  if (mode === 'slim') return 'orchestrator';
-  if (mode === 'omo') return 'sisyphus';
+const getExpectedAgentNameForMode = (mode: Exclude<SlimMode, 'conflict'>, config: AgentOrchestrationConfigResponse | null): string | undefined => {
+  const provider = config?.providers.find((item) => item.legacyMode === mode);
+  if (provider?.expectedAgentName) return provider.expectedAgentName;
   if (mode === 'native') return 'build';
   return undefined;
+};
+
+const getExpectedAgentNameForProvider = (providerId: string | null, config: AgentOrchestrationConfigResponse | null): string | undefined => {
+  if (!providerId) return 'build';
+  return config?.providers.find((item) => item.id === providerId)?.expectedAgentName ?? undefined;
 };
 
 export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
@@ -181,7 +190,7 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
               delayMs: payload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
               scopes: ['all'],
               mode: 'projects',
-              expectedAgentName: getExpectedAgentNameForMode(mode),
+              expectedAgentName: getExpectedAgentNameForMode(mode, payload?.config ?? state.config),
             });
           }
           await get().loadConfig({ force: true });
@@ -190,6 +199,66 @@ export const useAgentOrchestrationStore = create<AgentOrchestrationStore>()(
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to update agent orchestration mode';
           console.error('[AgentOrchestrationStore] Failed to set mode:', error);
+          set({ error: message, isSavingMode: false });
+          return { ok: false, message };
+        } finally {
+          if (!requiresReload) finishConfigUpdate();
+        }
+      },
+
+      setProvider: async (providerId) => {
+        const state = get();
+        const configDirectory = getConfigDirectory();
+        startConfigUpdate('Updating agent orchestration provider...');
+        set({ isSavingMode: true, error: null });
+        let requiresReload = false;
+        try {
+          const response = await runtimeFetch('/api/agent-orchestration/provider', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+            },
+            body: JSON.stringify({
+              providerId,
+              expectedMtimeMsByPath: state.config?.mode.mtimeMsByPath ?? {},
+            }),
+          });
+          const payload = await response.json().catch(() => null) as {
+            config?: AgentOrchestrationConfigResponse;
+            requiresReload?: boolean;
+            reloadDelayMs?: number;
+            reloadFailed?: boolean;
+            message?: string;
+            error?: string;
+          } | null;
+
+          if (!response.ok) {
+            const message = payload?.error || 'Failed to update agent orchestration provider';
+            const conflict = response.status === 409;
+            set({ error: message, isSavingMode: false });
+            return { ok: false, conflict, message };
+          }
+
+          if (payload?.config) set({ config: payload.config, error: null });
+          invalidateCache(configDirectory);
+          if (payload?.requiresReload) {
+            requiresReload = true;
+            await refreshAfterOpenCodeRestart({
+              message: payload.message,
+              delayMs: payload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
+              scopes: ['all'],
+              mode: 'projects',
+              expectedAgentName: getExpectedAgentNameForProvider(providerId, payload?.config ?? state.config),
+            });
+          }
+          await get().loadConfig({ force: true });
+          set({ isSavingMode: false });
+          return { ok: true, reloadFailed: payload?.reloadFailed === true, message: payload?.message };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to update agent orchestration provider';
+          console.error('[AgentOrchestrationStore] Failed to set provider:', error);
           set({ error: message, isSavingMode: false });
           return { ok: false, message };
         } finally {

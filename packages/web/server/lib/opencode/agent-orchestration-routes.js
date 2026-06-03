@@ -102,8 +102,10 @@ export const registerAgentOrchestrationRoutes = (app, dependencies = {}) => {
         const mode = body.providerId == null || body.providerId === '' || body.providerId === 'native'
           ? 'native'
           : getLegacyModeForProviderId(body.providerId);
+        const expectedAgentName = config.providers?.find?.((provider) => provider.id === body.providerId)?.expectedAgentName
+          ?? getExpectedAgentNameForLegacyMode(mode);
         await refreshOpenCodeAfterConfigChange('agent orchestration provider updated', {
-          agentName: getExpectedAgentNameForLegacyMode(mode),
+          agentName: expectedAgentName,
         });
       }
 

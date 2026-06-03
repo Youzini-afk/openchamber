@@ -431,10 +431,25 @@ const PluginManagementSurfacePanel: React.FC<{ surface: PluginManagementSurface 
     <SettingsPageLayout>
       <div className="space-y-1">
         <h2 className="typography-ui-header font-semibold text-foreground">{surface.title}</h2>
-        <p className="typography-ui text-muted-foreground">{t('settings.plugins.management.agentProvider.description')}</p>
+        <p className="typography-ui text-muted-foreground">
+          {surface.panel.kind === 'generic-provider-config'
+            ? t('settings.plugins.management.genericAgentProvider.description')
+            : t('settings.plugins.management.agentProvider.description')}
+        </p>
       </div>
       {surface.panel.kind === 'slim-orchestration-config' ? <SlimPanel /> : null}
       {surface.panel.kind === 'openagent-config' ? <OpenAgentPage embedded /> : null}
+      {surface.panel.kind === 'generic-provider-config' ? (
+        <div className="rounded-lg border border-border/70 bg-background p-4">
+          <div className="typography-ui-label font-semibold text-foreground">{t('settings.plugins.management.genericAgentProvider.title')}</div>
+          <p className="mt-1 typography-ui text-muted-foreground">{t('settings.plugins.management.genericAgentProvider.body')}</p>
+          {surface.pluginEntryId ? (
+            <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => usePluginsStore.getState().setSelected(surface.pluginEntryId)}>
+              {t('settings.plugins.management.genericAgentProvider.openEntry')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </SettingsPageLayout>
   );
 };

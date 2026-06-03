@@ -31,6 +31,7 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useAgentOrchestrationStore } from '@/stores/useAgentOrchestrationStore';
+import type { AgentOrchestrationConfigResponse } from '@/stores/useAgentOrchestrationStore';
 import { useSlimConfigStore } from '@/stores/useSlimConfigStore';
 import { usePluginsStore } from '@/stores/usePluginsStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -218,27 +219,31 @@ function parseJsonObject(value: string): Record<string, unknown> | undefined {
 }
 
 function ModeButton({
-  mode,
+  id,
+  active,
   current,
   title,
   description,
+  metadata,
   disabled,
   onSelect,
 }: {
-  mode: Exclude<SlimMode, 'conflict'>;
-  current: SlimMode;
+  id: string;
+  active: boolean;
+  current: string;
   title: string;
   description: string;
+  metadata?: string | null;
   disabled: boolean;
-  onSelect: (mode: Exclude<SlimMode, 'conflict'>) => void;
+  onSelect: (id: string) => void;
 }) {
   const { t } = useI18n();
-  const selected = current === mode;
+  const selected = active || current === id;
   return (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => onSelect(mode)}
+      onClick={() => onSelect(id)}
       className={cn(
         'min-h-[72px] rounded-lg border px-3 py-2 text-left transition-colors',
         selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border/70 bg-background hover:bg-[var(--interactive-hover)]',
@@ -250,6 +255,7 @@ function ModeButton({
         {selected ? <Badge className="bg-primary text-primary-foreground">{t('settings.agentOrchestration.badge.current')}</Badge> : null}
       </div>
       <div className="mt-1 typography-micro text-muted-foreground">{description}</div>
+      {metadata ? <div className="mt-2 typography-micro text-muted-foreground/80">{metadata}</div> : null}
     </button>
   );
 }
@@ -720,6 +726,24 @@ export function SlimPanel() {
   );
 }
 
+type OrchestrationProvider = AgentOrchestrationConfigResponse['providers'][number];
+
+function getProviderSelectionId(provider: OrchestrationProvider): string {
+  return provider.legacyMode ?? `provider:${provider.id}`;
+}
+
+function getProviderDescription(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string {
+  if (provider.description?.trim()) return provider.description.trim();
+  if (provider.known === false) return t('settings.agentOrchestration.mode.generic.description');
+  return t('settings.agentOrchestration.mode.provider.description');
+}
+
+function getProviderMetadata(provider: OrchestrationProvider, t: ReturnType<typeof useI18n>['t']): string | null {
+  if (provider.known === false) return t('settings.agentOrchestration.mode.generic.metadata');
+  if (!provider.installed) return t('settings.agentOrchestration.mode.provider.notInstalled');
+  return null;
+}
+
 export const AgentOrchestrationPage: React.FC = () => {
   const { t } = useI18n();
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
@@ -729,15 +753,20 @@ export const AgentOrchestrationPage: React.FC = () => {
   const error = useAgentOrchestrationStore((state) => state.error);
   const loadConfig = useAgentOrchestrationStore((state) => state.loadConfig);
   const setMode = useAgentOrchestrationStore((state) => state.setMode);
+  const setProvider = useAgentOrchestrationStore((state) => state.setProvider);
   const effectiveMode = config?.mode.effective ?? 'native';
+  const isProviderConflict = config?.providerState === 'conflict' || effectiveMode === 'conflict';
 
   React.useEffect(() => {
     void loadConfig({ force: true });
   }, [activeProjectId, loadConfig]);
 
-  const handleModeSelect = async (mode: Exclude<SlimMode, 'conflict'>) => {
-    if (mode === effectiveMode) return;
-    const result = await setMode(mode);
+  const handleProviderSelect = async (selectionId: string) => {
+    const activeSelectionId = isProviderConflict ? 'conflict' : (activeProvider ? getProviderSelectionId(activeProvider) : effectiveMode);
+    if (selectionId === activeSelectionId) return;
+    const result = selectionId.startsWith('provider:')
+      ? await setProvider(selectionId.slice('provider:'.length))
+      : await setMode(selectionId as Exclude<SlimMode, 'conflict'>);
     if (!result.ok) {
       toast.error(result.conflict ? t('settings.agentOrchestration.toast.openCodeConflict') : result.message || t('settings.agentOrchestration.toast.modeSwitchFailed'));
       return;
@@ -746,7 +775,9 @@ export const AgentOrchestrationPage: React.FC = () => {
   };
 
   const providers = config?.providers ?? [];
-  const activeProvider = providers.find((provider) => provider.active) ?? null;
+  const activeProvider = isProviderConflict ? null : (providers.find((provider) => provider.active) ?? null);
+  const activeSelectionId = isProviderConflict ? 'conflict' : (activeProvider ? getProviderSelectionId(activeProvider) : effectiveMode);
+  const currentLabel = isProviderConflict ? t('settings.agentOrchestration.badge.conflict') : (activeProvider?.title ?? effectiveMode);
   const handleConfigureProvider = async () => {
     const surfaceId = activeProvider?.managementSurfaceId;
     if (!surfaceId) return;
@@ -769,15 +800,34 @@ export const AgentOrchestrationPage: React.FC = () => {
 
       <div className="rounded-lg border border-border/70 bg-[var(--surface-elevated)] p-3">
         <div className="grid gap-2 lg:grid-cols-3">
-          <ModeButton mode="native" current={effectiveMode} title={t('settings.agentOrchestration.mode.native.title')} description={t('settings.agentOrchestration.mode.native.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
-          <ModeButton mode="slim" current={effectiveMode} title="Oh My OpenCode Slim" description={t('settings.agentOrchestration.mode.slim.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
-          <ModeButton mode="omo" current={effectiveMode} title="Oh My OpenAgent / OMO" description={t('settings.agentOrchestration.mode.omo.description')} disabled={isSavingMode} onSelect={handleModeSelect} />
+          <ModeButton
+            id="native"
+            active={effectiveMode === 'native' && !activeProvider && !isProviderConflict}
+            current={activeSelectionId}
+            title={t('settings.agentOrchestration.mode.native.title')}
+            description={t('settings.agentOrchestration.mode.native.description')}
+            disabled={isSavingMode}
+            onSelect={handleProviderSelect}
+          />
+          {providers.map((provider) => (
+            <ModeButton
+              key={provider.id}
+              id={getProviderSelectionId(provider)}
+              active={provider.active}
+              current={activeSelectionId}
+              title={provider.title}
+              description={getProviderDescription(provider, t)}
+              metadata={getProviderMetadata(provider, t)}
+              disabled={isSavingMode || (!provider.installed && provider.legacyMode == null)}
+              onSelect={handleProviderSelect}
+            />
+          ))}
         </div>
         <div className="mt-3 flex flex-col gap-2 border-t border-border/60 pt-3">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge className={effectiveMode === 'conflict' ? 'bg-[var(--status-error)]/10 text-[var(--status-error)]' : 'bg-primary/10 text-primary'}>
-                {t('settings.agentOrchestration.badge.currentMode', { mode: effectiveMode })}
+              <Badge className={isProviderConflict ? 'bg-[var(--status-error)]/10 text-[var(--status-error)]' : 'bg-primary/10 text-primary'}>
+                {t('settings.agentOrchestration.badge.currentMode', { mode: currentLabel })}
               </Badge>
               {isLoading ? <Badge className="bg-muted text-muted-foreground">{t('settings.agentOrchestration.badge.loading')}</Badge> : null}
             </div>
@@ -798,7 +848,7 @@ export const AgentOrchestrationPage: React.FC = () => {
         </div>
       </div>
 
-      {effectiveMode === 'native' ? (
+      {effectiveMode === 'native' && !activeProvider && !isProviderConflict ? (
         <div className="rounded-lg border border-border/70 bg-background px-4 py-10 text-center">
           <RiSparklingLine className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
           <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.nativeActive.title')}</div>
@@ -806,19 +856,19 @@ export const AgentOrchestrationPage: React.FC = () => {
         </div>
       ) : null}
 
-      {(effectiveMode === 'slim' || effectiveMode === 'omo') ? (
+      {activeProvider ? (
         <div className="rounded-lg border border-border/70 bg-background px-4 py-8 text-center">
           <RiSparklingLine className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.providerSettings.title')}</div>
+          <div className="typography-ui-label font-semibold text-foreground">{t('settings.agentOrchestration.providerSettings.title', { provider: activeProvider.title })}</div>
           <p className="mx-auto mt-1 max-w-xl typography-ui text-muted-foreground">{t('settings.agentOrchestration.providerSettings.description')}</p>
           <div className="mt-4 flex justify-center">
             <Button type="button" size="sm" variant="outline" onClick={() => void handleConfigureProvider()} disabled={!activeProvider?.managementSurfaceId}>
-              {t('settings.agentOrchestration.providerSettings.action')}
+              {activeProvider.configurable === false ? t('settings.agentOrchestration.providerSettings.viewPluginAction') : t('settings.agentOrchestration.providerSettings.action')}
             </Button>
           </div>
         </div>
       ) : null}
-      {effectiveMode === 'conflict' ? (
+      {isProviderConflict ? (
         <div className="rounded-lg border border-[var(--status-error)]/40 bg-[var(--status-error)]/5 px-4 py-8 text-center typography-ui text-[var(--status-error)]">
           {t('settings.agentOrchestration.conflict.description')}
         </div>

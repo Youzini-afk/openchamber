@@ -67,12 +67,13 @@ export type PluginManagementSurface = {
   id: string;
   title: string;
   kind: 'agent-orchestration-provider-config' | 'magic-context-config';
-  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' };
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' | 'generic-provider-config' };
   providerId: string | null;
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';
   status: 'available';
+  configurable?: boolean;
 };
 
 export type PluginRegistryResult =
@@ -977,6 +978,43 @@ const entryMatchesProvider = (entry: PluginEntry, packageNames: readonly string[
   return packageNames.some((name) => basename === name || basename.startsWith(`${name}@`));
 };
 
+const getDeclaredAgentProviderCapability = (options: unknown): Record<string, unknown> | null => {
+  if (!isPlainObject(options)) return null;
+  const openchamber = isPlainObject(options.openchamber) ? options.openchamber : null;
+  const capabilities = isPlainObject(openchamber?.capabilities) ? openchamber.capabilities : null;
+  const capability = capabilities?.agentOrchestrationProvider
+    ?? capabilities?.agentProvider
+    ?? openchamber?.agentOrchestrationProvider
+    ?? options.agentOrchestrationProvider;
+  if (capability === true) return {};
+  return isPlainObject(capability) ? capability : null;
+};
+
+const normalizeCapabilityString = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+
+const titleFromPluginSpec = (spec: string): string => {
+  const basename = getPluginBasename(spec).replace(/@[^/@]+$/, '');
+  return basename
+    .replace(/^@/, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase()) || 'Agent provider plugin';
+};
+
+const getGenericAgentProviderCandidate = (entry: PluginEntry) => {
+  const capability = getDeclaredAgentProviderCapability(entry.options);
+  if (!capability) return null;
+  const declaredId = normalizeCapabilityString(capability.id);
+  const reservedIds = new Set<string>(['native', 'conflict', ...AGENT_PROVIDER_SURFACE_DESCRIPTORS.map((descriptor) => descriptor.providerId)]);
+  const providerId = declaredId && !reservedIds.has(declaredId)
+    ? declaredId
+    : `plugin:${encodeURIComponent(entry.spec.trim().toLowerCase())}`;
+  return {
+    id: normalizeCapabilityString(capability.managementSurfaceId) || `generic-agent-provider:${providerId}`,
+    providerId,
+    title: normalizeCapabilityString(capability.title) || titleFromPluginSpec(entry.spec),
+  };
+};
+
 export const listPluginManagementSurfaces = (workingDirectory?: string): PluginManagementSurface[] => {
   const entries = listPluginEntries(workingDirectory);
   const agentProviderSurfaces: PluginManagementSurface[] = AGENT_PROVIDER_SURFACE_DESCRIPTORS.flatMap((descriptor) => {
@@ -994,6 +1032,33 @@ export const listPluginManagementSurfaces = (workingDirectory?: string): PluginM
       spec: primaryEntry?.spec ?? null,
       scope: scopes.size > 1 ? 'mixed' : (primaryEntry?.scope ?? 'runtime'),
       status: 'available' as const,
+    }];
+  });
+
+  const knownProviderIds = new Set(agentProviderSurfaces.map((surface) => surface.providerId));
+  const genericCandidatesByProvider = new Map<string, Array<{ entry: PluginEntry; candidate: ReturnType<typeof getGenericAgentProviderCandidate> }>>();
+  for (const entry of entries) {
+    const candidate = getGenericAgentProviderCandidate(entry);
+    if (!candidate || knownProviderIds.has(candidate.providerId)) continue;
+    const existing = genericCandidatesByProvider.get(candidate.providerId) ?? [];
+    existing.push({ entry, candidate });
+    genericCandidatesByProvider.set(candidate.providerId, existing);
+  }
+  const genericAgentProviderSurfaces: PluginManagementSurface[] = Array.from(genericCandidatesByProvider.entries()).flatMap(([providerId, items]) => {
+    const first = items[0];
+    if (!first?.candidate) return [];
+    const scopes = new Set(items.map((item) => item.entry.scope));
+    return [{
+      id: first.candidate.id,
+      title: first.candidate.title,
+      kind: 'agent-orchestration-provider-config',
+      panel: { kind: 'generic-provider-config' },
+      providerId,
+      pluginEntryId: first.entry.id,
+      spec: first.entry.spec,
+      scope: scopes.size > 1 ? 'mixed' : first.entry.scope,
+      status: 'available',
+      configurable: false,
     }];
   });
 
@@ -1015,7 +1080,7 @@ export const listPluginManagementSurfaces = (workingDirectory?: string): PluginM
     status: 'available',
   }] : [];
 
-  return [...agentProviderSurfaces, ...magicContextSurfaces];
+  return [...agentProviderSurfaces, ...genericAgentProviderSurfaces, ...magicContextSurfaces];
 };
 
 export const getPluginEntry = (id: string, workingDirectory?: string): PluginEntry | null =>

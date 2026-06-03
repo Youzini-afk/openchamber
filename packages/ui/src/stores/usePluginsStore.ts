@@ -33,12 +33,13 @@ export interface PluginManagementSurface {
   id: string;
   title: string;
   kind: 'agent-orchestration-provider-config' | 'magic-context-config';
-  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' };
+  panel: { kind: 'slim-orchestration-config' | 'openagent-config' | 'magic-context-config' | 'generic-provider-config' };
   providerId: string | null;
   pluginEntryId: string | null;
   spec: string | null;
   scope: PluginScope | 'mixed' | 'runtime';
   status: 'available';
+  configurable?: boolean;
 }
 
 export interface PluginDraft {

@@ -49,10 +49,10 @@ function createRegistryApp(getNpmInfo) {
   return app;
 }
 
-async function createEntry(spec = 'a') {
+async function createEntry(spec = 'a', options) {
   return request(app)
     .post('/api/config/plugins/entry')
-    .send({ spec, scope: 'user' })
+    .send({ spec, scope: 'user', ...(options !== undefined ? { options } : {}) })
     .expect(200);
 }
 
@@ -130,6 +130,34 @@ describe('opencode plugin routes', () => {
         kind: 'magic-context-config',
         providerId: null,
         panel: { kind: 'magic-context-config' },
+        status: 'available',
+      }),
+    ]);
+  });
+
+  test('GET /api/config/plugins returns generic provider surface only for explicit capabilities', async () => {
+    await createEntry('ordinary-agent-looking-plugin');
+    await createEntry('third-party-agent-provider', {
+      openchamber: {
+        capabilities: {
+          agentOrchestrationProvider: {
+            id: 'third-party-agent-provider',
+            title: 'Third Party Agent Provider',
+          },
+        },
+      },
+    });
+
+    const response = await request(app).get('/api/config/plugins').expect(200);
+
+    expect(response.body.managementSurfaces).toEqual([
+      expect.objectContaining({
+        id: 'generic-agent-provider:third-party-agent-provider',
+        title: 'Third Party Agent Provider',
+        kind: 'agent-orchestration-provider-config',
+        providerId: 'third-party-agent-provider',
+        panel: { kind: 'generic-provider-config' },
+        configurable: false,
         status: 'available',
       }),
     ]);
