@@ -155,6 +155,7 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
   const context = createRouteContext(dependencies);
   const multipartUpload = multer({
     storage: multer.memoryStorage(),
+    defParamCharset: 'utf8',
     limits: {
       fileSize: context.config.maxUploadBytes,
       files: 1000,

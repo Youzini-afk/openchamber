@@ -11,6 +11,36 @@ import { create as tarCreate } from 'tar';
 let tempDir;
 let workspaceRoot;
 
+const gbkTestBytes = new Map([
+  ['中', [0xd6, 0xd0]],
+  ['文', [0xce, 0xc4]],
+  ['说', [0xcb, 0xb5]],
+  ['明', [0xc3, 0xf7]],
+]);
+
+const encodeGbkTestFilename = (value) => {
+  const bytes = [];
+  for (const char of String(value || '')) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x7f) {
+      bytes.push(code);
+      continue;
+    }
+    const mapped = gbkTestBytes.get(char);
+    if (!mapped) {
+      throw new Error(`Missing GBK test mapping for ${char}`);
+    }
+    bytes.push(...mapped);
+  }
+  return Buffer.from(bytes);
+};
+
+const gbkTestZipDecoder = {
+  efs: false,
+  encode: encodeGbkTestFilename,
+  decode: (data) => new TextDecoder('gbk').decode(data),
+};
+
 async function loadRoutesModule() {
   return import(`./workspace-routes.js?test=${Date.now()}-${Math.random()}`);
 }
@@ -179,6 +209,47 @@ describe('workspace routes', () => {
     expect(fs.existsSync(path.join(workspaceRoot, 'demo', 'README.md'))).toBe(false);
   });
 
+  it('preserves UTF-8 multipart archive names and bytes', async () => {
+    const app = await createApp();
+    const zip = new AdmZip();
+    zip.addFile('README.md', Buffer.from('hello'));
+    const archiveBytes = zip.toBuffer();
+
+    const upload = await request(app)
+      .post('/api/workspace/upload')
+      .field('path', 'demo')
+      .attach('files', archiveBytes, '中文压缩包.zip')
+      .expect(200);
+
+    expect(upload.body.entries).toEqual([
+      expect.objectContaining({
+        name: '中文压缩包.zip',
+        relativePath: 'demo/中文压缩包.zip',
+        type: 'file',
+      }),
+    ]);
+    expect(fs.readFileSync(path.join(workspaceRoot, 'demo', '中文压缩包.zip'))).toEqual(archiveBytes);
+  });
+
+  it('does not rewrite already-correct multipart names that look like mojibake', async () => {
+    const app = await createApp();
+    const content = Buffer.from('literal name');
+
+    const upload = await request(app)
+      .post('/api/workspace/upload')
+      .field('path', 'demo')
+      .attach('files', content, 'Ã©.txt')
+      .expect(200);
+
+    expect(upload.body.entries).toEqual([
+      expect.objectContaining({
+        name: 'Ã©.txt',
+        relativePath: 'demo/Ã©.txt',
+      }),
+    ]);
+    expect(fs.readFileSync(path.join(workspaceRoot, 'demo', 'Ã©.txt'))).toEqual(content);
+  });
+
   it('previews and extracts zip archives into new folders with rename conflicts', async () => {
     const app = await createApp();
     fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
@@ -234,6 +305,49 @@ describe('workspace routes', () => {
       conflictsRenamed: 1,
     });
     expect(fs.existsSync(path.join(workspaceRoot, 'demo', 'demo (1)', 'src', 'index.ts'))).toBe(true);
+  });
+
+  it('previews and extracts legacy GBK zip entry names without changing file bytes', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
+    const zip = new AdmZip({ decoder: gbkTestZipDecoder });
+    const fileBytes = Buffer.from([0x00, 0xff, 0xe4, 0xb8, 0xad]);
+    zip.addFile('中文/说明.txt', fileBytes);
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'legacy-gbk.zip'), zip.toBuffer());
+
+    const preview = await request(app)
+      .get('/api/workspace/archive/preview')
+      .query({ path: 'demo/legacy-gbk.zip' })
+      .expect(200);
+
+    expect(preview.body.entries.map((entry) => entry.path)).toEqual(['中文/说明.txt']);
+
+    await request(app)
+      .post('/api/workspace/archive/extract')
+      .send({
+        path: 'demo/legacy-gbk.zip',
+        destination: 'demo/legacy-gbk',
+        mode: 'new-folder',
+        conflict: 'rename',
+      })
+      .expect(200);
+
+    expect(fs.readFileSync(path.join(workspaceRoot, 'demo', 'legacy-gbk', '中文', '说明.txt'))).toEqual(fileBytes);
+  });
+
+  it('keeps valid UTF-8 zip entry names with literal replacement characters', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
+    const zip = new AdmZip();
+    zip.addFile('�中文.txt', Buffer.from('ok'));
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'utf8-replacement.zip'), zip.toBuffer());
+
+    const preview = await request(app)
+      .get('/api/workspace/archive/preview')
+      .query({ path: 'demo/utf8-replacement.zip' })
+      .expect(200);
+
+    expect(preview.body.entries.map((entry) => entry.path)).toEqual(['�中文.txt']);
   });
 
   it('extracts tar.gz archives and can delete the source archive after success', async () => {

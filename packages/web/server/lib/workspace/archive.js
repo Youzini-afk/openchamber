@@ -13,6 +13,29 @@ const ZIP_FILE_TYPE_MASK = 0o170000;
 const TAR_FILE_TYPES = new Set(['File', 'OldFile', 'ContiguousFile']);
 const TAR_DIRECTORY_TYPES = new Set(['Directory', 'GNUDumpDir']);
 const DEFAULT_CONFLICT = 'rename';
+const utf8FilenameDecoder = new TextDecoder('utf-8', { fatal: true });
+const lenientUtf8FilenameDecoder = new TextDecoder('utf-8');
+const gbkFilenameDecoder = new TextDecoder('gbk');
+const containsCjkCharacter = (value) => /[\u3400-\u9fff\uf900-\ufaff]/u.test(String(value || ''));
+
+const decodeZipFilename = (data, allowGbkFallback = true) => {
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data || []);
+  try {
+    return utf8FilenameDecoder.decode(buffer);
+  } catch {
+    if (!allowGbkFallback) {
+      throw makeWorkspaceError('ZIP entry filename is not valid UTF-8', 415);
+    }
+    const gbk = gbkFilenameDecoder.decode(buffer);
+    return containsCjkCharacter(gbk) ? gbk : lenientUtf8FilenameDecoder.decode(buffer);
+  }
+};
+
+const zipFilenameDecoder = {
+  efs: true,
+  encode: (value) => Buffer.from(String(value || ''), 'utf8'),
+  decode: decodeZipFilename,
+};
 
 export const detectArchiveFormat = (pathValue) => {
   const lower = String(pathValue || '').toLowerCase();
@@ -96,12 +119,15 @@ const zipEntrySize = (entry) => {
 };
 
 const readZipEntries = async (archivePath) => {
-  const zip = new AdmZip(archivePath);
+  const zip = new AdmZip(archivePath, { decoder: zipFilenameDecoder });
   const entries = [];
   for (const entry of zip.getEntries()) {
     assertZipEntrySupported(entry);
+    const entryName = entry?.header?.flags_efs === false
+      ? entry.entryName
+      : decodeZipFilename(entry.rawEntryName, false);
     entries.push({
-      ...createArchiveEntry(entry.entryName, entry.isDirectory ? 'directory' : 'file', zipEntrySize(entry)),
+      ...createArchiveEntry(entryName, entry.isDirectory ? 'directory' : 'file', zipEntrySize(entry)),
       zipEntry: entry,
     });
   }
@@ -252,8 +278,13 @@ const writeZipToDirectory = async (archivePath, entries, targetDir, dependencies
     fsPromises = fs.promises,
     pathModule = path,
   } = dependencies;
-  const zip = new AdmZip(archivePath);
-  const entriesByPath = new Map(zip.getEntries().map((entry) => [sanitizeArchiveEntryPath(entry.entryName), entry]));
+  const zip = new AdmZip(archivePath, { decoder: zipFilenameDecoder });
+  const entriesByPath = new Map(zip.getEntries().map((entry) => {
+    const entryName = entry?.header?.flags_efs === false
+      ? entry.entryName
+      : decodeZipFilename(entry.rawEntryName, false);
+    return [sanitizeArchiveEntryPath(entryName), entry];
+  }));
 
   for (const entry of entries) {
     const target = pathModule.resolve(targetDir, ...entry.path.split('/'));
