@@ -49,6 +49,7 @@ export interface SettingsPageMeta {
   kind: 'single' | 'split';
   description?: string;
   keywords?: string[];
+  primaryNav?: boolean;
   isAvailable?: (ctx: SettingsRuntimeContext) => boolean;
 }
 
@@ -127,8 +128,9 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   {
     slug: 'smart-search',
     title: 'Smart Search',
-    group: 'opencode',
-    kind: 'single',
+    group: 'skills',
+    kind: 'split',
+    primaryNav: false,
     keywords: ['smart search', 'smart-search', 'web research', 'search', 'exa', 'context7', 'zhipu', 'tavily', 'firecrawl'],
     isAvailable: (ctx) => !ctx.isVSCode,
   },

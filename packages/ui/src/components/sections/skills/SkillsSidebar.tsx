@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine } from '@remixicon/react';
+import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiSearchEyeLine } from '@remixicon/react';
 import { useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -28,13 +28,23 @@ import { useI18n } from '@/lib/i18n';
 
 interface SkillsSidebarProps {
   onItemSelect?: () => void;
+  onSelectSkill?: () => void;
+  onOpenSmartSearch?: () => void;
+  selectedSystemTool?: 'smart-search' | null;
+  showSmartSearchTool?: boolean;
 }
 
 const BUILT_IN_SKILL_LOCATION = '<built-in>';
 
 const isBuiltInSkill = (skill: DiscoveredSkill | null | undefined): boolean => skill?.path === BUILT_IN_SKILL_LOCATION;
 
-export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) => {
+export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
+  onItemSelect,
+  onSelectSkill,
+  onOpenSmartSearch,
+  selectedSystemTool = null,
+  showSmartSearchTool = false,
+}) => {
   const { t } = useI18n();
   const [renameDialogSkill, setRenameDialogSkill] = React.useState<DiscoveredSkill | null>(null);
   const [renameNewName, setRenameNewName] = React.useState('');
@@ -83,6 +93,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     }
 
     // Set draft and open the page for editing
+    onSelectSkill?.();
     setSkillDraft({ name: newName, scope: 'user', source: 'opencode', description: '' });
     setSelectedSkill(newName);
     onItemSelect?.();
@@ -135,6 +146,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     }
 
     // Set draft with prefilled values from source skill
+    onSelectSkill?.();
       setSkillDraft({
         name: newName,
         scope: skill.scope || 'user',
@@ -198,6 +210,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
       const deleteSuccess = await deleteSkill(renameDialogSkill.name);
       if (deleteSuccess) {
         toast.success(`Skill renamed to "${sanitizedName}"`);
+        onSelectSkill?.();
         setSelectedSkill(sanitizedName);
       } else {
         toast.error(t('settings.skills.sidebar.toast.removeOldAfterRenameFailed'));
@@ -300,6 +313,36 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
         <>
+          {showSmartSearchTool && onOpenSmartSearch ? (
+            <>
+              <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('settings.skills.sidebar.section.systemTools')}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenSmartSearch();
+                  onItemSelect?.();
+                }}
+                aria-current={selectedSystemTool === 'smart-search' ? 'page' : undefined}
+                className={cn(
+                  'group relative flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-all duration-200 select-none',
+                  selectedSystemTool === 'smart-search' ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
+                )}
+              >
+                <RiSearchEyeLine className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="typography-ui-label font-normal truncate text-foreground">
+                    {t('settings.skills.sidebar.systemTools.smartSearch.title')}
+                  </div>
+                  <div className="typography-micro truncate text-muted-foreground/70">
+                    {t('settings.skills.sidebar.systemTools.smartSearch.description')}
+                  </div>
+                </div>
+              </button>
+            </>
+          ) : null}
+
           {skills.length === 0 && (
             <div className="py-8 px-4 text-center text-muted-foreground">
               <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
@@ -323,8 +366,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                       <SkillListItem
                         key={skill.name}
                         skill={skill}
-                        isSelected={selectedSkillName === skill.name}
+                        isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
                         onSelect={() => {
+                          onSelectSkill?.();
                           setSelectedSkill(skill.name);
                           onItemSelect?.();
 
@@ -342,8 +386,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                   <SkillListItem
                     key={skill.name}
                     skill={skill}
-                    isSelected={selectedSkillName === skill.name}
+                    isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
                     onSelect={() => {
+                      onSelectSkill?.();
                       setSelectedSkill(skill.name);
                       onItemSelect?.();
 
@@ -374,8 +419,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                       <SkillListItem
                         key={skill.name}
                         skill={skill}
-                        isSelected={selectedSkillName === skill.name}
+                        isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
                         onSelect={() => {
+                          onSelectSkill?.();
                           setSelectedSkill(skill.name);
                           onItemSelect?.();
 
@@ -393,8 +439,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                   <SkillListItem
                     key={skill.name}
                     skill={skill}
-                    isSelected={selectedSkillName === skill.name}
+                    isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
                     onSelect={() => {
+                      onSelectSkill?.();
                       setSelectedSkill(skill.name);
                       onItemSelect?.();
 

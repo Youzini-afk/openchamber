@@ -93,6 +93,7 @@ type SettingsDetailHistoryEntry = {
   page: SettingsPageSlug;
   stage: 'page-content';
 };
+type SkillsSystemTool = 'smart-search' | null;
 
 interface SettingsViewProps {
   onClose?: () => void;
@@ -117,7 +118,6 @@ const pageOrder: SettingsPageSlug[] = [
   'projects',
   'remote-instances',
   'agents',
-  'smart-search',
   'behavior',
   'commands',
   'mcp',
@@ -126,6 +126,7 @@ const pageOrder: SettingsPageSlug[] = [
   'usage',
   'skills.installed',
   'skills.catalog',
+  'smart-search',
   'voice',
   'tunnel',
 ];
@@ -321,6 +322,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const settingsSlug = resolveSettingsSlug(settingsPageRaw);
 
   const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
+  const [selectedSkillsSystemTool, setSelectedSkillsSystemTool] = React.useState<SkillsSystemTool>(null);
   const autoNavSlugRef = React.useRef<string | null>(null);
 
   const [navWidth, setNavWidth] = React.useState(216);
@@ -342,6 +344,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     const allowedPages = visiblePageSlugs ? new Set<SettingsPageSlug>(visiblePageSlugs) : null;
     return SETTINGS_PAGE_METADATA
       .filter((page) => page.slug !== 'home')
+      .filter((page) => page.primaryNav !== false)
       .filter((page) => !allowedPages || allowedPages.has(page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
       .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'))
@@ -452,7 +455,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       })();
       return;
     }
-    if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
+    if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog' || settingsSlug === 'smart-search') {
       void useSkillsStore.getState().loadSkills();
       void useSkillsCatalogStore.getState().loadCatalog();
     }
@@ -462,6 +465,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [activeProjectId, isSettingsDialogOpen, isWindowed, runtimeCtx.isVSCode, settingsPageRaw, settingsSlug]);
 
   const openPage = React.useCallback((slug: SettingsPageSlug) => {
+    if (slug !== 'smart-search') {
+      setSelectedSkillsSystemTool(null);
+    }
     setSettingsPage(slug);
     autoNavSlugRef.current = slug;
     if (!isMobile) {
@@ -558,6 +564,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [t]);
 
   const renderPageSidebar = React.useCallback((slug: SettingsPageSlug, opts: { onItemSelect?: () => void }) => {
+    const handleSelectSkill = () => {
+      setSelectedSkillsSystemTool(null);
+      if (slug === 'smart-search') {
+        openPage('skills.installed');
+      }
+    };
+    const handleOpenSmartSearch = () => {
+      setSelectedSkillsSystemTool('smart-search');
+    };
+
     switch (slug) {
       case 'projects':
         return <ProjectsSidebar onItemSelect={opts.onItemSelect} />;
@@ -570,7 +586,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'plugins':
         return <PluginsSidebar onItemSelect={opts.onItemSelect} />;
       case 'skills.installed':
-        return <SkillsSidebar onItemSelect={opts.onItemSelect} />;
+        return <SkillsSidebar onItemSelect={opts.onItemSelect} onSelectSkill={handleSelectSkill} onOpenSmartSearch={handleOpenSmartSearch} showSmartSearchTool={!runtimeCtx.isVSCode} selectedSystemTool={selectedSkillsSystemTool} />;
+      case 'smart-search':
+        return <SkillsSidebar onItemSelect={opts.onItemSelect} onSelectSkill={handleSelectSkill} onOpenSmartSearch={handleOpenSmartSearch} showSmartSearchTool={!runtimeCtx.isVSCode} selectedSystemTool="smart-search" />;
       case 'providers':
         return <ProvidersSidebar onItemSelect={opts.onItemSelect} />;
       case 'usage':
@@ -582,7 +600,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return null;
     }
-  }, []);
+  }, [openPage, runtimeCtx.isVSCode, selectedSkillsSystemTool]);
 
   const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const meta = getSettingsPageMeta(slug);
@@ -610,6 +628,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'plugins':
         return <PluginsPage />;
       case 'skills.installed':
+        if (selectedSkillsSystemTool === 'smart-search') {
+          return <SmartSearchPage />;
+        }
         return <SkillsPage view="installed" />;
       case 'skills.catalog':
         return <SkillsPage view="catalog" />;
@@ -637,7 +658,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return <SettingsHome onOpen={openPage} />;
     }
-  }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx]);
+  }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx, selectedSkillsSystemTool]);
 
   // Mobile: if opened via deep-link / palette to a non-home page, jump into it once.
   React.useEffect(() => {
@@ -658,11 +679,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     autoNavSlugRef.current = settingsSlug;
-    setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
+    setMobileStage(def.kind === 'split' && settingsSlug !== 'smart-search' ? 'page-sidebar' : 'page-content');
   }, [isMobile, mobileStage, settingsSlug]);
 
   const showBackButton = isMobile && mobileStage !== 'nav';
-  const backButtonTargetsPageSidebar = isMobile && mobileStage === 'page-content' && settingsSlug === 'skills.installed';
+  const backButtonTargetsPageSidebar = isMobile && mobileStage === 'page-content' && (settingsSlug === 'skills.installed' || settingsSlug === 'smart-search');
   const showOpenPageSidebarButton = mobileStage === 'page-content'
     && activePageMeta?.kind === 'split'
     && !backButtonTargetsPageSidebar;
@@ -695,7 +716,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const handleMobilePageSidebarItemSelect = React.useCallback(() => {
     setMobileStage('page-content');
-    if (settingsSlug === 'skills.installed') {
+    if (settingsSlug === 'skills.installed' || settingsSlug === 'smart-search') {
       pushMobileSplitDetailHistory(settingsSlug);
     }
   }, [pushMobileSplitDetailHistory, settingsSlug]);
@@ -722,12 +743,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     const handlePopState = (event: PopStateEvent) => {
-      if (settingsSlug !== 'skills.installed') {
+      if (settingsSlug !== 'skills.installed' && settingsSlug !== 'smart-search') {
         return;
       }
 
       const detail = getSettingsDetailHistoryEntry(event.state);
-      if (detail?.page === 'skills.installed') {
+      if (detail?.page === settingsSlug) {
         setMobileStage('page-content');
         return;
       }
@@ -752,7 +773,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           <div className="flex flex-col gap-0.5 pt-4 pb-2 px-2">
             {sortedFilteredPages.map((page) => {
-              const selected = settingsSlug === page.slug;
+              const selected = settingsSlug === page.slug || (settingsSlug === 'smart-search' && page.slug === 'skills.installed');
               const Icon = getSettingsNavIcon(page.slug);
               if (!Icon) return null;
 
