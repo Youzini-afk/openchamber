@@ -46,6 +46,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { useUIStore } from '@/stores/useUIStore';
+import { formatDateTimeForPreference } from '@/lib/timeFormat';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -327,6 +328,7 @@ export const PullRequestSection: React.FC<{
   onGeneratedDescription?: () => void;
 }> = ({ directory, branch, baseBranch, trackingBranch, remotes = [], remoteBranches = [], onGeneratedDescription }) => {
   const { t } = useI18n();
+  const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -645,8 +647,14 @@ export const PullRequestSection: React.FC<{
     if (!Number.isFinite(ts)) {
       return value;
     }
-    return new Date(ts).toLocaleString();
-  }, []);
+    return formatDateTimeForPreference(ts, timeFormatPreference, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, [timeFormatPreference]);
 
   const connectedGitHubLogin = React.useMemo(() => {
     const login = githubAuthStatus?.user?.login;

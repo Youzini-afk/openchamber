@@ -41,7 +41,9 @@ import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, QUOTA_
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
 import { updateDesktopSettings } from '@/lib/persistence';
+import { formatTimeForPreference } from '@/lib/timeFormat';
 import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import type { TimeFormatPreference } from '@/stores/useUIStore';
 import {
   getAllModelFamilies,
   getDisplayModelName,
@@ -357,6 +359,7 @@ type DesktopServicesMenuProps = {
   remoteUpdateError: string | null;
   onOpenRemoteUpdate: () => void;
   showPredValues: boolean;
+  timeFormatPreference: TimeFormatPreference;
 };
 
 const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
@@ -392,6 +395,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   remoteUpdateError,
   onOpenRemoteUpdate,
   showPredValues,
+  timeFormatPreference,
 }: DesktopServicesMenuProps) {
   const { t } = useI18n();
   return (
@@ -512,7 +516,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
             <div className="flex items-center justify-between gap-3 border-b border-[var(--interactive-border)] px-4 py-2.5">
               <div className="flex min-w-0 items-baseline gap-2">
                 <span className="typography-ui-header font-semibold text-foreground">{t('header.services.rateLimits')}</span>
-                <span className="truncate typography-micro text-muted-foreground">{formatTime(quotaLastUpdated)}</span>
+                <span className="truncate typography-micro text-muted-foreground">{formatTime(quotaLastUpdated, timeFormatPreference)}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="h-7 w-[10.5rem]">
@@ -573,7 +577,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                                 : calculateExpectedUsagePercent(paceInfo.elapsedRatio))
                             : null;
                           const metricLabel = formatQuotaValueLabel(window.valueLabel, displayPercent);
-                          const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted);
+                          const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted, timeFormatPreference);
                           return (
                             <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
                               <div className="flex min-w-0 items-center justify-between gap-3">
@@ -715,13 +719,10 @@ const formatCompactHeaderLabel = (value: string): string => {
   return trimmed.length > 12 ? `${trimmed.slice(0, 9).trimEnd()}...` : trimmed;
 };
 
-const formatTime = (timestamp: number | null) => {
+const formatTime = (timestamp: number | null, timeFormatPreference: 'auto' | '12h' | '24h') => {
   if (!timestamp) return '-';
   try {
-    return new Date(timestamp).toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    return formatTimeForPreference(timestamp, timeFormatPreference, { fallback: '-' });
   } catch {
     return '-';
   }
@@ -792,6 +793,7 @@ export const Header: React.FC<HeaderProps> = ({
   const activeMainTab = useUIStore((state) => state.activeMainTab);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
+  const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
 
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
   const runtimeApis = useRuntimeAPIs();
@@ -2090,6 +2092,7 @@ export const Header: React.FC<HeaderProps> = ({
         remoteUpdateChecking={remoteUpdateChecking}
         remoteUpdateError={remoteUpdateError}
         onOpenRemoteUpdate={openRemoteInstanceUpdate}
+        timeFormatPreference={timeFormatPreference}
       />
       <HeaderIconActionButton
         title={t('header.actions.terminalPanelWithShortcut', { shortcut: shortcutLabel('toggle_terminal') })}
@@ -2446,7 +2449,7 @@ export const Header: React.FC<HeaderProps> = ({
                           <div className="flex flex-col min-w-0 gap-0.5">
                             <span className="typography-ui-header font-semibold text-foreground">{t('header.services.rateLimits')}</span>
                             <span className="truncate typography-micro text-muted-foreground">
-                              {formatTime(quotaLastUpdated)}
+                              {formatTime(quotaLastUpdated, timeFormatPreference)}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -2534,7 +2537,7 @@ export const Header: React.FC<HeaderProps> = ({
                                         : calculateExpectedUsagePercent(paceInfo.elapsedRatio))
                                     : null;
                                   const metricLabel = formatQuotaValueLabel(window.valueLabel, displayPercent);
-                                  const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted);
+                                  const resetLabel = formatQuotaResetLabel(window.resetAt, window.resetAfterFormatted ?? window.resetAtFormatted, timeFormatPreference);
                                   return (
                                     <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
                                       <div className="flex min-w-0 items-center justify-between gap-3">
