@@ -382,8 +382,8 @@ function SlimAgentRow({
   const disabled = disabledIds.has(item.id);
 
   return (
-    <div className="grid min-h-[70px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 xl:grid-cols-[minmax(220px,0.8fr)_minmax(360px,1.2fr)_minmax(320px,1fr)] xl:items-center">
-      <div className="min-w-0">
+    <div className="flex flex-col gap-3 border-t border-border/50 px-3 py-3 first:border-t-0 md:flex-row md:flex-wrap md:items-center">
+      <div className="min-w-[200px] max-w-full flex-[1_1_100%] lg:flex-[1_1_200px]">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="truncate typography-ui-label font-medium text-foreground">{item.label}</span>
           {disabled ? <Badge className="bg-muted text-muted-foreground">{t('settings.agentOrchestration.badge.disabled')}</Badge> : null}
@@ -395,8 +395,10 @@ function SlimAgentRow({
           {t('settings.agentOrchestration.agent.defaultPrefix')}: {item.defaultModel ? `${item.defaultModel}${item.defaultVariant ? ` · ${item.defaultVariant}` : ''}` : t('settings.agentOrchestration.model.pluginDefault')}
         </div>
       </div>
-      <CompactModelEditor model={model} onChange={(nextModel) => updatePresetAgent(item.id, { model: nextModel || undefined })} />
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="min-w-[260px] flex-[1_1_100%] lg:flex-[1.5_1_260px]">
+        <CompactModelEditor model={model} onChange={(nextModel) => updatePresetAgent(item.id, { model: nextModel || undefined })} />
+      </div>
+      <div className="flex min-w-[280px] flex-[1_1_100%] flex-wrap items-center gap-1.5 lg:flex-[2_1_280px]">
         <Select
           value={typeof agent.variant === 'string' && agent.variant ? agent.variant : INHERIT_VALUE}
           onValueChange={(value) => updatePresetAgent(item.id, { variant: value === INHERIT_VALUE ? undefined : normalizeVariant(value) })}
@@ -429,11 +431,11 @@ function SlimAgentRow({
           className="h-7 min-w-[100px] flex-1"
         />
         {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">fallback {fallbackCount}</Badge> : null}
-        <label className="flex h-7 items-center gap-1.5 rounded border border-border/70 px-2 typography-micro">
+        <label className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-border/70 px-2 typography-micro">
           <Checkbox checked={disabled} onChange={(checked) => setAgentDisabled(item.id, checked)} disabled={item.id === 'orchestrator'} />
           {t('settings.agentOrchestration.actions.disable')}
         </label>
-        <Button type="button" size="xs" variant="outline" onClick={() => onAdvanced(item.id)}>{t('settings.agentOrchestration.actions.advanced')}</Button>
+        <Button type="button" size="xs" variant="outline" className="shrink-0" onClick={() => onAdvanced(item.id)}>{t('settings.agentOrchestration.actions.advanced')}</Button>
       </div>
     </div>
   );
