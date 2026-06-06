@@ -24,6 +24,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
+import { buildEmbeddedSessionChatURL } from '@/lib/embeddedSessionChat';
 import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from "@/components/ui/OpenChamberLogo";
 import { invokeDesktopCommand } from '@/lib/desktopNative';
@@ -416,29 +417,6 @@ const runIframeScript = async <T,>(iframe: HTMLIFrameElement, script: string): P
   const evaluate = (frameWindow as Window & { eval: (code: string) => unknown }).eval;
   const result = evaluate.call(frameWindow, script) as unknown;
   return await Promise.resolve(result) as T;
-};
-
-const buildEmbeddedSessionChatURL = (sessionID: string, directory: string | null, readOnly: boolean): string => {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  const url = new URL(window.location.pathname, window.location.origin);
-  url.searchParams.set('ocPanel', 'session-chat');
-  url.searchParams.set('sessionId', sessionID);
-  if (readOnly) {
-    url.searchParams.set('readOnly', '1');
-  } else {
-    url.searchParams.delete('readOnly');
-  }
-  if (directory && directory.trim().length > 0) {
-    url.searchParams.set('directory', directory);
-  } else {
-    url.searchParams.delete('directory');
-  }
-
-  url.hash = '';
-  return url.toString();
 };
 
 const truncateTabLabel = (value: string, maxChars: number): string => {
@@ -2466,7 +2444,11 @@ export const ContextPanel: React.FC = () => {
             return null;
           }
 
-          const src = buildEmbeddedSessionChatURL(sessionID, directoryKey || null, tab.readOnly);
+          const src = buildEmbeddedSessionChatURL({
+            sessionId: sessionID,
+            directory: directoryKey || null,
+            readOnly: tab.readOnly,
+          });
           if (!src) {
             return null;
           }

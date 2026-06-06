@@ -2,6 +2,8 @@ import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
 import {
+  isEmbeddedSessionChatReady,
+  normalizeEmbeddedSessionDirectory,
   readEmbeddedSessionChatConfig,
   shouldConsumeSessionUrlParams,
   type EmbeddedSessionChatConfig,
@@ -109,11 +111,6 @@ type EmbeddedVisibilityPayload = {
   visible?: unknown;
 };
 
-const normalizeEmbeddedDirectory = (value: string | null | undefined): string => {
-  if (!value) return '';
-  return value.replace(/\\/g, '/').replace(/\/+$/g, '');
-};
-
 const isMcpOAuthCallbackPath = (): boolean => {
   if (typeof window === 'undefined') {
     return false;
@@ -124,22 +121,17 @@ const isMcpOAuthCallbackPath = (): boolean => {
 
 const EmbeddedSessionChatContent: React.FC<{
   embeddedSessionChat: EmbeddedSessionChatConfig;
-  isVSCodeRuntime: boolean;
   embeddedBackgroundWorkEnabled: boolean;
-}> = ({ embeddedSessionChat, isVSCodeRuntime, embeddedBackgroundWorkEnabled }) => {
+}> = ({ embeddedSessionChat, embeddedBackgroundWorkEnabled }) => {
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const sync = useSync();
   const bootstrapKeyRef = React.useRef<string | null>(null);
 
-  const expectedDirectory = normalizeEmbeddedDirectory(embeddedSessionChat.directory);
-  const activeDirectory = normalizeEmbeddedDirectory(currentDirectory);
+  const expectedDirectory = normalizeEmbeddedSessionDirectory(embeddedSessionChat.directory);
 
   React.useEffect(() => {
-    if (isVSCodeRuntime) return;
-    if (expectedDirectory && activeDirectory !== expectedDirectory) return;
-
     const bootstrapKey = `${expectedDirectory}\n${embeddedSessionChat.sessionId}`;
     if (bootstrapKeyRef.current === bootstrapKey && currentSessionId === embeddedSessionChat.sessionId) {
       return;
@@ -149,17 +141,21 @@ const EmbeddedSessionChatContent: React.FC<{
     setCurrentSession(embeddedSessionChat.sessionId, embeddedSessionChat.directory);
     void sync.ensureSessionRenderable(embeddedSessionChat.sessionId, true);
   }, [
-    activeDirectory,
     currentSessionId,
     embeddedSessionChat.directory,
     embeddedSessionChat.sessionId,
     expectedDirectory,
-    isVSCodeRuntime,
     setCurrentSession,
     sync,
   ]);
 
-  if (expectedDirectory && activeDirectory !== expectedDirectory) {
+  const isSessionReady = isEmbeddedSessionChatReady({
+    embeddedSessionChat,
+    currentSessionId,
+    currentDirectory,
+  });
+
+  if (!isSessionReady) {
     return null;
   }
 
@@ -655,7 +651,7 @@ function App({ apis }: AppProps) {
 
   useWindowTitle();
 
-  useRouter();
+  useRouter({ enabled: !embeddedSessionChat });
 
   const handleToggleMemoryDebug = React.useCallback(() => {
     setShowMemoryDebug(prev => !prev);
@@ -844,7 +840,6 @@ function App({ apis }: AppProps) {
               <div className="h-full text-foreground bg-background">
                 <EmbeddedSessionChatContent
                   embeddedSessionChat={embeddedSessionChat}
-                  isVSCodeRuntime={isVSCodeRuntime}
                   embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled}
                 />
               </div>

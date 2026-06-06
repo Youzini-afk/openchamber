@@ -30,7 +30,8 @@ function isVSCodeContext(): boolean {
  * - Desktop: Full bidirectional sync
  * - VS Code: State-only (no URL updates, reads initial params)
  */
-export function useRouter(): void {
+export function useRouter(options: { enabled?: boolean } = {}): void {
+  const enabled = options.enabled ?? true;
   const isVSCode = React.useMemo(() => isVSCodeContext(), []);
 
   // Track initialization to avoid duplicate applies
@@ -50,6 +51,10 @@ export function useRouter(): void {
   const applyRoute = React.useCallback(
     async (route: RouteState) => {
       if (isApplyingRouteRef.current) {
+        return;
+      }
+
+      if (!enabled) {
         return;
       }
 
@@ -90,7 +95,7 @@ export function useRouter(): void {
         isApplyingRouteRef.current = false;
       }
     },
-    [setCurrentSession, setActiveMainTab, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
+    [enabled, setCurrentSession, setActiveMainTab, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
   );
 
   /**
@@ -114,14 +119,14 @@ export function useRouter(): void {
    */
   const syncURLFromState = React.useCallback(
     (options: { replace?: boolean } = {}) => {
-      if (isVSCode || isApplyingRouteRef.current) {
+      if (!enabled || isVSCode || isApplyingRouteRef.current) {
         return;
       }
 
       const state = getCurrentAppState();
       updateBrowserURL(state, options);
     },
-    [isVSCode, getCurrentAppState]
+    [enabled, isVSCode, getCurrentAppState]
   );
 
   // Initialize: parse URL and apply route on mount
@@ -129,6 +134,11 @@ export function useRouter(): void {
     if (initializedRef.current) {
       return;
     }
+
+    if (!enabled) {
+      return;
+    }
+
     initializedRef.current = true;
 
     // Only process if URL has route params
@@ -150,11 +160,11 @@ export function useRouter(): void {
     };
 
     void initializeRoute();
-  }, [applyRoute, isVSCode, syncURLFromState]);
+  }, [applyRoute, enabled, isVSCode, syncURLFromState]);
 
   // Subscribe to session changes
   React.useEffect(() => {
-    if (isVSCode) {
+    if (!enabled || isVSCode) {
       return;
     }
 
@@ -173,11 +183,11 @@ export function useRouter(): void {
     });
 
     return unsubscribe;
-  }, [isVSCode, syncURLFromState]);
+  }, [enabled, isVSCode, syncURLFromState]);
 
   // Subscribe to UI store changes (tab, settings)
   React.useEffect(() => {
-    if (isVSCode) {
+    if (!enabled || isVSCode) {
       return;
     }
 
@@ -210,11 +220,11 @@ export function useRouter(): void {
     });
 
     return unsubscribe;
-  }, [isVSCode, syncURLFromState]);
+  }, [enabled, isVSCode, syncURLFromState]);
 
   // Listen for browser back/forward navigation
   React.useEffect(() => {
-    if (typeof window === 'undefined' || isVSCode) {
+    if (typeof window === 'undefined' || !enabled || isVSCode) {
       return;
     }
 
@@ -244,7 +254,7 @@ export function useRouter(): void {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [applyRoute, isVSCode, setActiveMainTab, setSettingsDialogOpen]);
+  }, [applyRoute, enabled, isVSCode, setActiveMainTab, setSettingsDialogOpen]);
 }
 
 /**
