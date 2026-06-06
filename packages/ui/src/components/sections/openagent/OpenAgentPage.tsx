@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -57,7 +58,6 @@ import {
   type OpenAgentKind,
   type OpenAgentOverride,
   type OpenAgentTopLevelArrayKey,
-  type OpenAgentTopLevelObjectKey,
 } from './openAgentConfig';
 
 const INHERIT_VALUE = '__inherit__';
@@ -151,50 +151,6 @@ const GLOBAL_ARRAY_FIELDS: Array<{
   },
 ];
 
-const GLOBAL_OBJECT_FIELDS: Array<{
-  key: OpenAgentTopLevelObjectKey;
-  labelKey: I18nKey;
-  descriptionKey: I18nKey;
-  placeholder: string;
-}> = [
-  {
-    key: 'background_task',
-    labelKey: 'settings.openagent.global.backgroundTask.label',
-    descriptionKey: 'settings.openagent.global.backgroundTask.description',
-    placeholder: '{ "defaultConcurrency": 4 }',
-  },
-  {
-    key: 'team_mode',
-    labelKey: 'settings.openagent.global.teamMode.label',
-    descriptionKey: 'settings.openagent.global.teamMode.description',
-    placeholder: '{ "enabled": true, "max_parallel_members": 4 }',
-  },
-  {
-    key: 'model_capabilities',
-    labelKey: 'settings.openagent.global.modelCapabilities.label',
-    descriptionKey: 'settings.openagent.global.modelCapabilities.description',
-    placeholder: '{ "enabled": true, "auto_refresh_on_start": true }',
-  },
-  {
-    key: 'experimental',
-    labelKey: 'settings.openagent.global.experimental.label',
-    descriptionKey: 'settings.openagent.global.experimental.description',
-    placeholder: '{ "dynamic_context_pruning": { "enabled": false } }',
-  },
-  {
-    key: 'skills',
-    labelKey: 'settings.openagent.global.skills.label',
-    descriptionKey: 'settings.openagent.global.skills.description',
-    placeholder: '{ "sources": [] }',
-  },
-  {
-    key: 'tmux',
-    labelKey: 'settings.openagent.global.tmux.label',
-    descriptionKey: 'settings.openagent.global.tmux.description',
-    placeholder: '{ "enabled": false }',
-  },
-];
-
 type OpenAgentGroup = 'main' | 'sub' | 'category' | 'custom';
 
 type OpenAgentDisplayItem = {
@@ -214,6 +170,51 @@ type EditingTarget = {
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 );
+
+const getRecordValue = (value: unknown): Record<string, unknown> => (
+  isRecord(value) ? value : {}
+);
+
+const isEmptyObject = (value: Record<string, unknown>): boolean => Object.keys(value).length === 0;
+
+const setObjectField = (value: unknown, key: string, nextValue: unknown): Record<string, unknown> | undefined => {
+  const next = { ...getRecordValue(value) };
+  if (nextValue === undefined || nextValue === null || nextValue === '') {
+    delete next[key];
+  } else {
+    next[key] = nextValue;
+  }
+  return isEmptyObject(next) ? undefined : next;
+};
+
+const setNestedObjectField = (value: unknown, key: string, nestedKey: string, nextValue: unknown): Record<string, unknown> | undefined => {
+  const root = { ...getRecordValue(value) };
+  const child = { ...getRecordValue(root[key]) };
+  if (nextValue === undefined || nextValue === null || nextValue === '') {
+    delete child[nestedKey];
+  } else {
+    child[nestedKey] = nextValue;
+  }
+  if (isEmptyObject(child)) delete root[key];
+  else root[key] = child;
+  return isEmptyObject(root) ? undefined : root;
+};
+
+const getFieldNumber = (value: unknown, key: string): string => {
+  const fieldValue = getRecordValue(value)[key];
+  return typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? String(fieldValue) : '';
+};
+
+const getNestedFieldNumber = (value: unknown, key: string, nestedKey: string): string => {
+  const fieldValue = getRecordValue(getRecordValue(value)[key])[nestedKey];
+  return typeof fieldValue === 'number' && Number.isFinite(fieldValue) ? String(fieldValue) : '';
+};
+
+const parseOptionalNumber = (value: string): number | undefined => {
+  if (!value.trim()) return undefined;
+  const next = Number(value);
+  return Number.isFinite(next) ? next : undefined;
+};
 
 const asString = (value: unknown): string => {
   if (value === undefined || value === null) return '';
@@ -320,6 +321,23 @@ const parseStringList = (value: string): string[] | undefined => {
     .map((entry) => entry.trim())
     .filter(Boolean)))
     .sort();
+  return entries.length > 0 ? entries : undefined;
+};
+
+const formatStringOnlyList = (values: unknown): string => (
+  Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean).join(', ') : ''
+);
+
+const formatNumberList = (values: unknown): string => (
+  Array.isArray(values) ? values.map((value) => typeof value === 'number' ? String(value) : '').filter(Boolean).join(', ') : ''
+);
+
+const parseNumberList = (value: string): number[] | undefined => {
+  const entries = Array.from(new Set(value
+    .split(/[\n,]/)
+    .map((entry) => Number(entry.trim()))
+    .filter((entry) => Number.isFinite(entry))))
+    .sort((a, b) => a - b);
   return entries.length > 0 ? entries : undefined;
 };
 
@@ -503,6 +521,8 @@ function RuntimeFallbackField({
   const { setJsonFieldState } = React.useContext(JsonValidationContext);
   const mode = typeof value === 'boolean' ? String(value) : isRecord(value) ? 'object' : INHERIT_VALUE;
   const validationId = 'global:runtime_fallback';
+  const objectValue = getRecordValue(value);
+  const updateObjectField = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue) ?? {});
 
   return (
     <div className="space-y-2">
@@ -530,21 +550,137 @@ function RuntimeFallbackField({
             <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
             <SelectItem value="true">true</SelectItem>
             <SelectItem value="false">false</SelectItem>
-            <SelectItem value="object">object</SelectItem>
+            <SelectItem value="object">{t('settings.openagent.global.mode.structured')}</SelectItem>
           </SelectContent>
         </Select>
       </Field>
 
       {isRecord(value) ? (
-        <JsonTextareaField
-          validationId={validationId}
-          label="runtime_fallback"
-          value={value}
-          onChange={onChange}
-          placeholder='{ "enabled": true, "max_fallback_attempts": 3 }'
-        />
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <BooleanObjectField value={objectValue.enabled} label="enabled" onChange={(nextValue) => updateObjectField('enabled', nextValue)} />
+            <NumberObjectField value={getFieldNumber(objectValue, 'max_fallback_attempts')} label="max_fallback_attempts" min={1} max={20} onChange={(nextValue) => updateObjectField('max_fallback_attempts', nextValue)} />
+            <NumberObjectField value={getFieldNumber(objectValue, 'cooldown_seconds')} label="cooldown_seconds" min={0} onChange={(nextValue) => updateObjectField('cooldown_seconds', nextValue)} />
+            <NumberObjectField value={getFieldNumber(objectValue, 'timeout_seconds')} label="timeout_seconds" min={0} onChange={(nextValue) => updateObjectField('timeout_seconds', nextValue)} />
+            <BooleanObjectField value={objectValue.notify_on_fallback} label="notify_on_fallback" onChange={(nextValue) => updateObjectField('notify_on_fallback', nextValue)} />
+            <Field label="retry_on_errors" hint="429, 500, 502, 503, 504">
+              <Input
+                value={formatNumberList(objectValue.retry_on_errors)}
+                onChange={(event) => updateObjectField('retry_on_errors', parseNumberList(event.target.value))}
+                className="h-8 font-mono typography-meta"
+                placeholder="429, 500, 502, 503, 504"
+              />
+            </Field>
+          </div>
+          <AdvancedJsonField
+            validationId={validationId}
+            label="runtime_fallback"
+            value={value}
+            onChange={onChange}
+            placeholder='{ "enabled": true, "max_fallback_attempts": 3 }'
+          />
+        </>
       ) : null}
     </div>
+  );
+}
+
+function BooleanObjectField({
+  value,
+  label,
+  onChange,
+}: {
+  value: unknown;
+  label: string;
+  onChange: (value: boolean | undefined) => void;
+}) {
+  return (
+    <Field label={label}>
+      <TriStateBooleanSelect value={value} onChange={onChange} />
+    </Field>
+  );
+}
+
+function NumberObjectField({
+  value,
+  label,
+  min,
+  max,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  min?: number;
+  max?: number;
+  onChange: (value: number | undefined) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        onChange={(event) => onChange(parseOptionalNumber(event.target.value))}
+        className="h-8 font-mono typography-meta"
+      />
+    </Field>
+  );
+}
+
+function TextObjectField({
+  value,
+  label,
+  placeholder,
+  onChange,
+}: {
+  value: unknown;
+  label: string;
+  placeholder?: string;
+  onChange: (value: string | undefined) => void;
+}) {
+  return (
+    <Field label={label}>
+      <Input
+        value={asString(value)}
+        onChange={(event) => onChange(event.target.value || undefined)}
+        placeholder={placeholder}
+        className="h-8 font-mono typography-meta"
+      />
+    </Field>
+  );
+}
+
+function AdvancedJsonField({
+  validationId,
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  validationId: string;
+  label: string;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  placeholder?: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="mt-1 rounded-md px-0 py-1 typography-ui-label text-muted-foreground hover:bg-transparent hover:text-foreground">
+        <span>{t('settings.openagent.global.advancedJson')}</span>
+        <RiArrowDownSLine className="h-4 w-4" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2">
+        <JsonTextareaField
+          validationId={validationId}
+          label={label}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+        />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -1253,6 +1389,177 @@ function ContinuationHooksSection() {
   );
 }
 
+function StructuredConfigSection({
+  title,
+  description,
+  children,
+  advanced,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+  advanced?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-[var(--surface-elevated)] p-3">
+      <div className="space-y-1">
+        <h4 className="typography-ui-label font-semibold text-foreground">{title}</h4>
+        <p className="typography-micro text-muted-foreground">{description}</p>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {children}
+      </div>
+      {advanced ? <div className="mt-2">{advanced}</div> : null}
+    </div>
+  );
+}
+
+function BackgroundTaskSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+  const updateCircuitBreaker = (key: string, nextValue: unknown) => onChange(setNestedObjectField(objectValue, 'circuitBreaker', key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.backgroundTask.label')}
+      description={t('settings.openagent.global.backgroundTask.description')}
+      advanced={<AdvancedJsonField validationId="global:background_task" label="background_task" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "providerConcurrency": { "openai": 2 } }' />}
+    >
+      <NumberObjectField value={getFieldNumber(objectValue, 'defaultConcurrency')} label="defaultConcurrency" min={1} onChange={(nextValue) => update('defaultConcurrency', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'maxDepth')} label="maxDepth" min={1} onChange={(nextValue) => update('maxDepth', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'maxToolCalls')} label="maxToolCalls" min={10} onChange={(nextValue) => update('maxToolCalls', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'staleTimeoutMs')} label="staleTimeoutMs" min={60000} onChange={(nextValue) => update('staleTimeoutMs', nextValue)} />
+      <BooleanObjectField value={getRecordValue(objectValue.circuitBreaker).enabled} label="circuitBreaker.enabled" onChange={(nextValue) => updateCircuitBreaker('enabled', nextValue)} />
+      <NumberObjectField value={getNestedFieldNumber(objectValue, 'circuitBreaker', 'consecutiveThreshold')} label="circuitBreaker.consecutiveThreshold" min={5} onChange={(nextValue) => updateCircuitBreaker('consecutiveThreshold', nextValue)} />
+    </StructuredConfigSection>
+  );
+}
+
+function TeamModeSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.teamMode.label')}
+      description={t('settings.openagent.global.teamMode.description')}
+      advanced={<AdvancedJsonField validationId="global:team_mode" label="team_mode" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "enabled": true, "max_parallel_members": 4 }' />}
+    >
+      <BooleanObjectField value={objectValue.enabled} label="enabled" onChange={(nextValue) => update('enabled', nextValue)} />
+      <BooleanObjectField value={objectValue.tmux_visualization} label="tmux_visualization" onChange={(nextValue) => update('tmux_visualization', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_parallel_members')} label="max_parallel_members" min={1} max={8} onChange={(nextValue) => update('max_parallel_members', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_members')} label="max_members" min={1} max={8} onChange={(nextValue) => update('max_members', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_member_turns')} label="max_member_turns" min={1} onChange={(nextValue) => update('max_member_turns', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_wall_clock_minutes')} label="max_wall_clock_minutes" min={1} onChange={(nextValue) => update('max_wall_clock_minutes', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_messages_per_run')} label="max_messages_per_run" min={1} onChange={(nextValue) => update('max_messages_per_run', nextValue)} />
+      <TextObjectField value={objectValue.base_dir} label="base_dir" placeholder="~/.omo/teams" onChange={(nextValue) => update('base_dir', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'mailbox_poll_interval_ms')} label="mailbox_poll_interval_ms" min={500} onChange={(nextValue) => update('mailbox_poll_interval_ms', nextValue)} />
+    </StructuredConfigSection>
+  );
+}
+
+function ModelCapabilitiesSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.modelCapabilities.label')}
+      description={t('settings.openagent.global.modelCapabilities.description')}
+      advanced={<AdvancedJsonField validationId="global:model_capabilities" label="model_capabilities" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "enabled": true, "auto_refresh_on_start": true }' />}
+    >
+      <BooleanObjectField value={objectValue.enabled} label="enabled" onChange={(nextValue) => update('enabled', nextValue)} />
+      <BooleanObjectField value={objectValue.auto_refresh_on_start} label="auto_refresh_on_start" onChange={(nextValue) => update('auto_refresh_on_start', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'refresh_timeout_ms')} label="refresh_timeout_ms" min={1} onChange={(nextValue) => update('refresh_timeout_ms', nextValue)} />
+      <TextObjectField value={objectValue.source_url} label="source_url" placeholder="https://models.dev/api.json" onChange={(nextValue) => update('source_url', nextValue)} />
+    </StructuredConfigSection>
+  );
+}
+
+function ExperimentalSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.experimental.label')}
+      description={t('settings.openagent.global.experimental.description')}
+      advanced={<AdvancedJsonField validationId="global:experimental" label="experimental" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "dynamic_context_pruning": { "enabled": false } }' />}
+    >
+      {['aggressive_truncation', 'auto_resume', 'preemptive_compaction', 'truncate_all_tool_outputs', 'task_system', 'safe_hook_creation', 'disable_omo_env', 'hashline_edit', 'model_fallback_title'].map((key) => (
+        <BooleanObjectField key={key} value={objectValue[key]} label={key} onChange={(nextValue) => update(key, nextValue)} />
+      ))}
+      <NumberObjectField value={getFieldNumber(objectValue, 'plugin_load_timeout_ms')} label="plugin_load_timeout_ms" min={1000} onChange={(nextValue) => update('plugin_load_timeout_ms', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'max_tools')} label="max_tools" min={1} onChange={(nextValue) => update('max_tools', nextValue)} />
+    </StructuredConfigSection>
+  );
+}
+
+function TmuxSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.tmux.label')}
+      description={t('settings.openagent.global.tmux.description')}
+      advanced={<AdvancedJsonField validationId="global:tmux" label="tmux" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "enabled": false }' />}
+    >
+      <BooleanObjectField value={objectValue.enabled} label="enabled" onChange={(nextValue) => update('enabled', nextValue)} />
+      <Field label="layout">
+        <Select value={asString(objectValue.layout) || INHERIT_VALUE} onValueChange={(nextValue) => update('layout', nextValue === INHERIT_VALUE ? undefined : nextValue)}>
+          <SelectTrigger className="h-8 w-full" size="sm"><SelectValue>{(currentValue) => currentValue === INHERIT_VALUE ? t('settings.openagent.model.inherit') : currentValue}</SelectValue></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
+            {['main-horizontal', 'main-vertical', 'tiled', 'even-horizontal', 'even-vertical'].map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label="isolation">
+        <Select value={asString(objectValue.isolation) || INHERIT_VALUE} onValueChange={(nextValue) => update('isolation', nextValue === INHERIT_VALUE ? undefined : nextValue)}>
+          <SelectTrigger className="h-8 w-full" size="sm"><SelectValue>{(currentValue) => currentValue === INHERIT_VALUE ? t('settings.openagent.model.inherit') : currentValue}</SelectValue></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
+            {['inline', 'window', 'session'].map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
+      <NumberObjectField value={getFieldNumber(objectValue, 'main_pane_size')} label="main_pane_size" min={20} max={80} onChange={(nextValue) => update('main_pane_size', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'main_pane_min_width')} label="main_pane_min_width" min={40} onChange={(nextValue) => update('main_pane_min_width', nextValue)} />
+      <NumberObjectField value={getFieldNumber(objectValue, 'agent_pane_min_width')} label="agent_pane_min_width" min={20} onChange={(nextValue) => update('agent_pane_min_width', nextValue)} />
+    </StructuredConfigSection>
+  );
+}
+
+function SkillsSettings({ value, onChange }: { value: unknown; onChange: (value: Record<string, unknown> | undefined) => void }) {
+  const { t } = useI18n();
+  const objectValue = getRecordValue(value);
+  const update = (key: string, nextValue: unknown) => onChange(setObjectField(objectValue, key, nextValue));
+
+  return (
+    <StructuredConfigSection
+      title={t('settings.openagent.global.skills.label')}
+      description={t('settings.openagent.global.skills.description')}
+      advanced={<AdvancedJsonField validationId="global:skills" label="skills" value={value} onChange={(nextValue) => onChange(isRecord(nextValue) ? nextValue : undefined)} placeholder='{ "sources": [".agents/skills"], "enable": [], "disable": [] }' />}
+    >
+      <Field label="sources">
+        <Input value={formatStringOnlyList(objectValue.sources)} onChange={(event) => update('sources', parseStringList(event.target.value))} placeholder=".agents/skills, ~/.config/opencode/skills" className="h-8 font-mono typography-meta" />
+      </Field>
+      <Field label="enable">
+        <Input value={formatStringOnlyList(objectValue.enable)} onChange={(event) => update('enable', parseStringList(event.target.value))} placeholder="skill-id, another-skill" className="h-8 font-mono typography-meta" />
+      </Field>
+      <Field label="disable">
+        <Input value={formatStringOnlyList(objectValue.disable)} onChange={(event) => update('disable', parseStringList(event.target.value))} placeholder="skill-id, another-skill" className="h-8 font-mono typography-meta" />
+      </Field>
+    </StructuredConfigSection>
+  );
+}
+
 function OpenAgentGlobalSection() {
   const { t } = useI18n();
   const draft = useOpenAgentConfigStore((state) => state.draft);
@@ -1308,21 +1615,17 @@ function OpenAgentGlobalSection() {
         ))}
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <div className="mt-4 space-y-3">
         <RuntimeFallbackField
           value={draft.runtime_fallback}
           onChange={(value) => updateDraft({ runtime_fallback: value })}
         />
-        {GLOBAL_OBJECT_FIELDS.map((field) => (
-          <JsonTextareaField
-            validationId={`global:${field.key}`}
-            key={field.key}
-            label={t(field.labelKey)}
-            value={draft[field.key]}
-            onChange={(value) => updateDraft({ [field.key]: value })}
-            placeholder={`${t(field.descriptionKey)} ${field.placeholder}`}
-          />
-        ))}
+        <BackgroundTaskSettings value={draft.background_task} onChange={(value) => updateDraft({ background_task: value })} />
+        <TeamModeSettings value={draft.team_mode} onChange={(value) => updateDraft({ team_mode: value })} />
+        <ModelCapabilitiesSettings value={draft.model_capabilities} onChange={(value) => updateDraft({ model_capabilities: value })} />
+        <ExperimentalSettings value={draft.experimental} onChange={(value) => updateDraft({ experimental: value })} />
+        <TmuxSettings value={draft.tmux} onChange={(value) => updateDraft({ tmux: value })} />
+        <SkillsSettings value={draft.skills} onChange={(value) => updateDraft({ skills: value })} />
       </div>
     </section>
   );

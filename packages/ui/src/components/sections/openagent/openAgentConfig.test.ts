@@ -181,6 +181,101 @@ describe('openAgentConfig helpers', () => {
     });
   });
 
+  test('preserves structured global object settings in save payload', () => {
+    const draft = createOpenAgentDraftFromConfig({
+      raw: {
+        agents: {},
+        categories: {},
+        disabled_hooks: [],
+        runtime_fallback: {
+          enabled: true,
+          retry_on_errors: [429, 500, 503],
+          max_fallback_attempts: 4,
+          notify_on_fallback: false,
+        },
+        background_task: {
+          defaultConcurrency: 4,
+          maxDepth: 3,
+          circuitBreaker: {
+            enabled: true,
+            consecutiveThreshold: 8,
+          },
+        },
+        team_mode: {
+          enabled: true,
+          tmux_visualization: true,
+          max_parallel_members: 4,
+          base_dir: '/tmp/team dir',
+        },
+        model_capabilities: {
+          enabled: true,
+          auto_refresh_on_start: false,
+          source_url: 'https://models.dev/api.json',
+        },
+        experimental: {
+          preemptive_compaction: true,
+          max_tools: 128,
+        },
+        skills: {
+          sources: ['.agents/skills'],
+          enable: ['codemap'],
+          custom_skill: { description: 'custom' },
+        },
+        tmux: {
+          enabled: true,
+          layout: 'main-vertical',
+          isolation: 'session',
+        },
+      },
+    });
+
+    expect(buildOpenAgentSavePayload(456, draft)).toEqual({
+      expectedMtimeMs: 456,
+      agents: {},
+      categories: {},
+      disabled_hooks: [],
+      runtime_fallback: {
+        enabled: true,
+        retry_on_errors: [429, 500, 503],
+        max_fallback_attempts: 4,
+        notify_on_fallback: false,
+      },
+      background_task: {
+        defaultConcurrency: 4,
+        maxDepth: 3,
+        circuitBreaker: {
+          enabled: true,
+          consecutiveThreshold: 8,
+        },
+      },
+      team_mode: {
+        enabled: true,
+        tmux_visualization: true,
+        max_parallel_members: 4,
+        base_dir: '/tmp/team dir',
+      },
+      model_capabilities: {
+        enabled: true,
+        auto_refresh_on_start: false,
+        source_url: 'https://models.dev/api.json',
+      },
+      experimental: {
+        preemptive_compaction: true,
+        max_tools: 128,
+      },
+      skills: {
+        sources: ['.agents/skills'],
+        enable: ['codemap'],
+        custom_skill: { description: 'custom' },
+      },
+      tmux: {
+        enabled: true,
+        layout: 'main-vertical',
+        isolation: 'session',
+      },
+    });
+  });
+
   test('compares drafts with stable key ordering', () => {
     expect(hasOpenAgentDraftChanges(
       {
