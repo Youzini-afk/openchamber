@@ -539,6 +539,11 @@ const {
 
 const ENV_SKIP_OPENCODE_START = process.env.OPENCODE_SKIP_START === 'true' ||
                                     process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true';
+const ENV_CONFIGURED_OPENCODE_WSL_DISTRO = (() => {
+  const value = process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO || process.env.OPENCODE_WSL_DISTRO || '';
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+})();
 const ENV_DESKTOP_NOTIFY = (() => {
   if (process.env.OPENCHAMBER_DESKTOP_NOTIFY === 'true') {
     return true;
@@ -552,16 +557,6 @@ const ENV_DESKTOP_NOTIFY = (() => {
   const argv1 = typeof process.argv?.[1] === 'string' ? process.argv[1] : '';
   return /openchamber-server/i.test(argv0) || /openchamber-server/i.test(argv1);
 })();
-const ENV_CONFIGURED_OPENCODE_WSL_DISTRO =
-  typeof process.env.OPENCODE_WSL_DISTRO === 'string' && process.env.OPENCODE_WSL_DISTRO.trim().length > 0
-    ? process.env.OPENCODE_WSL_DISTRO.trim()
-    : (
-      typeof process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO === 'string' &&
-      process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO.trim().length > 0
-        ? process.env.OPENCHAMBER_OPENCODE_WSL_DISTRO.trim()
-        : null
-    );
-
 const openCodeAuthStateRuntime = createOpenCodeAuthStateRuntime({
   crypto,
   process,
@@ -650,9 +645,8 @@ const resolveOpencodeCliPath = (...args) => openCodeEnvRuntime.resolveOpencodeCl
 const isExecutable = (...args) => openCodeEnvRuntime.isExecutable(...args);
 const searchPathFor = (...args) => openCodeEnvRuntime.searchPathFor(...args);
 const resolveGitBinaryForSpawn = (...args) => openCodeEnvRuntime.resolveGitBinaryForSpawn(...args);
-const resolveWslExecutablePath = (...args) => openCodeEnvRuntime.resolveWslExecutablePath(...args);
-const buildWslExecArgs = (...args) => openCodeEnvRuntime.buildWslExecArgs(...args);
 const resolveManagedOpenCodeLaunchSpec = (...args) => openCodeEnvRuntime.resolveManagedOpenCodeLaunchSpec(...args);
+const buildWslExecArgs = (...args) => openCodeEnvRuntime.buildWslExecArgs(...args);
 const clearResolvedOpenCodeBinary = (...args) => openCodeEnvRuntime.clearResolvedOpenCodeBinary(...args);
 const openCodeResolutionRuntime = createOpenCodeResolutionRuntime({
   path,
@@ -941,9 +935,8 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   applyOpencodeBinaryFromSettings,
   ensureOpencodeCliEnv,
   ensureLocalOpenCodeServerPassword,
-  buildWslExecArgs,
-  resolveWslExecutablePath,
   resolveManagedOpenCodeLaunchSpec,
+  buildWslExecArgs,
   setOpenCodePort,
   setDetectedOpenCodeApiPrefix,
   setupProxy: (...args) => setupProxy(...args),

@@ -701,10 +701,10 @@ async function performConfigRefresh(options: {
       const sdkRefreshTasks: Promise<void>[] = [];
       for (const directory of directoriesToRefresh) {
         if (refreshProviders) {
-          sdkRefreshTasks.push(configStore.loadProviders({ directory, force: true }).then(() => undefined));
+          sdkRefreshTasks.push(configStore.loadProviders({ directory, force: true, source: 'agentsStore:refreshConfig' }).then(() => undefined));
         }
         if (refreshSdkAgents) {
-          sdkRefreshTasks.push(configStore.loadAgents({ directory, force: true }).then(() => undefined));
+          sdkRefreshTasks.push(configStore.loadAgents({ directory, force: true, source: 'agentsStore:refreshConfig' }).then(() => undefined));
         }
       }
 

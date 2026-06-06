@@ -19,6 +19,7 @@ import { ChangedFilesList } from './ChangedFilesList';
 import { changedFilesPopoverClassName, changedFilesPopoverStyle } from './changedFilesPopover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { TurnActivityRecord } from './lib/turns/types';
+import { toAbsoluteFilePath } from '@/lib/path-utils';
 
 interface TurnChangedFilesDropdownProps {
     activityParts: TurnActivityRecord[] | undefined;
@@ -58,9 +59,7 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
         if (!currentDirectory) return;
         if (isGitFile(file)) return;
 
-        const absolutePath = file.path.startsWith('/')
-            ? file.path
-            : (currentDirectory.endsWith('/') ? currentDirectory : currentDirectory + '/') + file.path;
+        const absolutePath = toAbsoluteFilePath(currentDirectory, file.path);
 
         const editor = runtime?.editor;
         if (editor) {

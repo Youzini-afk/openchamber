@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 const configMessages: string[] = []
 const dispatchedEvents: string[] = []
 const loadProviderDirectories: Array<string | undefined> = []
-const loadAgentOptions: Array<{ directory?: string; force?: boolean } | undefined> = []
+const loadAgentOptions: Array<{ directory?: string; force?: boolean; source?: string } | undefined> = []
 const savedWindow = globalThis.window
 
 mock.module("@/lib/opencode/client", () => ({
@@ -43,7 +43,7 @@ mock.module("@/stores/useConfigStore", () => ({
         loadProviderDirectories.push(directory)
         return Promise.resolve(true)
       },
-      loadAgents: (options?: { directory?: string; force?: boolean }) => {
+      loadAgents: (options?: { directory?: string; force?: boolean; source?: string }) => {
         loadAgentOptions.push(options)
         return Promise.resolve(true)
       },
@@ -123,6 +123,6 @@ describe("refreshAfterOpenCodeRestart", () => {
       delayMs: 0,
     })
 
-    expect(loadAgentOptions).toEqual([{ directory: "/test/project", force: true }])
+    expect(loadAgentOptions).toEqual([{ directory: "/test/project", force: true, source: "agentsStore:refreshConfig" }])
   })
 })

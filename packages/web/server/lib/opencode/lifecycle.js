@@ -13,6 +13,7 @@ const HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES = parsePositiveInt(
 );
 const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_INTERVAL_MS, 0);
 const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_CACHE_MS, 750);
+const OPENCODE_HEALTH_PATH = '/global/health';
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -27,9 +28,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     applyOpencodeBinaryFromSettings,
     ensureOpencodeCliEnv,
     ensureLocalOpenCodeServerPassword,
-    buildWslExecArgs,
-    resolveWslExecutablePath,
     resolveManagedOpenCodeLaunchSpec,
+    buildWslExecArgs,
     setOpenCodePort,
     setDetectedOpenCodeApiPrefix,
     setupProxy,
@@ -233,25 +233,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     let launchWrapperType = null;
 
     if (process.platform === 'win32' && state.useWslForOpencode) {
-      const wslBinary = state.resolvedWslBinary || resolveWslExecutablePath();
-      if (!wslBinary) {
-        throw new Error('WSL executable not found while attempting to launch OpenCode from WSL');
-      }
-
-      const wslOpencode = state.resolvedWslOpencodePath && state.resolvedWslOpencodePath.trim().length > 0
-        ? state.resolvedWslOpencodePath.trim()
-        : 'opencode';
-      const serveHost = hostname === '127.0.0.1' ? '0.0.0.0' : hostname;
-
-      binary = wslBinary;
-      args = buildWslExecArgs([
-        wslOpencode,
-        'serve',
-        '--hostname',
-        serveHost,
-        '--port',
-        String(port),
-      ], state.resolvedWslDistro);
+      binary = state.resolvedWslBinary || binary;
+      const opencodePath = state.resolvedWslOpencodePath || 'opencode';
+      args = typeof buildWslExecArgs === 'function'
+        ? buildWslExecArgs([opencodePath, ...args], state.resolvedWslDistro)
+        : ['--exec', opencodePath, ...args];
+      launchWrapperType = 'wsl';
     }
 
     if (process.platform === 'win32' && !state.useWslForOpencode) {
@@ -395,7 +382,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
 
     try {
-      const response = await fetch(buildOpenCodeUrl('/global/health', ''), {
+      const response = await fetch(buildOpenCodeUrl(OPENCODE_HEALTH_PATH, ''), {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -420,7 +407,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3000);
       const base = origin ?? `http://127.0.0.1:${port}`;
-      const response = await fetch(`${base}/global/health`, {
+      const response = await fetch(`${base}${OPENCODE_HEALTH_PATH}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -662,51 +649,40 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     let lastError = null;
 
     while (Date.now() < deadline) {
+      let timeout = null;
       try {
-        const [configResult, agentResult] = await Promise.all([
-          fetch(buildOpenCodeUrl('/config', ''), {
-            method: 'GET',
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          }).catch((error) => error),
-          fetch(buildOpenCodeUrl('/agent', ''), {
-            method: 'GET',
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          }).catch((error) => error),
-        ]);
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+        const response = await fetch(buildOpenCodeUrl(OPENCODE_HEALTH_PATH, ''), {
+          method: 'GET',
+          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        timeout = null;
 
-        if (configResult instanceof Error) {
-          lastError = configResult;
+        if (!response.ok) {
+          lastError = new Error(`OpenCode health endpoint responded with status ${response.status}`);
           await new Promise((resolve) => setTimeout(resolve, intervalMs));
           continue;
         }
 
-        if (!configResult.ok) {
-          lastError = new Error(`OpenCode config endpoint responded with status ${configResult.status}`);
+        const body = await response.json().catch(() => null);
+        if (body?.healthy !== true) {
+          lastError = new Error('OpenCode health endpoint returned unhealthy response');
           await new Promise((resolve) => setTimeout(resolve, intervalMs));
           continue;
         }
-
-        await configResult.json().catch(() => null);
-
-        if (agentResult instanceof Error) {
-          lastError = agentResult;
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
-          continue;
-        }
-
-        if (!agentResult.ok) {
-          lastError = new Error(`Agent endpoint responded with status ${agentResult.status}`);
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
-          continue;
-        }
-
-        await agentResult.json().catch(() => []);
 
         state.isOpenCodeReady = true;
         state.lastOpenCodeError = null;
         return;
       } catch (error) {
         lastError = error;
+      } finally {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
       }
 
       await new Promise((resolve) => setTimeout(resolve, intervalMs));

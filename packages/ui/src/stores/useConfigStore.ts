@@ -16,6 +16,7 @@ import { streamDebugEnabled } from "@/stores/utils/streamDebug";
 import { parseModelIdentifier } from "@/lib/modelIdentifier";
 import { getModelVariantKeys, modelSupportsVariant } from "@/lib/modelVariants";
 import { runtimeFetch } from "@/lib/runtime-fetch";
+import { markStartupTrace, measureStartupTrace } from "@/lib/startupTrace";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
@@ -35,9 +36,27 @@ interface OpenChamberDefaults {
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
     autoUpdateChecksEnabled?: boolean;
+    sttProvider?: 'browser' | 'server' | 'wasm';
+    sttServerUrl?: string;
+    sttModel?: string;
+    sttLanguage?: string;
+    sttSilenceThresholdDb?: number;
+    sttSilenceHoldMs?: number;
 }
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
+    markStartupTrace('config.defaults:start');
+    const started = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const finish = (source: string, result: OpenChamberDefaults) => {
+        const ended = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        markStartupTrace('config.defaults:end', {
+            source,
+            durationMs: Math.round(ended - started),
+            hasDefaultModel: Boolean(result.defaultModel),
+            hasDefaultAgent: Boolean(result.defaultAgent),
+        });
+        return result;
+    };
     try {
         // 1. Runtime settings API (VSCode)
         const runtimeSettings = getRegisteredRuntimeAPIs()?.settings;
@@ -59,8 +78,20 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                     const autoUpdateChecksEnabled = typeof data?.autoUpdateChecksEnabled === 'boolean'
                         ? data.autoUpdateChecksEnabled
                         : undefined;
+                    const sttProvider = data?.sttProvider === 'browser' || data?.sttProvider === 'server' || data?.sttProvider === 'wasm'
+                        ? data.sttProvider
+                        : undefined;
+                    const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl : undefined;
+                    const sttModel = typeof data?.sttModel === 'string' ? data.sttModel : undefined;
+                    const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage : undefined;
+                    const sttSilenceThresholdDb = typeof data?.sttSilenceThresholdDb === 'number' && Number.isFinite(data.sttSilenceThresholdDb)
+                        ? data.sttSilenceThresholdDb
+                        : undefined;
+                    const sttSilenceHoldMs = typeof data?.sttSilenceHoldMs === 'number' && Number.isFinite(data.sttSilenceHoldMs)
+                        ? data.sttSilenceHoldMs
+                        : undefined;
 
-                    return {
+                    return finish('runtime-settings', {
                         defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
                         defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
                         defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
@@ -70,7 +101,13 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         zenModel: zenModel.length > 0 ? zenModel : undefined,
                         messageStreamTransport,
                         autoUpdateChecksEnabled,
-                    };
+                        sttProvider,
+                        sttServerUrl,
+                        sttModel,
+                        sttLanguage,
+                        sttSilenceThresholdDb,
+                        sttSilenceHoldMs,
+                    });
                 }
             } catch {
                 // Fall through to fetch
@@ -83,7 +120,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             headers: { Accept: 'application/json' },
         });
         if (!response.ok) {
-            return {};
+            return finish('settings-route-not-ok', {});
         }
         const data = await response.json();
         const defaultModel = typeof data?.defaultModel === 'string' ? data.defaultModel.trim() : '';
@@ -99,8 +136,20 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
         const autoUpdateChecksEnabled = typeof data?.autoUpdateChecksEnabled === 'boolean'
             ? data.autoUpdateChecksEnabled
             : undefined;
+        const sttProvider = data?.sttProvider === 'browser' || data?.sttProvider === 'server' || data?.sttProvider === 'wasm'
+            ? data.sttProvider
+            : undefined;
+        const sttServerUrl = typeof data?.sttServerUrl === 'string' ? data.sttServerUrl : undefined;
+        const sttModel = typeof data?.sttModel === 'string' ? data.sttModel : undefined;
+        const sttLanguage = typeof data?.sttLanguage === 'string' ? data.sttLanguage : undefined;
+        const sttSilenceThresholdDb = typeof data?.sttSilenceThresholdDb === 'number' && Number.isFinite(data.sttSilenceThresholdDb)
+            ? data.sttSilenceThresholdDb
+            : undefined;
+        const sttSilenceHoldMs = typeof data?.sttSilenceHoldMs === 'number' && Number.isFinite(data.sttSilenceHoldMs)
+            ? data.sttSilenceHoldMs
+            : undefined;
 
-        return {
+        return finish('settings-route', {
             defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
             defaultVariant: defaultVariant.length > 0 ? defaultVariant : undefined,
             defaultAgent: defaultAgent.length > 0 ? defaultAgent : undefined,
@@ -110,9 +159,16 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             zenModel: zenModel.length > 0 ? zenModel : undefined,
             messageStreamTransport,
             autoUpdateChecksEnabled,
-        };
-    } catch {
-        return {};
+            sttProvider,
+            sttServerUrl,
+            sttModel,
+            sttLanguage,
+            sttSilenceThresholdDb,
+            sttSilenceHoldMs,
+        });
+    } catch (error) {
+        markStartupTrace('config.defaults:error', { error: error instanceof Error ? error.message : String(error) });
+        return finish('error', {});
     }
 };
 
@@ -419,9 +475,11 @@ const ensureModelsMetadataFetch = (
         return;
     }
 
-    modelsMetadataInFlight = fetchModelsDevMetadata()
+    markStartupTrace('modelsMetadata:queued');
+    modelsMetadataInFlight = measureStartupTrace('modelsMetadata', fetchModelsDevMetadata)
         .then((metadata) => {
             if (metadata.size > 0) {
+                markStartupTrace('modelsMetadata:set', { entries: metadata.size });
                 setModelsMetadata(metadata);
             }
             return metadata;
@@ -562,8 +620,8 @@ interface ConfigStore {
 
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
-    loadProviders: (options?: { directory?: string | null; force?: boolean }) => Promise<void>;
-    loadAgents: (options?: { directory?: string | null; force?: boolean }) => Promise<boolean>;
+    loadProviders: (options?: { directory?: string | null; force?: boolean; source?: string }) => Promise<void>;
+    loadAgents: (options?: { directory?: string | null; force?: boolean; source?: string }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
     setModel: (modelId: string) => void;
@@ -859,10 +917,14 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 activateDirectory: async (directory) => {
                     const directoryKey = toDirectoryKey(directory);
+                    let snapshotHadProviders = false;
+                    let snapshotHadAgents = false;
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
                         if (snapshot) {
+                            snapshotHadProviders = snapshot.providers.length > 0;
+                            snapshotHadAgents = snapshot.agents.length > 0;
                             return {
                                 activeDirectoryKey: directoryKey,
                                 providers: snapshot.providers,
@@ -894,23 +956,41 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
 
-                    await get().loadProviders({ directory: fromDirectoryKey(directoryKey) });
-                    await get().loadAgents({ directory: fromDirectoryKey(directoryKey) });
+                    if (snapshotHadProviders) {
+                        markStartupTrace('activateDirectory:skipProviders', { directoryKey });
+                    } else {
+                        await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
+                    }
+
+                    if (snapshotHadAgents) {
+                        markStartupTrace('activateDirectory:skipAgents', { directoryKey });
+                    } else {
+                        await get().loadAgents({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
+                    }
                 },
 
                 loadProviders: async (options) => {
-                    const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
+                    const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
+                    const effectiveDirectory = requestedDirectory ?? opencodeClient.getDirectory() ?? null;
+                    const directoryKey = toDirectoryKey(requestedDirectory);
                     const force = options?.force === true;
+                    const source = options?.source ?? (force ? 'force' : 'unknown');
+                    markStartupTrace('loadProviders:called', { directoryKey, source, requestedDirectory, effectiveDirectory, force });
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
                     const existing = force ? undefined : _inFlightProviders.get(directoryKey);
-                    if (existing) return existing;
+                    if (existing) {
+                        markStartupTrace('loadProviders:deduped', { directoryKey, source, requestedDirectory, effectiveDirectory });
+                        return existing;
+                    }
 
                     const requestToken = Symbol(directoryKey);
                     _providerLoadTokens.set(directoryKey, requestToken);
                     const isStaleRequest = () => _providerLoadTokens.get(directoryKey) !== requestToken;
 
                     const promise: Promise<void> = (async () => {
+                        const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                        markStartupTrace('loadProviders:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousProviders = existingSnapshot?.providers ?? (get().activeDirectoryKey === directoryKey ? get().providers : []);
                     const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
@@ -922,9 +1002,13 @@ export const useConfigStore = create<ConfigStore>()(
                                 () => get().modelsMetadata,
                                 (metadata) => set({ modelsMetadata: metadata }),
                             );
-                            const apiResult = await opencodeClient.withDirectory(
-                                fromDirectoryKey(directoryKey),
-                                () => opencodeClient.getProviders()
+                            const apiResult = await measureStartupTrace(
+                                'loadProviders:api',
+                                () => opencodeClient.withDirectory(
+                                    fromDirectoryKey(directoryKey),
+                                    () => opencodeClient.getProviders()
+                                ),
+                                { directoryKey, source, requestedDirectory, effectiveDirectory, attempt: attempt + 1 },
                             );
                             const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
                             const defaults = apiResult?.default || {};
@@ -998,15 +1082,40 @@ export const useConfigStore = create<ConfigStore>()(
                                 return nextState;
                             });
 
+                            const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                            markStartupTrace('loadProviders:end', {
+                                directoryKey,
+                                source,
+                                requestedDirectory,
+                                effectiveDirectory,
+                                durationMs: Math.round(loaderEnded - loaderStarted),
+                                providers: processedProviders.length,
+                                models: processedProviders.reduce((count, provider) => count + provider.models.length, 0),
+                            });
                             return;
                         } catch (error) {
                             lastError = error;
+                            markStartupTrace('loadProviders:attemptError', {
+                                directoryKey,
+                                source,
+                                requestedDirectory,
+                                effectiveDirectory,
+                                attempt: attempt + 1,
+                                error: error instanceof Error ? error.message : String(error),
+                            });
                             const waitMs = 200 * (attempt + 1);
                             await new Promise((resolve) => setTimeout(resolve, waitMs));
                         }
                     }
 
                     console.error("Failed to load providers:", lastError);
+                    markStartupTrace('loadProviders:error', {
+                        directoryKey,
+                        source,
+                        requestedDirectory,
+                        effectiveDirectory,
+                        error: lastError instanceof Error ? lastError.message : String(lastError),
+                    });
 
                     if (isStaleRequest()) {
                         return;
@@ -1280,18 +1389,27 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 loadAgents: async (options) => {
-                    const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
+                    const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
+                    const effectiveDirectory = requestedDirectory ?? opencodeClient.getDirectory() ?? null;
+                    const directoryKey = toDirectoryKey(requestedDirectory);
                     const force = options?.force === true;
+                    const source = options?.source ?? (force ? 'force' : 'unknown');
+                    markStartupTrace('loadAgents:called', { directoryKey, source, requestedDirectory, effectiveDirectory, force });
 
                     // Dedup: if a load is already in-flight for this directory, reuse it
                     const existing = force ? undefined : _inFlightAgents.get(directoryKey);
-                    if (existing) return existing;
+                    if (existing) {
+                        markStartupTrace('loadAgents:deduped', { directoryKey, source, requestedDirectory, effectiveDirectory });
+                        return existing;
+                    }
 
                     const requestToken = Symbol(directoryKey);
                     _agentLoadTokens.set(directoryKey, requestToken);
                     const isStaleRequest = () => _agentLoadTokens.get(directoryKey) !== requestToken;
 
                     const promise: Promise<boolean> = (async (): Promise<boolean> => {
+                        const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                        markStartupTrace('loadAgents:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousAgents = existingSnapshot?.agents ?? (get().activeDirectoryKey === directoryKey ? get().agents : []);
                     let lastError: unknown = null;
@@ -1300,7 +1418,11 @@ export const useConfigStore = create<ConfigStore>()(
                         try {
                             // Fetch agents and OpenChamber settings in parallel
                             const [agents, openChamberDefaults] = await Promise.all([
-                                opencodeClient.withDirectory(fromDirectoryKey(directoryKey), () => opencodeClient.listAgents()),
+                                measureStartupTrace(
+                                    'loadAgents:api',
+                                    () => opencodeClient.withDirectory(fromDirectoryKey(directoryKey), () => opencodeClient.listAgents()),
+                                    { directoryKey, source, requestedDirectory, effectiveDirectory, attempt: attempt + 1 },
+                                ),
                                 fetchOpenChamberDefaults(),
                             ]);
 
@@ -1308,6 +1430,12 @@ export const useConfigStore = create<ConfigStore>()(
 
                             if (isStaleRequest()) {
                                 return true;
+                            }
+
+                            const providerLoad = _inFlightProviders.get(directoryKey);
+                            if (providerLoad) {
+                                markStartupTrace('loadAgents:awaitProviders', { directoryKey, source });
+                                await providerLoad;
                             }
 
                             const providers = get().activeDirectoryKey === directoryKey
@@ -1360,6 +1488,12 @@ export const useConfigStore = create<ConfigStore>()(
                                     settingsZenModel: resolvedZenModel,
                                     settingsMessageStreamTransport: openChamberDefaults.messageStreamTransport ?? state.settingsMessageStreamTransport ?? 'auto',
                                     settingsAutoUpdateChecksEnabled: openChamberDefaults.autoUpdateChecksEnabled ?? false,
+                                    sttProvider: openChamberDefaults.sttProvider ?? state.sttProvider,
+                                    sttServerUrl: openChamberDefaults.sttServerUrl ?? state.sttServerUrl,
+                                    sttModel: openChamberDefaults.sttModel ?? state.sttModel,
+                                    sttLanguage: openChamberDefaults.sttLanguage ?? state.sttLanguage,
+                                    sttSilenceThresholdDb: openChamberDefaults.sttSilenceThresholdDb ?? state.sttSilenceThresholdDb,
+                                    sttSilenceHoldMs: openChamberDefaults.sttSilenceHoldMs ?? state.sttSilenceHoldMs,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1422,6 +1556,15 @@ export const useConfigStore = create<ConfigStore>()(
                                     return nextState;
                                 });
 
+                                const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                                markStartupTrace('loadAgents:end', {
+                                    directoryKey,
+                                    source,
+                                    requestedDirectory,
+                                    effectiveDirectory,
+                                    durationMs: Math.round(loaderEnded - loaderStarted),
+                                    agents: safeAgents.length,
+                                });
                                 return true;
                             }
 
@@ -1561,15 +1704,39 @@ export const useConfigStore = create<ConfigStore>()(
                                 });
                             }
 
+                            const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                            markStartupTrace('loadAgents:end', {
+                                directoryKey,
+                                source,
+                                requestedDirectory,
+                                effectiveDirectory,
+                                durationMs: Math.round(loaderEnded - loaderStarted),
+                                agents: safeAgents.length,
+                            });
                             return true;
                         } catch (error) {
                             lastError = error;
+                            markStartupTrace('loadAgents:attemptError', {
+                                directoryKey,
+                                source,
+                                requestedDirectory,
+                                effectiveDirectory,
+                                attempt: attempt + 1,
+                                error: error instanceof Error ? error.message : String(error),
+                            });
                             const waitMs = 200 * (attempt + 1);
                             await new Promise((resolve) => setTimeout(resolve, waitMs));
                         }
                     }
 
                     console.error("Failed to load agents:", lastError);
+                    markStartupTrace('loadAgents:error', {
+                        directoryKey,
+                        source,
+                        requestedDirectory,
+                        effectiveDirectory,
+                        error: lastError instanceof Error ? lastError.message : String(lastError),
+                    });
 
                     if (isStaleRequest()) {
                         return false;
@@ -2029,13 +2196,31 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 checkConnection: async () => {
+                    markStartupTrace('checkConnection:start');
                     const maxAttempts = 5;
                     let attempt = 0;
                     let lastError: unknown = null;
 
                     while (attempt < maxAttempts) {
                         try {
-                            const isHealthy = await opencodeClient.checkHealth();
+                            markStartupTrace('checkConnection:attempt', { attempt: attempt + 1 });
+                            const isHealthy = await measureStartupTrace(
+                                'checkConnection:health',
+                                () => opencodeClient.checkHealth(),
+                                { attempt: attempt + 1 },
+                            );
+                            if (!isHealthy && attempt < maxAttempts - 1) {
+                                const hasEverConnected = get().hasEverConnected;
+                                set({
+                                    isConnected: false,
+                                    connectionPhase: hasEverConnected ? "reconnecting" : "connecting",
+                                    lastDisconnectReason: 'health_check_unhealthy',
+                                });
+                                attempt += 1;
+                                await sleep(400 * attempt);
+                                continue;
+                            }
+
                             const hasEverConnected = get().hasEverConnected;
                             set(isHealthy
                                 ? { isConnected: true, hasEverConnected: true, connectionPhase: "connected" }
@@ -2044,6 +2229,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     connectionPhase: hasEverConnected ? "reconnecting" : "connecting",
                                     lastDisconnectReason: 'health_check_unhealthy',
                                 });
+                            markStartupTrace('checkConnection:end', { healthy: isHealthy, attempts: attempt + 1 });
                             return isHealthy;
                         } catch (error) {
                             lastError = error;
@@ -2061,15 +2247,19 @@ export const useConfigStore = create<ConfigStore>()(
                         connectionPhase: get().hasEverConnected ? "reconnecting" : "connecting",
                         lastDisconnectReason: 'health_check_failed',
                     });
+                    markStartupTrace('checkConnection:end', { healthy: false, attempts: maxAttempts });
                     return false;
                 },
 
                 initializeApp: async () => {
                     if (_initializeAppInFlight) {
+                        markStartupTrace('initializeApp:deduped');
                         return _initializeAppInFlight;
                     }
 
                     const run = (async () => {
+                        const initStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                        markStartupTrace('initializeApp:start');
                         try {
                             const debug = streamDebugEnabled();
                             if (debug) console.log("Starting app initialization...");
@@ -2088,15 +2278,21 @@ export const useConfigStore = create<ConfigStore>()(
                             }
 
                             if (debug) console.log("Initializing app...");
-                            await opencodeClient.initApp();
+                            markStartupTrace('initApp:skipped', { reason: 'checkConnection already verified health' });
 
-                            if (debug) console.log("Loading providers...");
-                            await get().loadProviders();
-
-                            if (debug) console.log("Loading agents...");
-                            await get().loadAgents();
+                            if (debug) console.log("Loading providers and agents...");
+                            await Promise.all([
+                                get().loadProviders({ source: 'initializeApp' }),
+                                get().loadAgents({ source: 'initializeApp' }),
+                            ]);
 
                             set({ isInitialized: true, isConnected: true, hasEverConnected: true, connectionPhase: "connected" });
+                            const initEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
+                            markStartupTrace('initializeApp:end', {
+                                durationMs: Math.round(initEnded - initStarted),
+                                providers: get().providers.length,
+                                agents: get().agents.length,
+                            });
                             if (debug) console.log("App initialized successfully");
                         } catch (error) {
                             console.error("Failed to initialize app:", error);
@@ -2106,6 +2302,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 connectionPhase: get().hasEverConnected ? "reconnecting" : "connecting",
                                 lastDisconnectReason: 'init_error',
                             });
+                            markStartupTrace('initializeApp:error', { error: error instanceof Error ? error.message : String(error) });
                         }
                     })().finally(() => {
                         _initializeAppInFlight = null;
@@ -2201,16 +2398,16 @@ let unsubscribeConfigStoreChanges: (() => void) | null = null;
 
 if (!unsubscribeConfigStoreChanges) {
     unsubscribeConfigStoreChanges = subscribeToConfigChanges(async (event) => {
-        const tasks: Promise<void>[] = [];
+            const tasks: Promise<void>[] = [];
 
         if (scopeMatches(event, "agents")) {
             const { loadAgents } = useConfigStore.getState();
-            tasks.push(loadAgents({ force: true }).then(() => {}));
+            tasks.push(loadAgents({ force: true, source: 'configChange:agents' }).then(() => {}));
         }
 
         if (scopeMatches(event, "providers")) {
             const { loadProviders } = useConfigStore.getState();
-            tasks.push(loadProviders({ force: true }));
+            tasks.push(loadProviders({ force: true, source: 'configChange:providers' }));
         }
 
         if (tasks.length > 0) {
@@ -2229,6 +2426,7 @@ if (typeof window !== "undefined" && !unsubscribeConfigStoreDirectoryChanges) {
             return;
         }
 
+        markStartupTrace('directoryStore:changed', { previous: prevKey, next: nextKey });
         void useConfigStore.getState().activateDirectory(state.currentDirectory);
     });
 }

@@ -174,7 +174,6 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const loadGitIdentityProfiles = useGitIdentitiesStore((s) => s.loadProfiles);
   const loadGlobalGitIdentity = useGitIdentitiesStore((s) => s.loadGlobalIdentity);
   const loadDefaultGitIdentityId = useGitIdentitiesStore((s) => s.loadDefaultGitIdentityId);
-  const showHidden = useDirectoryShowHidden();
   const { isDesktop, requestAccess, startAccessing } = useFileSystemAccess();
   const { isMobile } = useDeviceInfo();
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -192,6 +191,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const [isCloneMode, setIsCloneMode] = React.useState(false);
   const [cloneRemoteUrl, setCloneRemoteUrl] = React.useState('');
   const [selectedGitIdentityId, setSelectedGitIdentityId] = React.useState<string | null>(null);
+  const showHidden = useDirectoryShowHidden();
 
   const explorerRootDirectory = dialogHomeDirectory || homeDirectory;
   const canUseCloneMode = mode === 'add-project';

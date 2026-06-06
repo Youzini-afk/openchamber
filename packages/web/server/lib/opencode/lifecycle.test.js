@@ -82,9 +82,8 @@ const createRuntime = (overrides = {}) => {
     applyOpencodeBinaryFromSettings: vi.fn(async () => null),
     ensureOpencodeCliEnv: vi.fn(),
     ensureLocalOpenCodeServerPassword: vi.fn(async () => 'password'),
-    buildWslExecArgs: vi.fn((args) => args),
-    resolveWslExecutablePath: vi.fn(),
     resolveManagedOpenCodeLaunchSpec: vi.fn((binary) => ({ binary, args: [], wrapperType: null })),
+    buildWslExecArgs: vi.fn((args, distro) => (distro ? ['-d', distro, '--exec', ...args] : ['--exec', ...args])),
     setOpenCodePort: vi.fn((port) => {
       state.openCodePort = port;
     }),
@@ -172,6 +171,56 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.PATH).toBe('/usr/bin:/bin');
 
     await server.close();
+  });
+
+  it('launches explicitly configured WSL OpenCode on Windows', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      delete process.env.OPENCODE_BINARY;
+      const child = createMockChild();
+      spawnMock.mockImplementationOnce(() => {
+        queueMicrotask(() => {
+          child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+        });
+        return child;
+      });
+
+      const state = {
+        openCodeWorkingDirectory: '/tmp/project',
+        openCodeProcess: null,
+        openCodePort: null,
+        openCodeBaseUrl: null,
+        currentRestartPromise: null,
+        isRestartingOpenCode: false,
+        openCodeApiPrefix: '',
+        openCodeApiPrefixDetected: false,
+        openCodeApiDetectionTimer: null,
+        lastOpenCodeError: null,
+        isOpenCodeReady: false,
+        openCodeNotReadySince: 0,
+        isExternalOpenCode: false,
+        isShuttingDown: false,
+        healthCheckInterval: null,
+        expressApp: null,
+        useWslForOpencode: true,
+        resolvedWslBinary: 'C:\\Windows\\System32\\wsl.exe',
+        resolvedWslOpencodePath: '/usr/local/bin/opencode',
+        resolvedWslDistro: 'Ubuntu',
+      };
+      const buildWslExecArgs = vi.fn((args, distro) => ['-d', distro, '--exec', ...args]);
+      const runtime = createRuntime({ state, buildWslExecArgs });
+      const server = await runtime.startOpenCode();
+      const [binary, args] = spawnMock.mock.calls[0];
+
+      expect(binary).toBe('C:\\Windows\\System32\\wsl.exe');
+      expect(args).toEqual(['-d', 'Ubuntu', '--exec', '/usr/local/bin/opencode', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
+      expect(buildWslExecArgs).toHaveBeenCalledWith(['/usr/local/bin/opencode', 'serve', '--hostname', '127.0.0.1', '--port', '45678'], 'Ubuntu');
+
+      await server.close();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 
   it('reports the binary when managed OpenCode exits before becoming ready', async () => {

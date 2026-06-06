@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -5,16 +6,40 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createServerUtilsRuntime } from './server-utils-runtime.js';
 
 const originalPath = process.env.PATH;
+const tempDirs = [];
+
+const createTempDir = (prefix) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+};
 
 afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  if (originalPath === undefined) {
+    delete process.env.PATH;
+    return;
+  }
+
   process.env.PATH = originalPath;
 });
 
-const createRuntime = (loginShellPath, overrides = {}) => createServerUtilsRuntime({
-  fs: {},
+const createRuntime = (loginShellPath, options = {}) => {
+  const { processLike: explicitProcessLike, ...overrides } = options;
+  const processLike = explicitProcessLike ?? (
+    options.platform || options.env
+      ? { platform: options.platform ?? 'linux', env: options.env ?? process.env }
+      : { platform: 'linux', env: process.env }
+  );
+
+  return createServerUtilsRuntime({
+  fs,
   os,
   path,
-  process,
+  process: processLike,
   openCodeReadyGraceMs: 0,
   longRequestTimeoutMs: 0,
   getRuntime: () => ({}),
@@ -32,6 +57,7 @@ const createRuntime = (loginShellPath, overrides = {}) => createServerUtilsRunti
   augmentPathWithBundledRipgrep: () => ({ added: false, binDir: null }),
   ...overrides,
 });
+};
 
 describe('server utils runtime', () => {
   it('prefers shell PATH for managed OpenCode before appending process-only entries', () => {
@@ -97,6 +123,47 @@ describe('server utils runtime', () => {
     });
 
     expect(runtime.buildManagedOpenCodePath().split(path.delimiter)[0]).toBe(bundledRgPath);
+  });
+
+  it('adds existing Windows package-manager directories to managed OpenCode PATH', () => {
+    const root = createTempDir('openchamber-win-path-');
+    const systemDir = path.join(root, 'System32');
+    const appData = path.join(root, 'Roaming');
+    const programFiles = path.join(root, 'Program Files');
+    const localAppData = path.join(root, 'Local');
+    const programData = path.join(root, 'ProgramData');
+    const userProfile = path.join(root, 'User');
+
+    const npmBin = path.join(appData, 'npm');
+    const nodeBin = path.join(programFiles, 'nodejs');
+    const pnpmHome = path.join(localAppData, 'pnpm');
+    const yarnBin = path.join(localAppData, 'Yarn', 'bin');
+    const chocoBin = path.join(programData, 'chocolatey', 'bin');
+
+    for (const dir of [systemDir, npmBin, nodeBin, pnpmHome, yarnBin, chocoBin]) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const runtime = createRuntime(null, {
+      platform: 'win32',
+      env: {
+        PATH: systemDir,
+        APPDATA: appData,
+        ProgramFiles: programFiles,
+        LOCALAPPDATA: localAppData,
+        ProgramData: programData,
+        USERPROFILE: userProfile,
+      },
+    });
+
+    expect(runtime.buildManagedOpenCodePath()).toBe([
+      systemDir,
+      npmBin,
+      nodeBin,
+      pnpmHome,
+      yarnBin,
+      chocoBin,
+    ].join(path.delimiter));
   });
 
   it('preserves user-configured process PATH order before appending shell-only entries', () => {

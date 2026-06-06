@@ -8,6 +8,7 @@ import { RiArrowUpSLine } from '@remixicon/react';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
+import { getDirectoryForFilePath } from '@/lib/path-utils';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -79,7 +80,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const openSkill = React.useCallback((name: string) => {
         const skill = skillByName.get(name);
         if (!skill?.path) return;
-        openContextFile(effectiveDirectory || skill.path.replace(/\/[^/]*$/, '') || '/', skill.path);
+        openContextFile(effectiveDirectory || getDirectoryForFilePath('', skill.path) || '/', skill.path);
     }, [effectiveDirectory, openContextFile, skillByName]);
 
     const hasActiveSelectionInElement = React.useCallback((element: HTMLElement): boolean => {
