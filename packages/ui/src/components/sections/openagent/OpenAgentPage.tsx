@@ -1620,13 +1620,23 @@ function OpenAgentGlobalSection() {
           value={draft.runtime_fallback}
           onChange={(value) => updateDraft({ runtime_fallback: value })}
         />
-        <BackgroundTaskSettings value={draft.background_task} onChange={(value) => updateDraft({ background_task: value })} />
-        <TeamModeSettings value={draft.team_mode} onChange={(value) => updateDraft({ team_mode: value })} />
-        <ModelCapabilitiesSettings value={draft.model_capabilities} onChange={(value) => updateDraft({ model_capabilities: value })} />
-        <ExperimentalSettings value={draft.experimental} onChange={(value) => updateDraft({ experimental: value })} />
-        <TmuxSettings value={draft.tmux} onChange={(value) => updateDraft({ tmux: value })} />
         <SkillsSettings value={draft.skills} onChange={(value) => updateDraft({ skills: value })} />
       </div>
+    </section>
+  );
+}
+
+function OpenAgentAdvancedGlobalSection() {
+  const draft = useOpenAgentConfigStore((state) => state.draft);
+  const updateDraft = useOpenAgentConfigStore((state) => state.updateDraft);
+
+  return (
+    <section className="space-y-3">
+      <BackgroundTaskSettings value={draft.background_task} onChange={(value) => updateDraft({ background_task: value })} />
+      <TeamModeSettings value={draft.team_mode} onChange={(value) => updateDraft({ team_mode: value })} />
+      <ModelCapabilitiesSettings value={draft.model_capabilities} onChange={(value) => updateDraft({ model_capabilities: value })} />
+      <ExperimentalSettings value={draft.experimental} onChange={(value) => updateDraft({ experimental: value })} />
+      <TmuxSettings value={draft.tmux} onChange={(value) => updateDraft({ tmux: value })} />
     </section>
   );
 }
@@ -1921,6 +1931,8 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         onEdit={setEditingTarget}
         onAdd={handleAddCustom}
       />
+
+      <OpenAgentAdvancedGlobalSection />
 
       {!isLoading && agentItems.length === 0 && categoryItems.length === 0 ? (
         <div className="rounded-lg border border-border/70 px-4 py-10 text-center typography-ui text-muted-foreground">
