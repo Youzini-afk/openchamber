@@ -702,7 +702,7 @@ function AddCustomControl({
   };
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <Input
         value={value}
         onChange={(event) => setValue(event.target.value)}
@@ -713,7 +713,7 @@ function AddCustomControl({
           }
         }}
         placeholder={kind === 'agent' ? 'custom-agent-id' : 'custom-category-id'}
-        className="h-7 w-44 typography-meta"
+        className="h-7 min-w-[140px] flex-1 typography-meta sm:w-44 sm:flex-none"
       />
       <Button type="button" size="xs" variant="outline" onClick={handleAdd} disabled={!value.trim()}>
         <RiAddLine className="h-3.5 w-3.5" />
@@ -752,7 +752,7 @@ function OpenAgentRow({
   });
 
   return (
-    <div className="grid min-h-[58px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(220px,1.4fr)_64px_90px_72px] lg:items-center">
+    <div className="grid min-h-[58px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 @min-[960px]/openagent-group:grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(0,1.4fr)_64px_90px_72px] @min-[960px]/openagent-group:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate typography-ui-label font-medium text-foreground">{item.label}</span>
@@ -764,12 +764,12 @@ function OpenAgentRow({
       </div>
 
       <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">{t('settings.openagent.table.defaultModel')}</div>
+        <div className="typography-micro text-muted-foreground @min-[960px]/openagent-group:hidden">{t('settings.openagent.table.defaultModel')}</div>
         <div className="truncate font-mono typography-meta text-muted-foreground">{formatDefaultModel(item, t('settings.openagent.model.pluginDefault'))}</div>
       </div>
 
       <div className="min-w-0">
-        <div className="typography-micro text-muted-foreground lg:hidden">{t('settings.openagent.table.overrideModel')}</div>
+        <div className="typography-micro text-muted-foreground @min-[960px]/openagent-group:hidden">{t('settings.openagent.table.overrideModel')}</div>
         <CompactModelEditor
           model={model}
           onChange={(nextModel) => updateDraftItem(kind, item.id, { model: nextModel })}
@@ -777,7 +777,7 @@ function OpenAgentRow({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="typography-micro text-muted-foreground lg:hidden">fallback</span>
+        <span className="typography-micro text-muted-foreground @min-[960px]/openagent-group:hidden">fallback</span>
         <span className="typography-ui-label text-foreground">{fallbackCount}</span>
       </div>
 
@@ -785,7 +785,7 @@ function OpenAgentRow({
         <Badge className={status.className}>{status.label}</Badge>
       </div>
 
-      <div className="flex items-center gap-1.5 lg:justify-end">
+      <div className="flex items-center gap-1.5 @min-[960px]/openagent-group:justify-end">
         <Button
           type="button"
           size="icon"
@@ -833,7 +833,7 @@ function OpenAgentGroupSection({
   if (items.length === 0 && !onAdd) return null;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/70 bg-background">
+    <section className="@container/openagent-group overflow-hidden rounded-lg border border-border/70 bg-background">
       <div className="flex flex-col gap-2 border-b border-border/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="typography-ui-label font-semibold text-foreground">{title}</h3>
@@ -841,7 +841,7 @@ function OpenAgentGroupSection({
         </div>
         {onAdd ? <AddCustomControl kind={kind} onAdd={onAdd} /> : null}
       </div>
-      <div className="hidden grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(220px,1.4fr)_64px_90px_72px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground lg:grid">
+      <div className="hidden grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(0,1.4fr)_64px_90px_72px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground @min-[960px]/openagent-group:grid">
         <div>{t('settings.openagent.table.name')}</div>
         <div>{t('settings.openagent.table.defaultModel')}</div>
         <div>{t('settings.openagent.table.overrideModel')}</div>
