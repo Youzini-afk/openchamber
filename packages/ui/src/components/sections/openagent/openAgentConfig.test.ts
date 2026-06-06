@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS,
+  OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS,
+  OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS,
   buildOpenAgentSavePayload,
   createOpenAgentDraftFromConfig,
   fallbackModelsToRows,
@@ -9,7 +12,38 @@ import {
   normalizeOpenAgentRecord,
 } from './openAgentConfig';
 
+const EXPECTED_TOP_LEVEL_ARRAY_KEYS = [
+  'disabled_skills',
+  'disabled_commands',
+  'disabled_tools',
+  'disabled_mcps',
+  'disabled_providers',
+  'mcp_env_allowlist',
+] as const;
+
+const EXPECTED_TOP_LEVEL_OBJECT_KEYS = [
+  'background_task',
+  'team_mode',
+  'model_capabilities',
+  'experimental',
+  'skills',
+  'tmux',
+] as const;
+
+const EXPECTED_TOP_LEVEL_SCALAR_KEYS = [
+  'default_mode',
+  'hashline_edit',
+  'model_fallback',
+  'runtime_fallback',
+] as const;
+
 describe('openAgentConfig helpers', () => {
+  test('keeps UI top-level config key lists aligned with expected plugin fields', () => {
+    expect([...OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_ARRAY_KEYS].sort());
+    expect([...OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_OBJECT_KEYS].sort());
+    expect([...OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_SCALAR_KEYS].sort());
+  });
+
   test('normalizes empty fields out of saved agent overrides', () => {
     expect(normalizeOpenAgentRecord('agent', {
       sisyphus: {

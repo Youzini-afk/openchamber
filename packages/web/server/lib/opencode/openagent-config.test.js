@@ -9,6 +9,31 @@ const originalOpenCodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 
 let tempHome;
 
+const EXPECTED_TOP_LEVEL_ARRAY_KEYS = [
+  'disabled_skills',
+  'disabled_commands',
+  'disabled_tools',
+  'disabled_mcps',
+  'disabled_providers',
+  'mcp_env_allowlist',
+];
+
+const EXPECTED_TOP_LEVEL_OBJECT_KEYS = [
+  'background_task',
+  'team_mode',
+  'model_capabilities',
+  'experimental',
+  'skills',
+  'tmux',
+];
+
+const EXPECTED_TOP_LEVEL_SCALAR_KEYS = [
+  'default_mode',
+  'hashline_edit',
+  'model_fallback',
+  'runtime_fallback',
+];
+
 async function loadOpenAgentModule() {
   return import(`./openagent-config.js?test=${Date.now()}-${Math.random()}`);
 }
@@ -66,7 +91,18 @@ describe('oh-my-openagent config helpers', () => {
       '  "default_mode": "ralph-loop",',
       '  "hashline_edit": true,',
       '  "disabled_providers": ["openai"],',
+      '  "disabled_skills": ["legacy-skill"],',
+      '  "disabled_commands": ["old-command"],',
+      '  "disabled_tools": ["old-tool"],',
+      '  "disabled_mcps": ["old-mcp"],',
+      '  "mcp_env_allowlist": ["OLD_ENV"],',
       '  "runtime_fallback": { "enabled": true, "max_fallback_attempts": 2 },',
+      '  "background_task": { "concurrency": 1 },',
+      '  "team_mode": { "enabled": false },',
+      '  "model_capabilities": { "cache_ttl_ms": 1000 },',
+      '  "experimental": { "dynamic_context_pruning": true },',
+      '  "skills": { "sources": [] },',
+      '  "tmux": { "enabled": false },',
       '  "agents": {',
       '    "sisyphus": { "model": "openai/old", "maxTokens": 4096 }',
       '  },',
@@ -91,11 +127,21 @@ describe('oh-my-openagent config helpers', () => {
       },
       disabled_hooks: ['todo-continuation-enforcer', 'atlas', 'atlas', 'unknown-hook'],
       disabled_providers: ['anthropic', 'openai', 'openai'],
+      disabled_skills: ['agent-reviewer'],
+      disabled_commands: ['debug'],
+      disabled_tools: ['bash'],
+      disabled_mcps: ['filesystem'],
+      mcp_env_allowlist: ['PATH', 'HOME'],
       default_mode: 'ultrawork',
       hashline_edit: false,
       model_fallback: false,
       runtime_fallback: false,
+      background_task: { concurrency: 2, stale_timeout_ms: 30000 },
       team_mode: { enabled: true, max_parallel_members: 4 },
+      model_capabilities: { refresh: true },
+      experimental: { dynamic_context_pruning: false },
+      skills: { sources: ['builtin'] },
+      tmux: { enabled: true },
     });
 
     const content = fs.readFileSync(configPath, 'utf8');
@@ -111,11 +157,21 @@ describe('oh-my-openagent config helpers', () => {
     });
     expect(parsed.disabled_hooks).toEqual(['atlas', 'todo-continuation-enforcer']);
     expect(parsed.disabled_providers).toEqual(['anthropic', 'openai']);
+    expect(parsed.disabled_skills).toEqual(['agent-reviewer']);
+    expect(parsed.disabled_commands).toEqual(['debug']);
+    expect(parsed.disabled_tools).toEqual(['bash']);
+    expect(parsed.disabled_mcps).toEqual(['filesystem']);
+    expect(parsed.mcp_env_allowlist).toEqual(['HOME', 'PATH']);
     expect(parsed.default_mode).toBe('ultrawork');
     expect(parsed.hashline_edit).toBe(false);
     expect(parsed.model_fallback).toBe(false);
     expect(parsed.runtime_fallback).toBe(false);
+    expect(parsed.background_task).toEqual({ concurrency: 2, stale_timeout_ms: 30000 });
     expect(parsed.team_mode).toEqual({ enabled: true, max_parallel_members: 4 });
+    expect(parsed.model_capabilities).toEqual({ refresh: true });
+    expect(parsed.experimental).toEqual({ dynamic_context_pruning: false });
+    expect(parsed.skills).toEqual({ sources: ['builtin'] });
+    expect(parsed.tmux).toEqual({ enabled: true });
   });
 
   it('edits a legacy oh-my-opencode config file when no canonical config exists', async () => {
@@ -144,6 +200,14 @@ describe('oh-my-openagent config helpers', () => {
     expect(readJsoncObject(legacyPath).agents).toEqual({
       sisyphus: { model: 'openai/gpt-5.5' },
     });
+  });
+
+  it('keeps server top-level config key lists aligned with expected plugin fields', async () => {
+    const serverConfig = await loadOpenAgentModule();
+
+    expect([...serverConfig.OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_ARRAY_KEYS].sort());
+    expect([...serverConfig.OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_OBJECT_KEYS].sort());
+    expect([...serverConfig.OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS].sort()).toEqual([...EXPECTED_TOP_LEVEL_SCALAR_KEYS].sort());
   });
 
   it('reports project-level overrides without using them as the write target', async () => {

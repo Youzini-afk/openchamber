@@ -34,6 +34,12 @@ const TOP_LEVEL_OBJECT_KEYS = [
   'skills',
   'tmux',
 ];
+const TOP_LEVEL_SCALAR_KEYS = [
+  'default_mode',
+  'hashline_edit',
+  'model_fallback',
+  'runtime_fallback',
+];
 const KNOWN_HOOKS = new Set([
   'todo-continuation-enforcer',
   'context-window-monitor',
@@ -947,6 +953,9 @@ function saveOpenAgentConfig(input = {}) {
 }
 
 export {
+  TOP_LEVEL_ARRAY_KEYS as OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS,
+  TOP_LEVEL_OBJECT_KEYS as OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS,
+  TOP_LEVEL_SCALAR_KEYS as OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS,
   readOpenAgentConfig,
   saveOpenAgentConfig,
   setOpenAgentPluginEnabled,

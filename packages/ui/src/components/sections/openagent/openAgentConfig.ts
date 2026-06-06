@@ -176,8 +176,16 @@ export const OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS = [
   'tmux',
 ] as const;
 
+export const OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS = [
+  'default_mode',
+  'hashline_edit',
+  'model_fallback',
+  'runtime_fallback',
+] as const;
+
 export type OpenAgentTopLevelArrayKey = typeof OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS[number];
 export type OpenAgentTopLevelObjectKey = typeof OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS[number];
+export type OpenAgentTopLevelScalarKey = typeof OPEN_AGENT_TOP_LEVEL_SCALAR_KEYS[number];
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)

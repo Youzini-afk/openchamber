@@ -65,6 +65,23 @@ const REASONING_OPTIONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 const TEXT_VERBOSITY_OPTIONS = ['low', 'medium', 'high'];
 const THINKING_OPTIONS = ['enabled', 'disabled'];
 
+type JsonFieldState = {
+  text: string;
+  error: string | null;
+};
+
+type JsonValidationContextValue = {
+  jsonFieldStates: Record<string, JsonFieldState>;
+  resetVersion: number;
+  setJsonFieldState: (id: string, state: JsonFieldState | null) => void;
+};
+
+const JsonValidationContext = React.createContext<JsonValidationContextValue>({
+  jsonFieldStates: {},
+  resetVersion: 0,
+  setJsonFieldState: () => undefined,
+});
+
 const CONTINUATION_HOOKS = [
   {
     id: 'todo-continuation-enforcer',
@@ -392,31 +409,47 @@ function CompactModelEditor({
 }
 
 function JsonTextareaField({
+  validationId,
   label,
   value,
   onChange,
   placeholder,
 }: {
+  validationId: string;
   label: string;
   value: unknown;
   onChange: (value: unknown) => void;
   placeholder?: string;
 }) {
   const { t } = useI18n();
+  const { jsonFieldStates, resetVersion, setJsonFieldState } = React.useContext(JsonValidationContext);
+  const persistedState = jsonFieldStates[validationId];
   const [text, setText] = React.useState(() => (
-    value === undefined || value === null ? '' : JSON.stringify(value, null, 2)
+    persistedState?.text ?? (value === undefined || value === null ? '' : JSON.stringify(value, null, 2))
   ));
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(persistedState?.error ?? null);
+  const skipNextValueSyncRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (persistedState) {
+      setText(persistedState.text);
+      setError(persistedState.error);
+      return;
+    }
+    if (skipNextValueSyncRef.current) {
+      skipNextValueSyncRef.current = false;
+      return;
+    }
     setText(value === undefined || value === null ? '' : JSON.stringify(value, null, 2));
     setError(null);
-  }, [value]);
+  }, [persistedState, resetVersion, validationId, value]);
 
-  const commit = () => {
-    const trimmed = text.trim();
+  const validateAndCommit = (nextText: string) => {
+    const trimmed = nextText.trim();
     if (!trimmed) {
       setError(null);
+      setJsonFieldState(validationId, null);
+      skipNextValueSyncRef.current = true;
       onChange(undefined);
       return;
     }
@@ -424,22 +457,32 @@ function JsonTextareaField({
     try {
       const parsed = JSON.parse(trimmed);
       if (!isRecord(parsed)) {
-        setError(t('settings.openagent.validation.jsonObjectRequired'));
+        const nextError = t('settings.openagent.validation.jsonObjectRequired');
+        setError(nextError);
+        setJsonFieldState(validationId, { text: nextText, error: nextError });
         return;
       }
       setError(null);
+      setJsonFieldState(validationId, null);
+      skipNextValueSyncRef.current = true;
       onChange(parsed);
     } catch {
-      setError(t('settings.openagent.validation.jsonInvalid'));
+      const nextError = t('settings.openagent.validation.jsonInvalid');
+      setError(nextError);
+      setJsonFieldState(validationId, { text: nextText, error: nextError });
     }
+  };
+
+  const updateText = (nextText: string) => {
+    setText(nextText);
+    validateAndCommit(nextText);
   };
 
   return (
     <Field label={label} hint={error ?? placeholder}>
       <Textarea
         value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
+        onChange={(event) => updateText(event.target.value)}
         rows={4}
         outerClassName={cn('min-h-[112px]', error && 'ring-[var(--status-error)]')}
         className="font-mono typography-meta"
@@ -457,7 +500,9 @@ function RuntimeFallbackField({
   onChange: (value: unknown) => void;
 }) {
   const { t } = useI18n();
+  const { setJsonFieldState } = React.useContext(JsonValidationContext);
   const mode = typeof value === 'boolean' ? String(value) : isRecord(value) ? 'object' : INHERIT_VALUE;
+  const validationId = 'global:runtime_fallback';
 
   return (
     <div className="space-y-2">
@@ -465,9 +510,16 @@ function RuntimeFallbackField({
         <Select
           value={mode}
           onValueChange={(nextMode) => {
-            if (nextMode === INHERIT_VALUE) onChange(undefined);
-            else if (nextMode === 'true') onChange(true);
-            else if (nextMode === 'false') onChange(false);
+            if (nextMode === INHERIT_VALUE) {
+              setJsonFieldState(validationId, null);
+              onChange(undefined);
+            } else if (nextMode === 'true') {
+              setJsonFieldState(validationId, null);
+              onChange(true);
+            } else if (nextMode === 'false') {
+              setJsonFieldState(validationId, null);
+              onChange(false);
+            }
             else onChange(isRecord(value) ? value : {});
           }}
         >
@@ -485,6 +537,7 @@ function RuntimeFallbackField({
 
       {isRecord(value) ? (
         <JsonTextareaField
+          validationId={validationId}
           label="runtime_fallback"
           value={value}
           onChange={onChange}
@@ -1064,6 +1117,7 @@ function AdvancedDialog({
               </Field>
 
               <JsonTextareaField
+                validationId={`${kind}:${id}:tools`}
                 label="tools"
                 value={entry.tools}
                 onChange={(value) => update({ tools: value })}
@@ -1072,6 +1126,7 @@ function AdvancedDialog({
 
               {kind === 'agent' ? (
                 <JsonTextareaField
+                  validationId={`${kind}:${id}:providerOptions`}
                   label="providerOptions"
                   value={entry.providerOptions}
                   onChange={(value) => update({ providerOptions: value })}
@@ -1260,6 +1315,7 @@ function OpenAgentGlobalSection() {
         />
         {GLOBAL_OBJECT_FIELDS.map((field) => (
           <JsonTextareaField
+            validationId={`global:${field.key}`}
             key={field.key}
             label={t(field.labelKey)}
             value={draft[field.key]}
@@ -1303,6 +1359,33 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
 
   const [editingTarget, setEditingTarget] = React.useState<EditingTarget | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [jsonFieldStates, setJsonFieldStates] = React.useState<Record<string, JsonFieldState>>({});
+  const [jsonResetVersion, setJsonResetVersion] = React.useState(0);
+
+  const resetJsonFieldStates = React.useCallback(() => {
+    setJsonFieldStates({});
+    setJsonResetVersion((version) => version + 1);
+  }, []);
+
+  const setJsonFieldState = React.useCallback((id: string, fieldState: JsonFieldState | null) => {
+    setJsonFieldStates((previous) => {
+      if (!fieldState) {
+        if (!previous[id]) return previous;
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      }
+      const previousState = previous[id];
+      if (previousState?.text === fieldState.text && previousState.error === fieldState.error) return previous;
+      return { ...previous, [id]: fieldState };
+    });
+  }, []);
+
+  const jsonValidationContext = React.useMemo(() => ({
+    jsonFieldStates,
+    resetVersion: jsonResetVersion,
+    setJsonFieldState,
+  }), [jsonFieldStates, jsonResetVersion, setJsonFieldState]);
 
   React.useEffect(() => {
     void loadConfig({ force: true });
@@ -1310,6 +1393,8 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   }, [activeProjectId, loadConfig]);
 
   const hasChanges = hasOpenAgentDraftChanges(initialDraft, draft);
+  const jsonErrorCount = Object.values(jsonFieldStates).filter((state) => state.error).length;
+  const hasJsonErrors = jsonErrorCount > 0;
   const projectAgentOverrides = React.useMemo(() => new Set(config?.project.overriddenAgents ?? []), [config]);
   const projectCategoryOverrides = React.useMemo(() => new Set(config?.project.overriddenCategories ?? []), [config]);
 
@@ -1347,10 +1432,15 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       toast.error(t('settings.openagent.toast.loadFailed'));
       return;
     }
+    resetJsonFieldStates();
     toast.success(t('settings.openagent.toast.reloaded'));
   };
 
   const handleSave = async () => {
+    if (hasJsonErrors) {
+      toast.error(t('settings.openagent.toast.fixJsonBeforeSaving'));
+      return;
+    }
     const result = await saveChanges();
     if (!result.ok) {
       if (result.conflict) {
@@ -1360,7 +1450,13 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       }
       return;
     }
+    resetJsonFieldStates();
     toast.success(t('settings.openagent.toast.saved'));
+  };
+
+  const handleDiscard = () => {
+    discardChanges();
+    resetJsonFieldStates();
   };
 
   const handlePluginToggle = async (enabled: boolean) => {
@@ -1391,6 +1487,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   };
 
   return (
+    <JsonValidationContext.Provider value={jsonValidationContext}>
     <OpenAgentContentWrapper embedded={embedded}>
       <div className="space-y-1">
         <h2 className="typography-ui-header font-semibold text-foreground">
@@ -1419,6 +1516,11 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
               ) : null}
               {hasChanges ? (
                 <Badge className="bg-primary/10 text-primary">{t('settings.openagent.badge.unsavedChanges')}</Badge>
+              ) : null}
+              {hasJsonErrors ? (
+                <Badge className="bg-[var(--status-error)]/10 text-[var(--status-error)]">
+                  {t('settings.openagent.badge.invalidJsonCount', { count: jsonErrorCount })}
+                </Badge>
               ) : null}
             </div>
             <div className="break-all font-mono typography-micro text-muted-foreground">
@@ -1456,10 +1558,10 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
               <RiCodeLine className="h-3.5 w-3.5" />
               {t('settings.openagent.actions.jsonPreview')}
             </Button>
-            <Button type="button" size="xs" variant="outline" onClick={discardChanges} disabled={!hasChanges || isSaving}>
+            <Button type="button" size="xs" variant="outline" onClick={handleDiscard} disabled={!hasChanges || isSaving}>
               {t('settings.openagent.actions.discardChanges')}
             </Button>
-            <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || isSaving || isPluginSaving}>
+            <Button type="button" size="xs" onClick={handleSave} disabled={!hasChanges || hasJsonErrors || isSaving || isPluginSaving}>
               {isSaving ? <RiRefreshLine className="h-3.5 w-3.5 animate-spin" /> : <RiSaveLine className="h-3.5 w-3.5" />}
               {isSaving ? t('settings.openagent.actions.saving') : t('settings.openagent.actions.saveChanges')}
             </Button>
@@ -1531,5 +1633,6 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
         expectedMtimeMs={config?.target.mtimeMs ?? null}
       />
     </OpenAgentContentWrapper>
+    </JsonValidationContext.Provider>
   );
 };
