@@ -7,12 +7,22 @@ import { parse as parseJsonc } from 'jsonc-parser';
 // @ts-expect-error The web package currently ships these helpers as JS modules.
 import { readAgentOrchestrationConfig } from '../../web/server/lib/opencode/agent-orchestration-config.js';
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const resolveOpenCodeConfigDir = (): string => {
+  const configured = typeof process.env.OPENCODE_CONFIG_DIR === 'string'
+    ? process.env.OPENCODE_CONFIG_DIR.trim()
+    : '';
+  return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'opencode');
+};
+
+const OPENCODE_CONFIG_DIR = resolveOpenCodeConfigDir();
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
 const GLOBAL_SNIPPET_DIR = path.join(OPENCODE_CONFIG_DIR, 'snippet');
 const GLOBAL_SNIPPET_DIR_ALT = path.join(OPENCODE_CONFIG_DIR, 'snippets');
-const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
+const LEGACY_CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
+const OPENCODE_JSON_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.json');
+const OPENCODE_JSONC_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc');
+const CONFIG_FILE = OPENCODE_JSONC_FILE;
 const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
   ? path.resolve(process.env.OPENCODE_CONFIG)
   : null;
@@ -565,9 +575,9 @@ const getProjectConfigPath = (workingDirectory?: string): string | null => {
 
 const getConfigPaths = (workingDirectory?: string) => ({
   userPaths: [
-    path.join(OPENCODE_CONFIG_DIR, 'config.json'),
-    path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
-    path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
+    OPENCODE_JSONC_FILE,
+    OPENCODE_JSON_FILE,
+    LEGACY_CONFIG_FILE,
   ],
   projectPath: getProjectConfigPath(workingDirectory),
   customPath: CUSTOM_CONFIG_FILE
@@ -580,7 +590,7 @@ const getPrimaryUserConfigPath = (userPaths: string[]): string => {
     }
   }
 
-  return CONFIG_FILE;
+  return OPENCODE_JSONC_FILE;
 };
 
 const readConfigFile = (filePath?: string | null): Record<string, unknown> => {
@@ -864,9 +874,9 @@ const getActiveOpencodeConfigDir = (): string => {
 const getActiveUserConfigPaths = (): string[] => {
   const configDir = getActiveOpencodeConfigDir();
   return [
-    path.join(configDir, 'config.json'),
-    path.join(configDir, 'opencode.json'),
     path.join(configDir, 'opencode.jsonc'),
+    path.join(configDir, 'opencode.json'),
+    path.join(configDir, 'config.json'),
   ];
 };
 
