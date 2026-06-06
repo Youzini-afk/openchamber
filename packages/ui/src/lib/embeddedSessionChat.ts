@@ -24,6 +24,7 @@ export const buildEmbeddedSessionChatURL = ({
   const resolvedOrigin = origin ?? (typeof window === 'undefined' ? 'http://localhost' : window.location.origin);
   const resolvedPath = basePath ?? (typeof window === 'undefined' ? '/' : window.location.pathname);
   const url = new URL(resolvedPath, resolvedOrigin);
+  url.searchParams.set('surface', 'desktop');
   url.searchParams.set('ocPanel', EMBEDDED_SESSION_CHAT_PANEL);
   url.searchParams.set('ocSessionId', sessionId);
   if (readOnly) {

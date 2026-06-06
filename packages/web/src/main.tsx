@@ -7,6 +7,8 @@ import type { HostedSurface } from '@openchamber/ui/lib/runtimeSurface';
 import '@openchamber/ui/index.css';
 import '@openchamber/ui/styles/fonts';
 
+import { detectHostedSurface } from './hostedSurface';
+
 declare global {
   interface Window {
     __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
@@ -24,19 +26,14 @@ const isCoarsePointer = (): boolean => {
   return window.matchMedia('(pointer: coarse)').matches;
 };
 
-const detectHostedSurface = (): HostedSurface => {
-  const params = new URLSearchParams(window.location.search);
-  const override = params.get('surface');
-  if (override === 'mobile') return 'mobile';
-  if (override === 'desktop') return 'desktop';
-
-  const width = Math.min(window.innerWidth || 0, window.screen?.width || window.innerWidth || 0);
-  const touchPoints = navigator.maxTouchPoints || 0;
-  const likelyPhone = width > 0 && width <= 760 && (touchPoints > 0 || isCoarsePointer());
-  return likelyPhone && getStoredMobileLayoutPreference() === 'new' ? 'mobile' : 'desktop';
-};
-
-const hostedSurface = detectHostedSurface();
+const hostedSurface = detectHostedSurface({
+  search: window.location.search,
+  innerWidth: window.innerWidth || 0,
+  screenWidth: window.screen?.width || window.innerWidth || 0,
+  maxTouchPoints: navigator.maxTouchPoints || 0,
+  isCoarsePointer: isCoarsePointer(),
+  mobileLayoutPreference: getStoredMobileLayoutPreference(),
+});
 window.__OPENCHAMBER_SURFACE__ = hostedSurface;
 
 type PrerenderingDocument = Document & {

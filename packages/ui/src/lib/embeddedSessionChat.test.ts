@@ -17,7 +17,7 @@ describe('embedded session chat URL helpers', () => {
       origin: 'https://openchamber.test',
     });
 
-    expect(url).toBe('https://openchamber.test/app?ocPanel=session-chat&ocSessionId=child-123&ocReadOnly=1&ocDirectory=%2Ftmp%2Fproject');
+    expect(url).toBe('https://openchamber.test/app?surface=desktop&ocPanel=session-chat&ocSessionId=child-123&ocReadOnly=1&ocDirectory=%2Ftmp%2Fproject');
     expect(url).not.toContain('sessionId=');
     expect(url).not.toContain('directory=');
     expect(url).not.toContain('readOnly=');
