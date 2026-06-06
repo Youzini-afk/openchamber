@@ -75,15 +75,23 @@ describe('oh-my-openagent config routes', () => {
         expectedMtimeMs: 123,
         agents: { sisyphus: { model: 'openai/gpt-5.5' } },
         categories: {},
+        disabled_providers: ['openai'],
+        default_mode: 'ultrawork',
+        hashline_edit: true,
+        runtime_fallback: { enabled: true },
       })
       .expect(200);
 
-    expect(saveOpenAgentConfig).toHaveBeenCalledWith({
+    expect(saveOpenAgentConfig).toHaveBeenCalledWith(expect.objectContaining({
       expectedMtimeMs: 123,
       agents: { sisyphus: { model: 'openai/gpt-5.5' } },
       categories: {},
       disabled_hooks: [],
-    });
+      disabled_providers: ['openai'],
+      default_mode: 'ultrawork',
+      hashline_edit: true,
+      runtime_fallback: { enabled: true },
+    }));
     expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('oh-my-openagent config updated');
     expect(response.body).toMatchObject({
       success: true,
@@ -120,6 +128,27 @@ describe('oh-my-openagent config routes', () => {
       .expect(409);
 
     expect(response.body.error).toContain('modified outside OpenChamber');
+  });
+
+  it('validates requested directory before saving config', async () => {
+    const app = express();
+    app.use(express.json());
+    const saveOpenAgentConfig = vi.fn();
+
+    registerOpenAgentRoutes(app, {
+      readOpenAgentConfig: vi.fn(),
+      saveOpenAgentConfig,
+      refreshOpenCodeAfterConfigChange: vi.fn(),
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: null, error: 'Invalid directory' })),
+    });
+
+    const response = await request(app)
+      .patch('/api/openagent/config?directory=%2Fbad')
+      .send({ expectedMtimeMs: 1, agents: {}, categories: {} })
+      .expect(400);
+
+    expect(response.body.error).toBe('Invalid directory');
+    expect(saveOpenAgentConfig).not.toHaveBeenCalled();
   });
 
   it('toggles plugin registration, refreshes OpenCode, and returns the reloaded config', async () => {

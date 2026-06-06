@@ -4,6 +4,7 @@ import { startConfigUpdate, finishConfigUpdate } from '@/lib/configUpdate';
 import { opencodeClient } from '@/lib/opencode/client';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import {
   buildSlimSavePayload,
   createSlimDraftFromConfig,
@@ -115,8 +116,8 @@ export const useSlimConfigStore = create<SlimConfigStore>()(
         const request = (async () => {
           set({ isLoading: true, error: null });
           try {
-            const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-            const response = await fetch(`/api/agent-orchestration/slim/config${query}`, {
+            const response = await runtimeFetch('/api/agent-orchestration/slim/config', {
+              query: configDirectory ? { directory: configDirectory } : undefined,
               headers: configDirectory ? { 'x-opencode-directory': configDirectory } : undefined,
             });
             if (!response.ok) {
@@ -207,9 +208,9 @@ export const useSlimConfigStore = create<SlimConfigStore>()(
         set({ isSaving: true, error: null });
         let requiresReload = false;
         try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
           const payload = buildSlimSavePayload(state.config?.target.mtimeMs ?? null, state.draft);
-          const response = await fetch(`/api/agent-orchestration/slim/config${query}`, {
+          const response = await runtimeFetch('/api/agent-orchestration/slim/config', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

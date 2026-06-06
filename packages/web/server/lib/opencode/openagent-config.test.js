@@ -63,6 +63,10 @@ describe('oh-my-openagent config helpers', () => {
       '  // keep this comment',
       '  "notification": { "force_enable": true },',
       '  "disabled_hooks": ["context-window-monitor", "unknown-hook"],',
+      '  "default_mode": "ralph-loop",',
+      '  "hashline_edit": true,',
+      '  "disabled_providers": ["openai"],',
+      '  "runtime_fallback": { "enabled": true, "max_fallback_attempts": 2 },',
       '  "agents": {',
       '    "sisyphus": { "model": "openai/old", "maxTokens": 4096 }',
       '  },',
@@ -86,6 +90,12 @@ describe('oh-my-openagent config helpers', () => {
         deep: { model: 'custom/deep-model', maxTokens: '' },
       },
       disabled_hooks: ['todo-continuation-enforcer', 'atlas', 'atlas', 'unknown-hook'],
+      disabled_providers: ['anthropic', 'openai', 'openai'],
+      default_mode: 'ultrawork',
+      hashline_edit: false,
+      model_fallback: false,
+      runtime_fallback: false,
+      team_mode: { enabled: true, max_parallel_members: 4 },
     });
 
     const content = fs.readFileSync(configPath, 'utf8');
@@ -100,6 +110,12 @@ describe('oh-my-openagent config helpers', () => {
       deep: { model: 'custom/deep-model' },
     });
     expect(parsed.disabled_hooks).toEqual(['atlas', 'todo-continuation-enforcer']);
+    expect(parsed.disabled_providers).toEqual(['anthropic', 'openai']);
+    expect(parsed.default_mode).toBe('ultrawork');
+    expect(parsed.hashline_edit).toBe(false);
+    expect(parsed.model_fallback).toBe(false);
+    expect(parsed.runtime_fallback).toBe(false);
+    expect(parsed.team_mode).toEqual({ enabled: true, max_parallel_members: 4 });
   });
 
   it('edits a legacy oh-my-opencode config file when no canonical config exists', async () => {

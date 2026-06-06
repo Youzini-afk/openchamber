@@ -104,6 +104,12 @@ describe('openAgentConfig helpers', () => {
           deep: { model: 'openai/gpt-5.5' },
         },
         disabled_hooks: ['todo-continuation-enforcer'],
+        disabled_providers: ['anthropic', 'openai'],
+        default_mode: 'ultrawork',
+        hashline_edit: false,
+        model_fallback: false,
+        runtime_fallback: false,
+        team_mode: { enabled: true, max_parallel_members: 4 },
       },
       project: {
         overriddenAgents: ['oracle'],
@@ -117,6 +123,12 @@ describe('openAgentConfig helpers', () => {
         deep: { model: 'openai/gpt-5.5' },
       },
       disabled_hooks: ['todo-continuation-enforcer'],
+      disabled_providers: ['anthropic', 'openai'],
+      default_mode: 'ultrawork',
+      hashline_edit: false,
+      model_fallback: false,
+      runtime_fallback: false,
+      team_mode: { enabled: true, max_parallel_members: 4 },
     });
 
     expect(buildOpenAgentSavePayload(123, draft)).toEqual({
@@ -126,6 +138,12 @@ describe('openAgentConfig helpers', () => {
         deep: { model: 'openai/gpt-5.5' },
       },
       disabled_hooks: ['todo-continuation-enforcer'],
+      disabled_providers: ['anthropic', 'openai'],
+      default_mode: 'ultrawork',
+      hashline_edit: false,
+      model_fallback: false,
+      runtime_fallback: false,
+      team_mode: { enabled: true, max_parallel_members: 4 },
     });
   });
 

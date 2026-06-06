@@ -13,6 +13,7 @@ import {
 } from '@/components/sections/openagent/openAgentConfig';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 export interface OpenAgentConfigItem {
   id: string;
@@ -56,6 +57,23 @@ export interface OpenAgentConfigResponse {
   raw: {
     agents: OpenAgentOverrideRecord;
     categories: OpenAgentOverrideRecord;
+    disabled_hooks?: string[];
+    disabled_skills?: string[];
+    disabled_commands?: string[];
+    disabled_tools?: string[];
+    disabled_mcps?: string[];
+    disabled_providers?: string[];
+    mcp_env_allowlist?: string[];
+    default_mode?: string;
+    hashline_edit?: boolean;
+    model_fallback?: boolean;
+    runtime_fallback?: unknown;
+    background_task?: Record<string, unknown>;
+    team_mode?: Record<string, unknown>;
+    model_capabilities?: Record<string, unknown>;
+    experimental?: Record<string, unknown>;
+    skills?: Record<string, unknown>;
+    tmux?: Record<string, unknown>;
   };
 }
 
@@ -76,6 +94,7 @@ interface OpenAgentConfigStore {
   error: string | null;
   loadConfig: (options?: { force?: boolean }) => Promise<boolean>;
   setPluginEnabled: (enabled: boolean) => Promise<OpenAgentMutationResult>;
+  updateDraft: (patch: Partial<OpenAgentDraft>) => void;
   updateDraftItem: (kind: OpenAgentKind, id: string, patch: Record<string, unknown>) => void;
   setDisabledHooks: (hooks: string[]) => void;
   resetItem: (kind: OpenAgentKind, id: string) => void;
@@ -161,8 +180,8 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
         const request = (async () => {
           set({ isLoading: true, error: null });
           try {
-            const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-            const response = await fetch(`/api/openagent/config${query}`, {
+            const response = await runtimeFetch('/api/openagent/config', {
+              query: configDirectory ? { directory: configDirectory } : undefined,
               headers: configDirectory ? { 'x-opencode-directory': configDirectory } : undefined,
             });
             if (!response.ok) {
@@ -202,8 +221,8 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
 
         let requiresReload = false;
         try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
-          const response = await fetch(`/api/openagent/plugin${query}`, {
+          const response = await runtimeFetch('/api/openagent/plugin', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -274,6 +293,20 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
         }
       },
 
+      updateDraft: (patch) => {
+        set((state) => {
+          const draft = cloneDraft(state.draft);
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === undefined) {
+              delete draft[key as keyof OpenAgentDraft];
+            } else {
+              (draft as unknown as Record<string, unknown>)[key] = value;
+            }
+          }
+          return { draft, error: null };
+        });
+      },
+
       updateDraftItem: (kind, id, patch) => {
         const key = id.trim();
         if (!key) return;
@@ -342,9 +375,9 @@ export const useOpenAgentConfigStore = create<OpenAgentConfigStore>()(
 
         let requiresReload = false;
         try {
-          const query = configDirectory ? `?directory=${encodeURIComponent(configDirectory)}` : '';
           const payload = buildOpenAgentSavePayload(state.config?.target.mtimeMs ?? null, state.draft);
-          const response = await fetch(`/api/openagent/config${query}`, {
+          const response = await runtimeFetch('/api/openagent/config', {
+            query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',

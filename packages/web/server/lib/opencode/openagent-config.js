@@ -18,6 +18,22 @@ const REASONING_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', '
 const TEXT_VERBOSITIES = new Set(['low', 'medium', 'high']);
 const MODES = new Set(['subagent', 'primary', 'all']);
 const THINKING_TYPES = new Set(['enabled', 'disabled']);
+const TOP_LEVEL_ARRAY_KEYS = [
+  'disabled_skills',
+  'disabled_commands',
+  'disabled_tools',
+  'disabled_mcps',
+  'disabled_providers',
+  'mcp_env_allowlist',
+];
+const TOP_LEVEL_OBJECT_KEYS = [
+  'background_task',
+  'team_mode',
+  'model_capabilities',
+  'experimental',
+  'skills',
+  'tmux',
+];
 const KNOWN_HOOKS = new Set([
   'todo-continuation-enforcer',
   'context-window-monitor',
@@ -123,6 +139,44 @@ function sanitizeDisabledHooks(input) {
     .map(normalizeString)
     .filter((hook) => hook && KNOWN_HOOKS.has(hook))))
     .sort();
+}
+
+function sanitizeStringList(input) {
+  if (!Array.isArray(input)) return undefined;
+  const entries = Array.from(new Set(input
+    .map(normalizeString)
+    .filter(Boolean)))
+    .sort();
+  return entries.length > 0 ? entries : undefined;
+}
+
+function sanitizePlainObject(input) {
+  if (!isPlainObject(input)) return undefined;
+  return Object.keys(input).length > 0 ? input : undefined;
+}
+
+function sanitizeRuntimeFallback(input) {
+  if (typeof input === 'boolean') return input;
+  return sanitizePlainObject(input);
+}
+
+function getGlobalRawFields(config) {
+  const result = {};
+  for (const key of TOP_LEVEL_ARRAY_KEYS) {
+    const value = sanitizeStringList(config?.[key]);
+    if (value) result[key] = value;
+  }
+  for (const key of TOP_LEVEL_OBJECT_KEYS) {
+    const value = sanitizePlainObject(config?.[key]);
+    if (value) result[key] = value;
+  }
+  const defaultMode = normalizeString(config?.default_mode);
+  if (defaultMode) result.default_mode = defaultMode;
+  if (typeof config?.hashline_edit === 'boolean') result.hashline_edit = config.hashline_edit;
+  if (typeof config?.model_fallback === 'boolean') result.model_fallback = config.model_fallback;
+  const runtimeFallback = sanitizeRuntimeFallback(config?.runtime_fallback);
+  if (runtimeFallback !== undefined) result.runtime_fallback = runtimeFallback;
+  return result;
 }
 
 function normalizeFiniteNumber(value) {
@@ -783,10 +837,16 @@ function buildCategoryItems(userCategories, projectCategories) {
 }
 
 function updateJsoncProperty(content, key, value) {
-  const nextValue = (
-    (isPlainObject(value) && Object.keys(value).length > 0)
-    || (Array.isArray(value) && value.length > 0)
-  ) ? value : undefined;
+  let nextValue;
+  if (isPlainObject(value)) {
+    nextValue = Object.keys(value).length > 0 ? value : undefined;
+  } else if (Array.isArray(value)) {
+    nextValue = value.length > 0 ? value : undefined;
+  } else if (typeof value === 'string') {
+    nextValue = value.trim() ? value.trim() : undefined;
+  } else if (typeof value === 'boolean' || typeof value === 'number') {
+    nextValue = value;
+  }
   const edits = modifyJsonc(content, [key], nextValue, {
     formattingOptions: JSONC_FORMATTING_OPTIONS,
   });
@@ -831,6 +891,7 @@ function readOpenAgentConfig(options = {}) {
       agents: userAgents,
       categories: userCategories,
       disabled_hooks: disabledHooks,
+      ...getGlobalRawFields(targetConfig),
     },
   };
 }
@@ -847,6 +908,7 @@ function saveOpenAgentConfig(input = {}) {
   const agents = sanitizeOverrideRecord(input.agents, 'agent');
   const categories = sanitizeOverrideRecord(input.categories, 'category');
   const disabledHooks = sanitizeDisabledHooks(input.disabled_hooks);
+  const globalFields = getGlobalRawFields(input);
 
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
@@ -858,6 +920,16 @@ function saveOpenAgentConfig(input = {}) {
   content = updateJsoncProperty(content, 'agents', agents);
   content = updateJsoncProperty(content, 'categories', categories);
   content = updateJsoncProperty(content, 'disabled_hooks', disabledHooks);
+  for (const key of TOP_LEVEL_ARRAY_KEYS) {
+    content = updateJsoncProperty(content, key, globalFields[key]);
+  }
+  for (const key of TOP_LEVEL_OBJECT_KEYS) {
+    content = updateJsoncProperty(content, key, globalFields[key]);
+  }
+  content = updateJsoncProperty(content, 'default_mode', globalFields.default_mode);
+  content = updateJsoncProperty(content, 'hashline_edit', globalFields.hashline_edit);
+  content = updateJsoncProperty(content, 'model_fallback', globalFields.model_fallback);
+  content = updateJsoncProperty(content, 'runtime_fallback', globalFields.runtime_fallback);
 
   parseJsoncObject(content, targetPath);
 

@@ -294,7 +294,7 @@ function RowShell({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid min-h-[54px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(220px,0.95fr)_minmax(300px,1.1fr)_minmax(280px,1fr)] lg:items-center">
+    <div className="grid min-h-[54px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(180px,0.75fr)_minmax(0,1.8fr)] lg:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate typography-ui-label font-medium text-foreground">{label}</span>
@@ -303,7 +303,7 @@ function RowShell({
         </div>
         <div className="typography-micro text-muted-foreground">{description}</div>
       </div>
-      <div className="min-w-0 lg:col-span-2">{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

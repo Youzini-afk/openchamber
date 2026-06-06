@@ -51,21 +51,37 @@ export const registerOpenAgentRoutes = (app, dependencies = {}) => {
 
   app.patch('/api/openagent/config', async (req, res) => {
     try {
+      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
+      if (error) {
+        return res.status(400).json({ error });
+      }
+
       const body = req.body ?? {};
       saveOpenAgentConfig({
         expectedMtimeMs: body.expectedMtimeMs ?? null,
         agents: body.agents ?? {},
         categories: body.categories ?? {},
         disabled_hooks: body.disabled_hooks ?? [],
+        disabled_skills: body.disabled_skills,
+        disabled_commands: body.disabled_commands,
+        disabled_tools: body.disabled_tools,
+        disabled_mcps: body.disabled_mcps,
+        disabled_providers: body.disabled_providers,
+        mcp_env_allowlist: body.mcp_env_allowlist,
+        default_mode: body.default_mode,
+        hashline_edit: body.hashline_edit,
+        model_fallback: body.model_fallback,
+        runtime_fallback: body.runtime_fallback,
+        background_task: body.background_task,
+        team_mode: body.team_mode,
+        model_capabilities: body.model_capabilities,
+        experimental: body.experimental,
+        skills: body.skills,
+        tmux: body.tmux,
       });
 
       if (typeof refreshOpenCodeAfterConfigChange === 'function') {
         await refreshOpenCodeAfterConfigChange('oh-my-openagent config updated');
-      }
-
-      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
-      if (error) {
-        return res.status(400).json({ error });
       }
 
       return res.json({

@@ -37,11 +37,13 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useOpenAgentConfigStore, type OpenAgentConfigItem } from '@/stores/useOpenAgentConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
   OPEN_AGENT_AGENT_DEFINITIONS,
   OPEN_AGENT_CATEGORY_DEFINITIONS,
+  OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS,
+  OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS,
   buildOpenAgentSavePayload,
   countFallbackModels,
   fallbackModelsToRows,
@@ -54,6 +56,8 @@ import {
   type OpenAgentFallbackRow,
   type OpenAgentKind,
   type OpenAgentOverride,
+  type OpenAgentTopLevelArrayKey,
+  type OpenAgentTopLevelObjectKey,
 } from './openAgentConfig';
 
 const INHERIT_VALUE = '__inherit__';
@@ -83,6 +87,96 @@ const CONTINUATION_HOOKS = [
     descriptionKey: 'settings.openagent.continuation.compactionPreserver.description',
   },
 ] as const;
+
+const DEFAULT_MODE_OPTIONS = ['ultrawork', 'ralph-loop'];
+
+const GLOBAL_ARRAY_FIELDS: Array<{
+  key: OpenAgentTopLevelArrayKey;
+  labelKey: I18nKey;
+  descriptionKey: I18nKey;
+  placeholder: string;
+}> = [
+  {
+    key: 'disabled_providers',
+    labelKey: 'settings.openagent.global.disabledProviders.label',
+    descriptionKey: 'settings.openagent.global.disabledProviders.description',
+    placeholder: 'provider-id, github-copilot',
+  },
+  {
+    key: 'disabled_skills',
+    labelKey: 'settings.openagent.global.disabledSkills.label',
+    descriptionKey: 'settings.openagent.global.disabledSkills.description',
+    placeholder: 'skill-id, another-skill',
+  },
+  {
+    key: 'disabled_commands',
+    labelKey: 'settings.openagent.global.disabledCommands.label',
+    descriptionKey: 'settings.openagent.global.disabledCommands.description',
+    placeholder: 'command-name, another-command',
+  },
+  {
+    key: 'disabled_tools',
+    labelKey: 'settings.openagent.global.disabledTools.label',
+    descriptionKey: 'settings.openagent.global.disabledTools.description',
+    placeholder: 'bash, edit, webfetch',
+  },
+  {
+    key: 'disabled_mcps',
+    labelKey: 'settings.openagent.global.disabledMcps.label',
+    descriptionKey: 'settings.openagent.global.disabledMcps.description',
+    placeholder: 'context7, websearch',
+  },
+  {
+    key: 'mcp_env_allowlist',
+    labelKey: 'settings.openagent.global.mcpEnvAllowlist.label',
+    descriptionKey: 'settings.openagent.global.mcpEnvAllowlist.description',
+    placeholder: 'GITHUB_TOKEN, TAVILY_API_KEY',
+  },
+];
+
+const GLOBAL_OBJECT_FIELDS: Array<{
+  key: OpenAgentTopLevelObjectKey;
+  labelKey: I18nKey;
+  descriptionKey: I18nKey;
+  placeholder: string;
+}> = [
+  {
+    key: 'background_task',
+    labelKey: 'settings.openagent.global.backgroundTask.label',
+    descriptionKey: 'settings.openagent.global.backgroundTask.description',
+    placeholder: '{ "defaultConcurrency": 4 }',
+  },
+  {
+    key: 'team_mode',
+    labelKey: 'settings.openagent.global.teamMode.label',
+    descriptionKey: 'settings.openagent.global.teamMode.description',
+    placeholder: '{ "enabled": true, "max_parallel_members": 4 }',
+  },
+  {
+    key: 'model_capabilities',
+    labelKey: 'settings.openagent.global.modelCapabilities.label',
+    descriptionKey: 'settings.openagent.global.modelCapabilities.description',
+    placeholder: '{ "enabled": true, "auto_refresh_on_start": true }',
+  },
+  {
+    key: 'experimental',
+    labelKey: 'settings.openagent.global.experimental.label',
+    descriptionKey: 'settings.openagent.global.experimental.description',
+    placeholder: '{ "dynamic_context_pruning": { "enabled": false } }',
+  },
+  {
+    key: 'skills',
+    labelKey: 'settings.openagent.global.skills.label',
+    descriptionKey: 'settings.openagent.global.skills.description',
+    placeholder: '{ "sources": [] }',
+  },
+  {
+    key: 'tmux',
+    labelKey: 'settings.openagent.global.tmux.label',
+    descriptionKey: 'settings.openagent.global.tmux.description',
+    placeholder: '{ "enabled": false }',
+  },
+];
 
 type OpenAgentGroup = 'main' | 'sub' | 'category' | 'custom';
 
@@ -199,6 +293,19 @@ const normalizeHookList = (hooks: string[] | undefined): string[] => (
   Array.from(new Set((hooks ?? []).map((hook) => hook.trim()).filter(Boolean))).sort()
 );
 
+const formatStringList = (values: unknown): string => (
+  Array.isArray(values) ? values.map((value) => asString(value).trim()).filter(Boolean).join(', ') : ''
+);
+
+const parseStringList = (value: string): string[] | undefined => {
+  const entries = Array.from(new Set(value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)))
+    .sort();
+  return entries.length > 0 ? entries : undefined;
+};
+
 function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <span className={cn('inline-flex h-5 shrink-0 items-center rounded px-1.5 typography-micro font-medium', className)}>
@@ -222,6 +329,33 @@ function Field({
       {children}
       {hint ? <span className="typography-micro text-muted-foreground">{hint}</span> : null}
     </label>
+  );
+}
+
+function TriStateBooleanSelect({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (value: boolean | undefined) => void;
+}) {
+  const { t } = useI18n();
+  const selectValue = typeof value === 'boolean' ? String(value) : INHERIT_VALUE;
+
+  return (
+    <Select
+      value={selectValue}
+      onValueChange={(nextValue) => onChange(nextValue === INHERIT_VALUE ? undefined : nextValue === 'true')}
+    >
+      <SelectTrigger className="h-8 w-full" size="sm">
+        <SelectValue>{(currentValue) => currentValue === INHERIT_VALUE ? t('settings.openagent.model.inherit') : currentValue}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
+        <SelectItem value="true">true</SelectItem>
+        <SelectItem value="false">false</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -315,6 +449,52 @@ function JsonTextareaField({
   );
 }
 
+function RuntimeFallbackField({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const { t } = useI18n();
+  const mode = typeof value === 'boolean' ? String(value) : isRecord(value) ? 'object' : INHERIT_VALUE;
+
+  return (
+    <div className="space-y-2">
+      <Field label={t('settings.openagent.global.runtimeFallback.label')} hint={t('settings.openagent.global.runtimeFallback.description')}>
+        <Select
+          value={mode}
+          onValueChange={(nextMode) => {
+            if (nextMode === INHERIT_VALUE) onChange(undefined);
+            else if (nextMode === 'true') onChange(true);
+            else if (nextMode === 'false') onChange(false);
+            else onChange(isRecord(value) ? value : {});
+          }}
+        >
+          <SelectTrigger className="h-8 w-full" size="sm">
+            <SelectValue>{(currentValue) => currentValue === INHERIT_VALUE ? t('settings.openagent.model.inherit') : currentValue}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
+            <SelectItem value="true">true</SelectItem>
+            <SelectItem value="false">false</SelectItem>
+            <SelectItem value="object">object</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {isRecord(value) ? (
+        <JsonTextareaField
+          label="runtime_fallback"
+          value={value}
+          onChange={onChange}
+          placeholder='{ "enabled": true, "max_fallback_attempts": 3 }'
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function AddCustomControl({
   kind,
   onAdd,
@@ -383,7 +563,7 @@ function OpenAgentRow({
   });
 
   return (
-    <div className="grid min-h-[58px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(190px,1.15fr)_minmax(160px,0.9fr)_minmax(260px,1.2fr)_90px_104px_86px] lg:items-center">
+    <div className="grid min-h-[58px] grid-cols-1 gap-2 border-t border-border/50 px-3 py-2 first:border-t-0 lg:grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(220px,1.4fr)_64px_90px_72px] lg:items-center">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate typography-ui-label font-medium text-foreground">{item.label}</span>
@@ -472,7 +652,7 @@ function OpenAgentGroupSection({
         </div>
         {onAdd ? <AddCustomControl kind={kind} onAdd={onAdd} /> : null}
       </div>
-      <div className="hidden grid-cols-[minmax(190px,1.15fr)_minmax(160px,0.9fr)_minmax(260px,1.2fr)_90px_104px_86px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground lg:grid">
+      <div className="hidden grid-cols-[minmax(150px,0.95fr)_minmax(120px,0.7fr)_minmax(220px,1.4fr)_64px_90px_72px] gap-2 border-b border-border/50 px-3 py-1.5 typography-micro font-medium text-muted-foreground lg:grid">
         <div>{t('settings.openagent.table.name')}</div>
         <div>{t('settings.openagent.table.defaultModel')}</div>
         <div>{t('settings.openagent.table.overrideModel')}</div>
@@ -557,7 +737,7 @@ function FallbackEditor({
         const parsed = parseModelRef(row.model);
         return (
           <div key={row.id} className="rounded-md border border-border/70 p-2">
-            <div className="grid gap-2 xl:grid-cols-[minmax(240px,1fr)_110px_96px_96px_120px_80px] xl:items-center">
+            <div className="grid gap-2 xl:grid-cols-[minmax(180px,1fr)_96px_82px_82px_108px_76px] xl:items-center">
               <div className="min-w-0 space-y-1.5">
                 <ModelSelector
                   providerId={parsed.providerId}
@@ -930,6 +1110,16 @@ function JsonPreviewDialog({
     const payload = buildOpenAgentSavePayload(expectedMtimeMs, draft);
     return JSON.stringify({
       disabled_hooks: payload.disabled_hooks,
+      ...Object.fromEntries(OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS
+        .filter((key) => payload[key] !== undefined)
+        .map((key) => [key, payload[key]])),
+      default_mode: payload.default_mode,
+      hashline_edit: payload.hashline_edit,
+      model_fallback: payload.model_fallback,
+      runtime_fallback: payload.runtime_fallback,
+      ...Object.fromEntries(OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS
+        .filter((key) => payload[key] !== undefined)
+        .map((key) => [key, payload[key]])),
       agents: payload.agents,
       categories: payload.categories,
     }, null, 2);
@@ -1003,6 +1193,80 @@ function ContinuationHooksSection() {
             </div>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function OpenAgentGlobalSection() {
+  const { t } = useI18n();
+  const draft = useOpenAgentConfigStore((state) => state.draft);
+  const updateDraft = useOpenAgentConfigStore((state) => state.updateDraft);
+
+  return (
+    <section className="rounded-lg border border-border/70 bg-background p-3">
+      <div className="space-y-1">
+        <h3 className="typography-ui-label font-semibold text-foreground">{t('settings.openagent.global.title')}</h3>
+        <p className="max-w-3xl typography-ui text-muted-foreground">{t('settings.openagent.global.description')}</p>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <Field label={t('settings.openagent.global.defaultMode.label')} hint={t('settings.openagent.global.defaultMode.description')}>
+          <Select
+            value={asString(draft.default_mode) || INHERIT_VALUE}
+            onValueChange={(value) => updateDraft({ default_mode: value === INHERIT_VALUE ? undefined : value })}
+          >
+            <SelectTrigger className="h-8 w-full" size="sm">
+              <SelectValue>{(value) => value === INHERIT_VALUE ? t('settings.openagent.model.inherit') : value}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={INHERIT_VALUE}>{t('settings.openagent.model.inherit')}</SelectItem>
+              {DEFAULT_MODE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>{option}</SelectItem>
+              ))}
+              {draft.default_mode && !DEFAULT_MODE_OPTIONS.includes(draft.default_mode) ? (
+                <SelectItem value={draft.default_mode}>{draft.default_mode}</SelectItem>
+              ) : null}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label={t('settings.openagent.global.hashlineEdit.label')} hint={t('settings.openagent.global.hashlineEdit.description')}>
+          <TriStateBooleanSelect value={draft.hashline_edit} onChange={(value) => updateDraft({ hashline_edit: value })} />
+        </Field>
+
+        <Field label={t('settings.openagent.global.modelFallback.label')} hint={t('settings.openagent.global.modelFallback.description')}>
+          <TriStateBooleanSelect value={draft.model_fallback} onChange={(value) => updateDraft({ model_fallback: value })} />
+        </Field>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {GLOBAL_ARRAY_FIELDS.map((field) => (
+          <Field key={field.key} label={t(field.labelKey)} hint={t(field.descriptionKey)}>
+            <Input
+              value={formatStringList(draft[field.key])}
+              onChange={(event) => updateDraft({ [field.key]: parseStringList(event.target.value) })}
+              placeholder={field.placeholder}
+              className="h-8 font-mono typography-meta"
+            />
+          </Field>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <RuntimeFallbackField
+          value={draft.runtime_fallback}
+          onChange={(value) => updateDraft({ runtime_fallback: value })}
+        />
+        {GLOBAL_OBJECT_FIELDS.map((field) => (
+          <JsonTextareaField
+            key={field.key}
+            label={t(field.labelKey)}
+            value={draft[field.key]}
+            onChange={(value) => updateDraft({ [field.key]: value })}
+            placeholder={`${t(field.descriptionKey)} ${field.placeholder}`}
+          />
+        ))}
       </div>
     </section>
   );
@@ -1204,6 +1468,7 @@ export const OpenAgentPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
       </div>
 
       <ContinuationHooksSection />
+      <OpenAgentGlobalSection />
 
       <OpenAgentGroupSection
         title={t('settings.openagent.group.mainAgents')}

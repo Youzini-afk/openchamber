@@ -37,6 +37,22 @@ export interface OpenAgentDraft {
   agents: OpenAgentOverrideRecord;
   categories: OpenAgentOverrideRecord;
   disabled_hooks: string[];
+  disabled_skills?: string[];
+  disabled_commands?: string[];
+  disabled_tools?: string[];
+  disabled_mcps?: string[];
+  disabled_providers?: string[];
+  mcp_env_allowlist?: string[];
+  default_mode?: string;
+  hashline_edit?: boolean;
+  model_fallback?: boolean;
+  runtime_fallback?: unknown;
+  background_task?: Record<string, unknown>;
+  team_mode?: Record<string, unknown>;
+  model_capabilities?: Record<string, unknown>;
+  experimental?: Record<string, unknown>;
+  skills?: Record<string, unknown>;
+  tmux?: Record<string, unknown>;
 }
 
 export interface OpenAgentConfigResponseLike {
@@ -44,6 +60,22 @@ export interface OpenAgentConfigResponseLike {
     agents?: OpenAgentOverrideRecord;
     categories?: OpenAgentOverrideRecord;
     disabled_hooks?: string[];
+    disabled_skills?: string[];
+    disabled_commands?: string[];
+    disabled_tools?: string[];
+    disabled_mcps?: string[];
+    disabled_providers?: string[];
+    mcp_env_allowlist?: string[];
+    default_mode?: string;
+    hashline_edit?: boolean;
+    model_fallback?: boolean;
+    runtime_fallback?: unknown;
+    background_task?: Record<string, unknown>;
+    team_mode?: Record<string, unknown>;
+    model_capabilities?: Record<string, unknown>;
+    experimental?: Record<string, unknown>;
+    skills?: Record<string, unknown>;
+    tmux?: Record<string, unknown>;
   };
   project?: {
     overriddenAgents?: string[];
@@ -69,6 +101,22 @@ export interface OpenAgentSavePayload {
   agents: OpenAgentOverrideRecord;
   categories: OpenAgentOverrideRecord;
   disabled_hooks: string[];
+  disabled_skills?: string[];
+  disabled_commands?: string[];
+  disabled_tools?: string[];
+  disabled_mcps?: string[];
+  disabled_providers?: string[];
+  mcp_env_allowlist?: string[];
+  default_mode?: string;
+  hashline_edit?: boolean;
+  model_fallback?: boolean;
+  runtime_fallback?: unknown;
+  background_task?: Record<string, unknown>;
+  team_mode?: Record<string, unknown>;
+  model_capabilities?: Record<string, unknown>;
+  experimental?: Record<string, unknown>;
+  skills?: Record<string, unknown>;
+  tmux?: Record<string, unknown>;
 }
 
 export interface OpenAgentDefinition {
@@ -110,6 +158,26 @@ export const OPEN_AGENT_CATEGORY_DEFINITIONS: OpenAgentDefinition[] = [
 ];
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? {}));
+export const OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS = [
+  'disabled_skills',
+  'disabled_commands',
+  'disabled_tools',
+  'disabled_mcps',
+  'disabled_providers',
+  'mcp_env_allowlist',
+] as const;
+
+export const OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS = [
+  'background_task',
+  'team_mode',
+  'model_capabilities',
+  'experimental',
+  'skills',
+  'tmux',
+] as const;
+
+export type OpenAgentTopLevelArrayKey = typeof OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS[number];
+export type OpenAgentTopLevelObjectKey = typeof OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS[number];
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => (
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -122,6 +190,41 @@ const normalizeString = (value: unknown): string => (
 export const normalizeDisabledHooks = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map(normalizeString).filter(Boolean))).sort();
+};
+
+export const normalizeStringList = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const entries = Array.from(new Set(value.map(normalizeString).filter(Boolean))).sort();
+  return entries.length > 0 ? entries : undefined;
+};
+
+const normalizePlainObject = (value: unknown): Record<string, unknown> | undefined => {
+  if (!isPlainObject(value)) return undefined;
+  return Object.keys(value).length > 0 ? cloneJson(value) : undefined;
+};
+
+const normalizeRuntimeFallback = (value: unknown): unknown => {
+  if (typeof value === 'boolean') return value;
+  return normalizePlainObject(value);
+};
+
+const addOpenAgentGlobalFields = (target: Partial<OpenAgentDraft>, source: Record<string, unknown>) => {
+  for (const key of OPEN_AGENT_TOP_LEVEL_ARRAY_KEYS) {
+    const value = normalizeStringList(source[key]);
+    if (value) target[key] = value;
+  }
+
+  for (const key of OPEN_AGENT_TOP_LEVEL_OBJECT_KEYS) {
+    const value = normalizePlainObject(source[key]);
+    if (value) target[key] = value;
+  }
+
+  const defaultMode = normalizeString(source.default_mode);
+  if (defaultMode) target.default_mode = defaultMode;
+  if (typeof source.hashline_edit === 'boolean') target.hashline_edit = source.hashline_edit;
+  if (typeof source.model_fallback === 'boolean') target.model_fallback = source.model_fallback;
+  const runtimeFallback = normalizeRuntimeFallback(source.runtime_fallback);
+  if (runtimeFallback !== undefined) target.runtime_fallback = runtimeFallback;
 };
 
 const normalizeFiniteNumber = (value: unknown): number | undefined => {
@@ -361,20 +464,25 @@ export function fallbackRowsToConfig(rows: OpenAgentFallbackRow[]): FallbackMode
 }
 
 export function createOpenAgentDraftFromConfig(config: OpenAgentConfigResponseLike | null | undefined): OpenAgentDraft {
-  return {
+  const draft: OpenAgentDraft = {
     agents: cloneJson(config?.raw?.agents ?? {}),
     categories: cloneJson(config?.raw?.categories ?? {}),
     disabled_hooks: normalizeDisabledHooks(config?.raw?.disabled_hooks),
   };
+  addOpenAgentGlobalFields(draft, config?.raw ?? {});
+  return draft;
 }
 
 export function buildOpenAgentSavePayload(expectedMtimeMs: number | null, draft: OpenAgentDraft): OpenAgentSavePayload {
-  return {
+  const payload: OpenAgentSavePayload = {
     expectedMtimeMs,
     agents: normalizeOpenAgentRecord('agent', draft.agents),
     categories: normalizeOpenAgentRecord('category', draft.categories),
     disabled_hooks: normalizeDisabledHooks(draft.disabled_hooks),
   };
+
+  addOpenAgentGlobalFields(payload, draft as unknown as Record<string, unknown>);
+  return payload;
 }
 
 function sortValue(value: unknown): unknown {
@@ -401,11 +509,13 @@ export function hasOpenAgentDraftChanges(initial: OpenAgentDraft, draft: OpenAge
     categories: normalizeOpenAgentRecord('category', initial.categories),
     disabled_hooks: normalizeDisabledHooks(initial.disabled_hooks),
   };
+  addOpenAgentGlobalFields(normalizedInitial, initial as unknown as Record<string, unknown>);
   const normalizedDraft = {
     agents: normalizeOpenAgentRecord('agent', draft.agents),
     categories: normalizeOpenAgentRecord('category', draft.categories),
     disabled_hooks: normalizeDisabledHooks(draft.disabled_hooks),
   };
+  addOpenAgentGlobalFields(normalizedDraft, draft as unknown as Record<string, unknown>);
   return stableStringifyOpenAgent(normalizedInitial) !== stableStringifyOpenAgent(normalizedDraft);
 }
 
