@@ -1,6 +1,11 @@
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
+import {
+  readEmbeddedSessionChatConfig,
+  shouldConsumeSessionUrlParams,
+  type EmbeddedSessionChatConfig,
+} from '@/lib/embeddedSessionChat';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
@@ -100,12 +105,6 @@ type AppProps = {
   apis: RuntimeAPIs;
 };
 
-type EmbeddedSessionChatConfig = {
-  sessionId: string;
-  directory: string | null;
-  readOnly: boolean;
-};
-
 type EmbeddedVisibilityPayload = {
   visible?: unknown;
 };
@@ -113,34 +112,6 @@ type EmbeddedVisibilityPayload = {
 const normalizeEmbeddedDirectory = (value: string | null | undefined): string => {
   if (!value) return '';
   return value.replace(/\\/g, '/').replace(/\/+$/g, '');
-};
-
-const readEmbeddedSessionChatConfig = (): EmbeddedSessionChatConfig | null => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('ocPanel') !== 'session-chat') {
-    return null;
-  }
-
-  const sessionIdRaw = params.get('sessionId');
-  const sessionId = typeof sessionIdRaw === 'string' ? sessionIdRaw.trim() : '';
-  if (!sessionId) {
-    return null;
-  }
-
-  const directoryRaw = params.get('directory');
-  const directory = typeof directoryRaw === 'string' && directoryRaw.trim().length > 0
-    ? directoryRaw.trim()
-    : null;
-
-  return {
-    sessionId,
-    directory,
-    readOnly: params.get('readOnly') === '1' || params.get('readOnly') === 'true',
-  };
 };
 
 const isMcpOAuthCallbackPath = (): boolean => {
@@ -196,7 +167,7 @@ const EmbeddedSessionChatContent: React.FC<{
     <>
       <SyncAppEffects embeddedBackgroundWorkEnabled={embeddedBackgroundWorkEnabled} />
       <OpenCodeUpdateToast />
-      <ChatView readOnly={embeddedSessionChat.readOnly} />
+      <ChatView readOnly={embeddedSessionChat.readOnly} autoOpenDraft={false} />
       <Toaster />
     </>
   );
@@ -608,6 +579,7 @@ function App({ apis }: AppProps) {
   React.useEffect(() => {
     if (typeof window === 'undefined' || !isInitialized) return;
     const params = new URLSearchParams(window.location.search);
+    if (!shouldConsumeSessionUrlParams(params)) return;
     const sessionId = (params.get('session') ?? params.get('sessionId') ?? '').trim();
     if (!sessionId) return;
     const directory = (params.get('directory') ?? '').trim() || undefined;
