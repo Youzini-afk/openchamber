@@ -32,6 +32,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
+import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 
@@ -134,6 +135,7 @@ interface ChatMessageProps {
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
     onUserAnimationConsumed?: (messageId: string) => void;
+    reviewTransferDirection?: ReviewTransferDirection | null;
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -148,6 +150,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     activeStreamingPhase = null,
     animateUserOnMount = false,
     onUserAnimationConsumed,
+    reviewTransferDirection = null,
 }) => {
     const { isMobile, isTablet, hasTouchInput } = useDeviceInfo();
     const alwaysShowMessageActions = isMobile || isTablet;
@@ -1135,6 +1138,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 turnGroupingContext={turnGroupingContext}
                                 errorMessage={assistantErrorText}
                                 errorVariant={assistantErrorVariant}
+                                reviewTransferDirection={reviewTransferDirection}
                             />
 
                         </div>
@@ -1168,6 +1172,7 @@ export default React.memo(ChatMessage, (prev, next) => {
         )
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.activeStreamingPhase === next.activeStreamingPhase
+        && prev.reviewTransferDirection === next.reviewTransferDirection
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed

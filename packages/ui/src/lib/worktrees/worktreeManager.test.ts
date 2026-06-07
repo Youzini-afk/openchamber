@@ -14,11 +14,14 @@ const createdWorktree = {
   name: 'feature',
   branch: 'feature',
   path: '/repo-feature',
+  directoryCreated: true as const,
+  bootstrapStatus: { status: 'pending' as const, error: null, updatedAt: 1 },
 };
 
 const sessionState = {
   availableWorktreesByProject: new Map<string, WorktreeMetadata[]>(),
   availableWorktrees: [] as WorktreeMetadata[],
+  worktreeMetadata: new Map<string, WorktreeMetadata>(),
 };
 
 mock.module('@/lib/openchamberConfig', () => ({
@@ -28,6 +31,14 @@ mock.module('@/lib/openchamberConfig', () => ({
 mock.module('@/lib/worktrees/worktreeStatus', () => ({
   invalidateResolvedProjectRootCache: mock(),
   resolveProjectRoot: (directory: string) => Promise.resolve(directory),
+}));
+
+mock.module('@/lib/gitApiHttp', () => ({
+  getGitWorktreeBootstrapStatus: mock(() => Promise.resolve({
+    status: 'ready' as const,
+    error: null,
+    updatedAt: 1,
+  })),
 }));
 
 mock.module('@/sync/session-ui-store', () => ({
@@ -57,6 +68,7 @@ mock.module('@/lib/gitApi', () => ({
 }));
 
 const { createWorktree, listProjectWorktrees } = await import('./worktreeManager');
+const { clearWorktreeBootstrapState } = await import('./worktreeBootstrap');
 
 const waitForListCallCount = async (count: number): Promise<void> => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -74,6 +86,8 @@ describe('worktreeManager list invalidation', () => {
     listResolvers.length = 0;
     sessionState.availableWorktreesByProject = new Map();
     sessionState.availableWorktrees = [];
+    sessionState.worktreeMetadata = new Map();
+    clearWorktreeBootstrapState('/repo-feature');
   });
 
   test('retries an in-flight list when a worktree is created before it resolves', async () => {
@@ -97,5 +111,18 @@ describe('worktreeManager list invalidation', () => {
 
     expect(listCalls).toEqual(['/repo', '/repo']);
     expect(result.map((entry) => entry.path)).toEqual(['/repo-feature']);
+  });
+
+  test('marks fast-created worktrees pending until bootstrap settles', async () => {
+    const metadata = await createWorktree({ id: 'project-1', path: '/repo' }, {
+      preferredName: 'feature',
+      mode: 'new',
+      branchName: 'feature',
+      worktreeName: 'feature',
+      returnAfterDirectoryCreated: true,
+    });
+
+    expect(metadata.worktreeStatus).toBe('pending');
+    expect(sessionState.availableWorktrees[0]?.worktreeStatus).toBe('pending');
   });
 });
