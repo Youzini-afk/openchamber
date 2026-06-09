@@ -17,12 +17,6 @@ mock.module("@/lib/opencode/client", () => ({
   },
 }))
 
-mock.module("@/lib/configSync", () => ({
-  emitConfigChange: () => {},
-  scopeMatches: () => false,
-  subscribeToConfigChanges: () => () => {},
-}))
-
 mock.module("@/lib/configUpdate", () => ({
   startConfigUpdate: (message: string) => {
     configMessages.push(message)
@@ -32,22 +26,6 @@ mock.module("@/lib/configUpdate", () => ({
   },
   updateConfigUpdateMessage: (message: string) => {
     configMessages.push(message)
-  },
-}))
-
-mock.module("@/stores/useConfigStore", () => ({
-  useConfigStore: {
-    getState: () => ({
-      invalidateModelMetadataCache: () => {},
-      loadProviders: ({ directory }: { directory?: string } = {}) => {
-        loadProviderDirectories.push(directory)
-        return Promise.resolve(true)
-      },
-      loadAgents: (options?: { directory?: string; force?: boolean; source?: string }) => {
-        loadAgentOptions.push(options)
-        return Promise.resolve(true)
-      },
-    }),
   },
 }))
 
@@ -77,11 +55,30 @@ mock.module("@/stores/useSkillsStore", () => ({
 }))
 
 describe("refreshAfterOpenCodeRestart", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     configMessages.length = 0
     dispatchedEvents.length = 0
     loadProviderDirectories.length = 0
     loadAgentOptions.length = 0
+    const { useConfigStore } = await import("@/stores/useConfigStore")
+    useConfigStore.setState({
+      activeDirectoryKey: "/test/project",
+      providers: [{ id: "provider", name: "provider", source: "config", env: [], options: {}, models: [] }],
+      agents: [{ name: "agent", mode: "primary", permission: [], options: {} }],
+      directoryScoped: {},
+      invalidateModelMetadataCache: () => {},
+      invalidateProviderCache: (directory?: string | null) => {
+        loadProviderDirectories.push(directory ?? undefined)
+      },
+      loadProviders: (options?: { directory?: string | null; force?: boolean; source?: string }) => {
+        loadProviderDirectories.push(options?.directory ?? undefined)
+        return Promise.resolve()
+      },
+      loadAgents: (options?: { directory?: string | null; force?: boolean; source?: string }) => {
+        loadAgentOptions.push(options ? { ...options, directory: options.directory ?? undefined } : undefined)
+        return Promise.resolve(true)
+      },
+    })
   })
 
   test("signals the realtime pipeline to reconnect during config refresh", async () => {

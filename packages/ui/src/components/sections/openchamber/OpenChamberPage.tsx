@@ -141,6 +141,7 @@ const VisualSectionContent: React.FC = () => {
         ...(!isVSCode ? ['weekStart' as const] : []),
         'fontSize',
         'terminalFontSize',
+        'fileEditorKeymap',
         'spacing',
         'inputBarOffset',
         ...(!isVSCode ? ['terminalQuickKeys' as const] : []),

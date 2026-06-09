@@ -64,7 +64,7 @@ type GitHubPullRequestMergeInput = {
 
 type GitHubPullRequestMergeResult = { merged: boolean; message?: string };
 
-const parseGitHubRemoteUrl = (raw: string): GitHubRepoRef | null => {
+export const parseGitHubRemoteUrl = (raw: string): GitHubRepoRef | null => {
   const value = raw.trim();
   if (!value) return null;
 

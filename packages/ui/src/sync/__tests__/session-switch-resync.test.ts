@@ -33,13 +33,6 @@ mock.module("@/stores/permissionStore", () => ({
   },
 }))
 
-mock.module("@/stores/useConfigStore", () => ({
-  useConfigStore: {
-    getState: () => ({ isConnected: true, hasEverConnected: true }),
-    setState: () => undefined,
-  },
-}))
-
 mock.module("@/stores/useTodosPersistStore", () => ({
   useTodosPersistStore: { getState: () => ({}) },
 }))
@@ -51,6 +44,7 @@ mock.module("@/components/ui", () => ({
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
 import { resyncBlockingRequestsForDirectory } from "../blocking-requests-resync"
+import { useConfigStore } from "@/stores/useConfigStore"
 
 function buildQuestion(overrides: Partial<QuestionRequest> = {}): QuestionRequest {
   return {
@@ -85,6 +79,7 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
 
 describe("resyncBlockingRequestsForDirectory", () => {
   beforeEach(() => {
+    useConfigStore.setState({ isConnected: true, hasEverConnected: true })
     listPendingQuestionsCalls.length = 0
     listPendingPermissionsCalls.length = 0
     pendingQuestionsResponse = []

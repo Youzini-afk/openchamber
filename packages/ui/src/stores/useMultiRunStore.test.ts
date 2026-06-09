@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
+import { useGlobalSessionsStore } from './useGlobalSessionsStore';
 
-const upsertedSessions: Session[] = [];
 const registeredDirectories: Array<{ sessionID: string; directory: string }> = [];
 const ensureChildCalls: Array<{ directory: string; bootstrap?: boolean }> = [];
 const worktreeMetadataCalls: Array<{ sessionId: string; path: string }> = [];
@@ -112,26 +112,6 @@ mock.module('./useSnippetsStore', () => ({
   },
 }));
 
-mock.module('./useGlobalSessionsStore', () => ({
-  useGlobalSessionsStore: {
-    setState: () => undefined,
-    getState: () => ({
-      activeSessions: [],
-      archivedSessions: [],
-      sessionsByDirectory: new Map(),
-      hasLoaded: false,
-      status: 'idle',
-      upsertSession: (session: Session) => {
-        upsertedSessions.push(session);
-      },
-      removeSessions: () => undefined,
-      archiveSessions: () => undefined,
-      applySnapshot: () => undefined,
-      loadSessions: () => Promise.resolve({ activeSessions: [], archivedSessions: [] }),
-    }),
-  },
-}));
-
 mock.module('@/sync/sync-refs', () => ({
   registerSessionDirectory: (sessionID: string, directory: string) => {
     registeredDirectories.push({ sessionID, directory });
@@ -161,7 +141,6 @@ const { useMultiRunStore } = await import('./useMultiRunStore');
 
 describe('useMultiRunStore', () => {
   beforeEach(() => {
-    upsertedSessions.length = 0;
     registeredDirectories.length = 0;
     ensureChildCalls.length = 0;
     worktreeMetadataCalls.length = 0;
@@ -172,6 +151,13 @@ describe('useMultiRunStore', () => {
     childState.limit = 5;
     currentDirectory = '/repo';
     useMultiRunStore.setState({ isLoading: false, error: null });
+    useGlobalSessionsStore.setState({
+      activeSessions: [],
+      archivedSessions: [],
+      sessionsByDirectory: new Map(),
+      hasLoaded: false,
+      status: 'idle',
+    });
   });
 
   test('registers created sessions without waiting for a sidebar refresh', async () => {
@@ -185,7 +171,7 @@ describe('useMultiRunStore', () => {
     });
 
     expect(result?.sessionIds).toEqual(['ses_multirun']);
-    expect(upsertedSessions.map((session) => session.id)).toEqual(['ses_multirun']);
+    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual(['ses_multirun']);
     expect(registeredDirectories).toEqual([{ sessionID: 'ses_multirun', directory: '/repo' }]);
     expect(ensureChildCalls).toEqual([{ directory: '/repo', bootstrap: false }]);
     expect(childState.session.map((session) => session.id)).toEqual(['ses_multirun']);

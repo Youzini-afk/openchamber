@@ -71,12 +71,24 @@ const getAgentsCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_AGENTS_CACHE_KEY;
 };
 
+const invalidateAgentsLoadCache = (directory: string | null = getConfigDirectory()) => {
+  agentsLastLoadedAt.delete(getAgentsCacheKey(directory));
+};
+
 const buildAgentsSignature = (agents: Agent[]): string => {
   return agents
     .map((agent) => {
       const extended = agent as AgentWithExtras;
       return [
         agent.name,
+        extended.mode ?? '',
+        typeof extended.model === 'object' && extended.model
+          ? `${extended.model.providerID ?? ''}/${extended.model.modelID ?? ''}`
+          : String(extended.model ?? ''),
+        String(extended.temperature ?? ''),
+        String((extended as { topP?: unknown; top_p?: unknown }).topP ?? (extended as { topP?: unknown; top_p?: unknown }).top_p ?? ''),
+        extended.prompt ?? '',
+        JSON.stringify(extended.permission ?? null),
         extended.scope ?? '',
         extended.group ?? '',
         extended.description ?? '',
@@ -96,7 +108,7 @@ export interface AgentConfig {
   model?: string | null;
   temperature?: number;
   top_p?: number;
-  prompt?: string;
+  prompt?: string | null;
   mode?: "primary" | "subagent" | "all";
   permission?: PermissionConfig | null;
 
@@ -366,13 +378,14 @@ export const useAgentsStore = create<AgentsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? true;
+            invalidateAgentsLoadCache(configDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
-                mode: "active",
+                mode: "projects",
               });
               return true;
             }
@@ -427,13 +440,14 @@ export const useAgentsStore = create<AgentsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? true;
+            invalidateAgentsLoadCache(configDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
-                mode: "active",
+                mode: "projects",
               });
               return true;
             }
@@ -473,13 +487,14 @@ export const useAgentsStore = create<AgentsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? true;
+            invalidateAgentsLoadCache(configDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshAfterOpenCodeRestart({
                 message: payload?.message,
                 delayMs: payload?.reloadDelayMs,
                 scopes: ["agents"],
-                mode: "active",
+                mode: "projects",
               });
               return true;
             }
@@ -745,9 +760,10 @@ async function performConfigRefresh(options: {
         await sleep(Math.min(300 + attempt * 250, 1500));
       }
     }
-  } catch {
+  } catch (error) {
     updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
     await sleep(1500);
+    throw error;
   } finally {
     finishConfigUpdate();
   }

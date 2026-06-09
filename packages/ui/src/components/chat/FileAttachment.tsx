@@ -6,9 +6,11 @@ import { useUIStore } from '@/stores/useUIStore';
 import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
+import { isDrawioFile } from '@/lib/toolHelpers';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
+import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { useDeviceInfo } from '@/lib/device';
 
@@ -556,6 +558,7 @@ interface FilePart {
   url?: string;
   filename?: string;
   size?: number;
+  source?: Record<string, unknown>;
 }
 
 const GITHUB_ISSUE_LINK_MIME = 'application/vnd.github.issue-link';
@@ -578,6 +581,7 @@ interface MessageFilesDisplayProps {
 }
 
 export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }: MessageFilesDisplayProps) => {
+  const { t } = useI18n();
 
   const fileItems = files.filter(f => f.type === 'file' && (f.mime || f.url));
 
@@ -817,6 +821,41 @@ export const MessageFilesDisplay = memo(({ files, onShowPopup, compact = false }
               </TooltipTrigger>
               <TooltipContent>
                 <p>{fileName}{sizeText ? ` (${sizeText})` : ''}</p>
+              </TooltipContent>
+            </Tooltip>
+          );
+        }
+
+        const source = file.source;
+        const sourceType = typeof source?.type === 'string' ? source.type : undefined;
+        const sourcePath = source && typeof (source as Record<string, unknown>).path === 'string' ? (source as Record<string, unknown>).path as string : undefined;
+        const filePath = sourceType === 'file' && sourcePath ? sourcePath : (file.url || '');
+        const isDrawio = filePath && isDrawioFile(filePath);
+
+        if (isDrawio) {
+          return (
+            <Tooltip key={file.url || `${fileName}-${index}`}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    useUIStore.getState().navigateToDiagram(filePath);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 p-2 rounded-lg border border-border/40 bg-muted/10 hover:bg-muted/20 transition-colors text-left cursor-pointer",
+                    compact ? "text-xs" : "text-sm"
+                  )}
+                >
+                  <Icon name="file" className={cn("text-muted-foreground shrink-0", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{fileName}</p>
+                    <p className="text-xs text-status-info">{t('chat.fileAttachment.openInDiagram')}</p>
+                  </div>
+                  <Icon name="external-link" className={cn("text-muted-foreground shrink-0", compact ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('chat.fileAttachment.openInDiagram')}</p>
               </TooltipContent>
             </Tooltip>
           );

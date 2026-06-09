@@ -193,6 +193,10 @@ const getSkillsCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_SKILLS_CACHE_KEY;
 };
 
+export const invalidateSkillsLoadCache = (directory: string | null = getCurrentDirectory()) => {
+  skillsLastLoadedAt.delete(getSkillsCacheKey(directory));
+};
+
 const MAX_HEALTH_WAIT_MS = 20000;
 const FAST_HEALTH_POLL_INTERVAL_MS = 300;
 const FAST_HEALTH_POLL_ATTEMPTS = 4;
@@ -351,6 +355,7 @@ export const useSkillsStore = create<SkillsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? false;
+            invalidateSkillsLoadCache(currentDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshSkillsAfterOpenCodeRestart({
@@ -401,6 +406,7 @@ export const useSkillsStore = create<SkillsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? false;
+            invalidateSkillsLoadCache(currentDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshSkillsAfterOpenCodeRestart({
@@ -442,6 +448,7 @@ export const useSkillsStore = create<SkillsStore>()(
             }
 
             const needsReload = payload?.requiresReload ?? false;
+            invalidateSkillsLoadCache(currentDirectory);
             if (needsReload) {
               requiresReload = true;
               await refreshSkillsAfterOpenCodeRestart({
@@ -603,13 +610,15 @@ export async function refreshSkillsAfterOpenCodeRestart(options?: { message?: st
     await waitForOpenCodeConnection(options?.delayMs);
     updateConfigUpdateMessage("Refreshing skills…");
     const skillsStore = useSkillsStore.getState();
+    invalidateSkillsLoadCache();
     const loaded = await skillsStore.loadSkills();
     if (loaded) {
       emitConfigChange("skills", { source: CONFIG_EVENT_SOURCE });
     }
-  } catch {
+  } catch (error) {
     updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
     await sleep(1500);
+    throw error;
   } finally {
     finishConfigUpdate();
   }

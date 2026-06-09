@@ -1803,7 +1803,7 @@ onCommand('showSettingsPage', (payload) => {
 // and refreshes config/data. Triggered by the "Restart API Connection" command.
 onCommand('reloadOpenCode', () => {
   void import('@openchamber/ui/stores/useAgentsStore').then(({ reloadOpenCodeConfiguration }) => {
-    void reloadOpenCodeConfiguration();
+    void reloadOpenCodeConfiguration().catch(() => undefined);
   });
 });
 

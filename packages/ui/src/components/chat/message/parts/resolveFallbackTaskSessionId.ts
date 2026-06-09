@@ -64,19 +64,19 @@ export function resolveFallbackTaskSessionId(params: ResolveFallbackParams): str
     return undefined;
   }
 
-  const windowMs = hasRetried ? TASK_SESSION_MATCH_WINDOW_WIDE_MS : TASK_SESSION_MATCH_WINDOW_MS;
-  const latestAllowed = taskStartTime + windowMs;
-
-  // Filter candidate sessions: parentID matches and created shortly after task start.
-  const candidates = sessions.filter((session) => {
+  // Filter candidate sessions: parentID matches the current session.
+  let candidates = sessions.filter((session) => {
     if (!session?.id || session.parentID !== parentSessionId) {
       return false;
     }
+    return true;
+  });
+
+  const windowMs = hasRetried ? TASK_SESSION_MATCH_WINDOW_WIDE_MS : TASK_SESSION_MATCH_WINDOW_MS;
+  const latestAllowed = taskStartTime + windowMs;
+  candidates = candidates.filter((session) => {
     const created = session.time?.created;
-    if (typeof created !== 'number') {
-      return false;
-    }
-    return created >= taskStartTime && created <= latestAllowed;
+    return typeof created === 'number' && created >= taskStartTime && created <= latestAllowed;
   });
 
   if (candidates.length === 0) {

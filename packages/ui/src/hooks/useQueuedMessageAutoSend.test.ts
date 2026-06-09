@@ -7,14 +7,6 @@ const sendMessageCalls: unknown[][] = [];
 
 const getVisibleAgentsMock = mock(() => visibleAgents);
 
-mock.module('@/stores/useConfigStore', () => ({
-  useConfigStore: {
-    getState: () => ({
-      getVisibleAgents: getVisibleAgentsMock,
-    }),
-  },
-}));
-
 mock.module('@/sync/session-ui-store', () => ({
   routeMessage: mock(() => Promise.resolve()),
   useSessionUIStore: {
@@ -34,6 +26,7 @@ import {
   sendQueuedAutoSendPayload,
   shouldDispatchQueuedAutoSend,
 } from './useQueuedMessageAutoSend';
+import { useConfigStore } from '@/stores/useConfigStore';
 
 describe('shouldDispatchQueuedAutoSend', () => {
   test('dispatches only after an active session becomes idle', () => {
@@ -51,6 +44,9 @@ describe('buildQueuedAutoSendPayload', () => {
   beforeEach(() => {
     visibleAgents = [];
     sendMessageCalls.length = 0;
+    useConfigStore.setState({
+      getVisibleAgents: getVisibleAgentsMock,
+    });
   });
 
   test('returns only the first queued message for auto-send', () => {

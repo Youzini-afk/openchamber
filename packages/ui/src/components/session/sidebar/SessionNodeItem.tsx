@@ -19,7 +19,6 @@ import {
   RiChat4Line,
   RiCheckLine,
   RiCloseLine,
-  RiDeleteBinLine,
   RiDownloadLine,
   RiErrorWarningLine,
   RiFileCopyLine,
@@ -844,7 +843,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
       <DropdownMenuSeparator />
       <DropdownMenuItem className="text-destructive focus:text-destructive [&>svg]:mr-1" onClick={() => handleDeleteSession(session, { archivedBucket })}>
-        <RiDeleteBinLine className="mr-1 h-4 w-4" />
+        <Icon name={archivedBucket ? "delete-bin" : "archive"} className="mr-1 h-4 w-4" />
         {archivedBucket ? t('sessions.sidebar.bulkActions.delete') : t('sessions.sidebar.bulkActions.archive')}
       </DropdownMenuItem>
     </DropdownMenuContent>

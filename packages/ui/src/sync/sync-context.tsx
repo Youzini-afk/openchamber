@@ -197,6 +197,7 @@ const ACTIVE_SESSION_WATCHDOG_INTERVAL_MS = 5_000
 const ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS = 5_000
 const ACTIVE_SESSION_STALE_EVENT_MS = 20_000
 const ACTIVE_SESSION_FULL_RESYNC_COOLDOWN_MS = 15_000
+const CHILD_SESSION_DISCOVERY_INTERVAL_MS = 15_000
 const requestSignature = (items: Array<{ id: string }> | undefined): string => {
   if (!items || items.length === 0) return ""
   return items
@@ -1609,6 +1610,7 @@ export function SyncProvider(props: {
   const lastActiveEventAtByDirectoryRef = useRef(new Map<string, number>())
   const lastStatusPollAtByDirectoryRef = useRef(new Map<string, number>())
   const lastFullResyncAtByDirectoryRef = useRef(new Map<string, number>())
+  const lastChildDiscoveryAtByDirectoryRef = useRef(new Map<string, number>())
   const resyncingDirectoriesRef = useRef(new Set<string>())
   const statusPollingDirectoriesRef = useRef(new Set<string>())
   const pipelineReconnectRef = useRef<((reason?: string) => void) | null>(null)
@@ -1669,7 +1671,7 @@ export function SyncProvider(props: {
               providers: globalState.providers,
             },
             loadSessions: (dir) => retry(async () => {
-              const sessions = (await listGlobalSessionPages(props.sdk, {
+              const rootSessions = (await listGlobalSessionPages(props.sdk, {
                 directory: dir,
                 archived: false,
                 roots: true,
@@ -1677,6 +1679,27 @@ export function SyncProvider(props: {
               }))
                 .filter((s) => !!s?.id)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+
+              let allSessions: typeof rootSessions = []
+              try {
+                const allResult = await props.sdk.session.list({
+                  directory: dir,
+                  limit: 200,
+                })
+                const allError = (allResult as { error?: unknown }).error
+                if (!allError) {
+                  allSessions = ((allResult as { data?: unknown }).data ?? []) as typeof rootSessions
+                }
+              } catch {
+                // Child session loading is best-effort; root sessions remain authoritative.
+              }
+
+              const rootIds = new Set(rootSessions.map((s: { id: string }) => s.id))
+              const childSessions = allSessions.filter((s: { id: string; parentID?: string | null }) => (
+                s?.id && !rootIds.has(s.id) && Boolean(s.parentID)
+              ))
+              const sessions = rootSessions.concat(childSessions)
+
               // Race guard: if the list came back empty but event pipeline
               // already populated the store, don't clobber. OpenCode can
               // answer HTTP with empty sessions while WS delivers session
@@ -1688,7 +1711,7 @@ export function SyncProvider(props: {
                 )
                 return
               }
-              store.setState({ session: sessions, sessionTotal: sessions.length, limit: Math.max(sessions.length, 50) })
+              store.setState({ session: sessions, sessionTotal: rootSessions.length, limit: Math.max(sessions.length, 50) })
               ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
             }),
           })
@@ -1817,6 +1840,56 @@ export function SyncProvider(props: {
     let stopped = false
     let running = false
 
+    const discoverChildSessions = async (
+      directory: string,
+      store: StoreApi<DirectoryStore>,
+      parentSessionIds: string[],
+    ) => {
+      if (parentSessionIds.length === 0) return
+      try {
+        const scopedClient = opencodeClient.getScopedSdkClient(directory)
+        const result = await scopedClient.session.list({ directory, limit: 200 })
+        const allSessions = ((result as { data?: unknown }).data ?? []) as Session[]
+        const state = store.getState()
+        const existingIds = new Set(state.session.map((s) => s.id))
+        const parentIdSet = new Set(parentSessionIds)
+        const newChildSessions: Session[] = []
+
+        for (const session of allSessions) {
+          const parentID = (session as { parentID?: string | null })?.parentID
+          if (
+            session?.id
+            && !existingIds.has(session.id)
+            && parentID
+            && parentIdSet.has(parentID)
+          ) {
+            newChildSessions.push(session)
+          }
+        }
+
+        if (newChildSessions.length === 0) return
+
+        const parentIdsForMaterialization = new Set<string>()
+        for (const session of newChildSessions) {
+          const parentID = (session as { parentID?: string | null }).parentID
+          if (parentID) parentIdsForMaterialization.add(parentID)
+        }
+
+        store.setState((state: DirectoryStore) => {
+          const sessions = [...state.session, ...newChildSessions].sort((a, b) => (
+            a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+          ))
+          return { session: sessions, limit: Math.max(sessions.length, 50) }
+        })
+
+        for (const parentID of parentIdsForMaterialization) {
+          enqueueSessionMaterialization(directory, parentID, childStores)
+        }
+      } catch {
+        // Best-effort: the next watchdog tick or SSE reconnect will retry.
+      }
+    }
+
     const pollDirectoryStatuses = async (
       directory: string,
       store: StoreApi<DirectoryStore>,
@@ -1854,6 +1927,7 @@ export function SyncProvider(props: {
               lastActiveEventAtByDirectoryRef.current.delete(directory)
               lastStatusPollAtByDirectoryRef.current.delete(directory)
               lastFullResyncAtByDirectoryRef.current.delete(directory)
+              lastChildDiscoveryAtByDirectoryRef.current.delete(directory)
               continue
             }
 
@@ -1875,6 +1949,12 @@ export function SyncProvider(props: {
             ) {
               pipelineReconnectRef.current?.("active_stream_stale")
               triggerDirectoryResync(directory)
+            }
+
+            const lastChildDiscoveryAt = lastChildDiscoveryAtByDirectoryRef.current.get(directory) ?? 0
+            if (now - lastChildDiscoveryAt >= CHILD_SESSION_DISCOVERY_INTERVAL_MS) {
+              lastChildDiscoveryAtByDirectoryRef.current.set(directory, now)
+              void discoverChildSessions(directory, store, candidateSessionIds)
             }
           }
         })

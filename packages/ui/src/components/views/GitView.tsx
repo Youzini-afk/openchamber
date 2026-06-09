@@ -1762,16 +1762,23 @@ export const GitView: React.FC<GitViewProps> = ({
     [currentDirectory, refreshStatusAndBranches, git, t]
   );
 
-  const handleRevertAll = React.useCallback(
-    async (paths: string[]) => {
-      if (!currentDirectory || paths.length === 0 || isRevertingAll) {
+  const handleRevertPaths = React.useCallback(
+    async (paths: string[], setGlobalReverting: boolean, scope: 'all' | 'working' = 'all') => {
+      if (!currentDirectory || paths.length === 0) {
         return;
       }
 
       const uniquePaths = Array.from(new Set(paths));
+      if (isRevertingAll || uniquePaths.some((path) => revertingPaths.has(path))) {
+        return;
+      }
+
       const stagedPaths = new Set(stagedChangeEntries.map((entry) => entry.path));
-      const touchesStagedIndex = uniquePaths.some((path) => stagedPaths.has(path));
-      setIsRevertingAll(true);
+      const touchesStagedIndex = scope === 'all' && uniquePaths.some((path) => stagedPaths.has(path));
+
+      if (setGlobalReverting) {
+        setIsRevertingAll(true);
+      }
       setRevertingPaths((previous) => {
         const next = new Set(previous);
         uniquePaths.forEach((path) => next.add(path));
@@ -1783,7 +1790,7 @@ export const GitView: React.FC<GitViewProps> = ({
       try {
         await Promise.all(uniquePaths.map(async (filePath) => {
           try {
-            await git.revertGitFile(currentDirectory, filePath);
+            await git.revertGitFile(currentDirectory, filePath, { scope });
           } catch (err) {
             failed.push({
               path: filePath,
@@ -1820,10 +1827,26 @@ export const GitView: React.FC<GitViewProps> = ({
           uniquePaths.forEach((path) => next.delete(path));
           return next;
         });
-        setIsRevertingAll(false);
+        if (setGlobalReverting) {
+          setIsRevertingAll(false);
+        }
       }
     },
-    [bumpIndexRevision, currentDirectory, git, isRevertingAll, refreshStatusAndBranches, stagedChangeEntries, t]
+    [bumpIndexRevision, currentDirectory, git, isRevertingAll, refreshStatusAndBranches, revertingPaths, stagedChangeEntries, t]
+  );
+
+  const handleRevertAll = React.useCallback(
+    async (paths: string[]) => {
+      await handleRevertPaths(paths, true);
+    },
+    [handleRevertPaths]
+  );
+
+  const handleRevertDirectory = React.useCallback(
+    async (paths: string[]) => {
+      await handleRevertPaths(paths, false, 'working');
+    },
+    [handleRevertPaths]
   );
 
   const handleViewChangeDiff = React.useCallback((path: string, staged: boolean) => {
@@ -2524,6 +2547,7 @@ export const GitView: React.FC<GitViewProps> = ({
                           isRevertingAll={isRevertingAll}
                           onVisiblePathsChange={setVisibleChangePaths}
                           onRevertAll={handleRevertAll}
+                          onRevertDirectory={handleRevertDirectory}
                         />
                       </div>
 
