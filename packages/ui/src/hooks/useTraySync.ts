@@ -34,11 +34,11 @@ import type { QuestionRequest } from '@/types/question';
 const TRAY_ACTION_EVENT = 'openchamber:tray-action';
 // Event-driven updates do the real work; this is just a slow safety net.
 const POLL_INTERVAL_MS = 30_000;
-const FLUSH_DEBOUNCE_MS = 750;
+const FLUSH_DEBOUNCE_MS = 300;
 // Pull the full cross-project session list periodically. SSE keeps the active
 // directory instant; this catches sessions created in directories this client
 // never opened (other worktrees, other projects, the TUI, …).
-const GLOBAL_REFRESH_MS = 120_000;
+const GLOBAL_REFRESH_MS = 60_000;
 const MAX_SESSIONS = 20;
 
 type TraySessionStatus = 'idle' | 'busy' | 'retry';
