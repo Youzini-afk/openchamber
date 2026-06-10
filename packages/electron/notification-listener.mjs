@@ -10,6 +10,7 @@ const BACKOFF_FACTOR = 2;
 export class NotificationListener {
   #serverUrl;
   #password;
+  #clientToken;
   #onNotification;
   #logger;
   #sessionCookie;
@@ -19,9 +20,10 @@ export class NotificationListener {
   #stopped;
   #connected;
 
-  constructor({ serverUrl, password, onNotification, logger }) {
+  constructor({ serverUrl, password, clientToken, onNotification, logger }) {
     this.#serverUrl = serverUrl.replace(/\/+$/, '');
     this.#password = password || '';
+    this.#clientToken = typeof clientToken === 'string' ? clientToken.trim() : '';
     this.#onNotification = onNotification;
     this.#logger = logger || log;
     this.#sessionCookie = '';
@@ -36,8 +38,9 @@ export class NotificationListener {
     return this.#connected;
   }
 
-  updateAuth({ password }) {
+  updateAuth({ password, clientToken }) {
     this.#password = password || '';
+    this.#clientToken = typeof clientToken === 'string' ? clientToken.trim() : '';
     this.#sessionCookie = '';
   }
 
@@ -67,7 +70,7 @@ export class NotificationListener {
     if (this.#stopped) return;
 
     try {
-      if (!this.#sessionCookie && this.#password) {
+      if (!this.#clientToken && !this.#sessionCookie && this.#password) {
         await this.#authenticate();
       }
       this.#openSseStream();
@@ -127,6 +130,9 @@ export class NotificationListener {
     if (this.#sessionCookie) {
       headers.Cookie = this.#sessionCookie;
     }
+    if (this.#clientToken) {
+      headers.Authorization = `Bearer ${this.#clientToken}`;
+    }
 
     const req = mod.request(url, {
       method: 'GET',
@@ -134,7 +140,7 @@ export class NotificationListener {
       rejectUnauthorized: false,
     }, (res) => {
       if (res.statusCode === 401 || res.statusCode === 403) {
-        this.#logger.warn('[notification-listener] auth rejected, clearing session');
+        this.#logger.warn('[notification-listener] auth rejected, clearing session cookie');
         this.#sessionCookie = '';
         res.resume();
         this.#scheduleReconnect();
@@ -205,6 +211,8 @@ export class NotificationListener {
         title: props.title || 'OpenChamber',
         body: props.body || '',
         sessionId: props.sessionId || null,
+        directory: props.directory || null,
+        tag: props.tag || '',
         requireHidden: Boolean(props.requireHidden ?? props.require_hidden),
         kind: props.kind || '',
       });

@@ -1,13 +1,18 @@
 import { EventEmitter } from 'node:events';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.fn();
 
 const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
+const originalOpencodeConfigContent = process.env.OPENCODE_CONFIG_CONTENT;
 const originalFetch = globalThis.fetch;
 const originalPath = process.env.PATH;
+
+beforeEach(() => {
+  delete process.env.OPENCODE_CONFIG_CONTENT;
+});
 
 afterEach(() => {
   spawnMock.mockReset();
@@ -16,6 +21,12 @@ afterEach(() => {
     process.env.OPENCODE_BINARY = originalOpencodeBinary;
   } else {
     delete process.env.OPENCODE_BINARY;
+  }
+
+  if (typeof originalOpencodeConfigContent === 'string') {
+    process.env.OPENCODE_CONFIG_CONTENT = originalOpencodeConfigContent;
+  } else {
+    delete process.env.OPENCODE_CONFIG_CONTENT;
   }
 
   if (typeof originalPath === 'string') {

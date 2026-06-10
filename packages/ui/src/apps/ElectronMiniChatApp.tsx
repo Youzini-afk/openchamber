@@ -141,6 +141,25 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     sessionBootstrappedRef.current = true;
   }, [config, currentSessionId, sessions, setCurrentSession, sync]);
 
+  // Switch this mini-chat to another session in place (e.g. picked from the
+  // tray while this window was focused) instead of spawning a new window.
+  React.useEffect(() => {
+    const onOpenSession = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string; directory?: string }>).detail;
+      const sessionId = typeof detail?.sessionId === 'string' ? detail.sessionId.trim() : '';
+      if (!sessionId) return;
+      if (useSessionUIStore.getState().currentSessionId === sessionId) return;
+      const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
+        ? detail.directory.trim()
+        : (sessions.find((entry) => entry.id === sessionId) as { directory?: string | null } | undefined)?.directory ?? null;
+      void sync.ensureSessionRenderable(sessionId);
+      setCurrentSession(sessionId, directory);
+      sessionBootstrappedRef.current = true;
+    };
+    window.addEventListener('openchamber:open-session', onOpenSession);
+    return () => window.removeEventListener('openchamber:open-session', onOpenSession);
+  }, [sessions, setCurrentSession, sync]);
+
   React.useEffect(() => {
     if (config.mode !== 'draft' || draftOpen || currentSessionId) return;
     openNewSessionDraft({
@@ -188,6 +207,29 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     };
   }, [projects]);
 
+  // Dismiss the HTML splash (see mini-chat.html) once the real content is ready,
+  // so the window doesn't flash through white/connecting states. Fades out when
+  // the target session is active (or the draft is open); a grace timer ensures
+  // it never hangs (e.g. an unavailable session renders its own state).
+  const splashDismissedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (splashDismissedRef.current || !isInitialized) return;
+    const dismiss = () => {
+      if (splashDismissedRef.current) return;
+      splashDismissedRef.current = true;
+      const el = typeof document !== 'undefined' ? document.getElementById('initial-loading') : null;
+      if (el) {
+        el.classList.add('fade-out');
+        window.setTimeout(() => el.remove(), 300);
+      }
+    };
+    const ready = config.mode === 'session'
+      ? currentSessionId === config.sessionId
+      : draftOpen;
+    const timer = window.setTimeout(dismiss, ready ? 100 : 1500);
+    return () => window.clearTimeout(timer);
+  }, [isInitialized, config.mode, config.sessionId, currentSessionId, draftOpen]);
+
   return null;
 };
 
@@ -199,6 +241,12 @@ const MiniChatPresencePublisher: React.FC = () => {
     if (!currentSessionId || !currentDirectory || typeof BroadcastChannel === 'undefined') return;
 
     const channel = new BroadcastChannel(MINI_CHAT_PRESENCE_CHANNEL);
+    const isViewed = () => (
+      typeof document !== 'undefined'
+      && document.visibilityState === 'visible'
+      && typeof document.hasFocus === 'function'
+      && document.hasFocus()
+    );
     const postPresence = (viewed: boolean) => {
       channel.postMessage({
         type: 'mini-chat-session-presence',
@@ -207,14 +255,21 @@ const MiniChatPresencePublisher: React.FC = () => {
         viewed,
       });
     };
+    const postCurrentPresence = () => postPresence(isViewed());
 
-    postPresence(true);
-    const interval = window.setInterval(() => postPresence(true), 5_000);
+    postCurrentPresence();
+    const interval = window.setInterval(postCurrentPresence, 5_000);
+    window.addEventListener('focus', postCurrentPresence);
+    window.addEventListener('blur', postCurrentPresence);
+    document.addEventListener('visibilitychange', postCurrentPresence);
     const handleBeforeUnload = () => postPresence(false);
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
       window.clearInterval(interval);
+      window.removeEventListener('focus', postCurrentPresence);
+      window.removeEventListener('blur', postCurrentPresence);
+      document.removeEventListener('visibilitychange', postCurrentPresence);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       postPresence(false);
       channel.close();

@@ -401,9 +401,18 @@ export function setExternallyViewedSession(directory: string, sessionId: string,
   externallyViewedSessions.set(key, Date.now() + EXTERNAL_VIEW_TTL_MS)
 }
 
+function isAppSurfaceFocused(): boolean {
+  if (typeof document === "undefined") return true
+  if (document.visibilityState !== "visible") return false
+  if (typeof document.hasFocus === "function") return document.hasFocus()
+  return true
+}
+
 function isViewedInCurrentSession(directory: string, sessionId?: string): boolean {
   if (!sessionId) return false
-  if (_activeDirectory && _activeSession && directory === _activeDirectory && sessionId === _activeSession) return true
+  if (_activeDirectory && _activeSession && directory === _activeDirectory && sessionId === _activeSession) {
+    return isAppSurfaceFocused()
+  }
   pruneExternallyViewedSessions()
   return externallyViewedSessions.has(viewedSessionKey(directory, sessionId))
 }
