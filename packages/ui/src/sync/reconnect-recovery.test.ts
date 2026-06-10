@@ -28,7 +28,7 @@ function createPart(id: string, messageID: string): Part {
 }
 
 describe("getReconnectCandidateSessionIds", () => {
-  test("includes non-idle, incomplete assistant, and parent sessions", () => {
+  test("includes non-idle and incomplete assistant sessions", () => {
     const busyStatus = { type: "busy" } as SessionStatus
 
     expect(getReconnectCandidateSessionIds({
@@ -42,7 +42,52 @@ describe("getReconnectCandidateSessionIds", () => {
       message: {
         incomplete: [createAssistantMessage("m-1", "incomplete")],
       },
-    }).sort()).toEqual(["busy", "incomplete", "parent"])
+    }).sort()).toEqual(["busy", "incomplete"])
+  })
+
+  test("includes parent sessions only when a child session is active", () => {
+    const busyStatus = { type: "busy" } as SessionStatus
+
+    expect(getReconnectCandidateSessionIds({
+      session: [
+        createSession("child", { parentID: "parent" }),
+        createSession("historical-child", { parentID: "historical-parent" }),
+        createSession("parent"),
+        createSession("historical-parent"),
+      ],
+      session_status: { child: busyStatus },
+    }).sort()).toEqual(["child", "parent"])
+  })
+
+  test("prioritizes viewed sessions and active child parents when capped", () => {
+    const busyStatus = { type: "busy" } as SessionStatus
+    const busySessions = Array.from({ length: 20 }, (_, index) => createSession(`busy-${index}`))
+
+    expect(getReconnectCandidateSessionIds({
+      session: [
+        ...busySessions,
+        createSession("active-child", { parentID: "active-parent" }),
+        createSession("active-parent"),
+        createSession("viewed"),
+      ],
+      session_status: Object.fromEntries([
+        ...busySessions.map((session) => [session.id, busyStatus]),
+        ["active-child", busyStatus],
+        ["viewed", { type: "idle" } as SessionStatus],
+      ]),
+    }, {
+      directory: "/repo",
+      viewedSession: { directory: "/repo", sessionId: "viewed" },
+      maxCandidates: 4,
+    })).toEqual(["viewed", "active-child", "active-parent", "busy-0"])
+
+    expect(getReconnectCandidateSessionIds({
+      session: [
+        createSession("active-child", { parentID: "active-parent" }),
+        createSession("active-parent"),
+      ],
+      session_status: { "active-child": busyStatus },
+    }, { maxCandidates: 2 })).toEqual(["active-child", "active-parent"])
   })
 
   test("includes the currently viewed session even when it looks idle and complete", () => {

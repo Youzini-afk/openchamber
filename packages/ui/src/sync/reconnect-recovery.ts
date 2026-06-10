@@ -17,13 +17,16 @@ export type ViewedSessionMaterializationTarget = {
 type ReconnectCandidateOptions = {
   directory?: string
   viewedSession?: ViewedSessionMaterializationTarget | null
+  maxCandidates?: number
 }
 
 export function getReconnectCandidateSessionIds(state: ReconnectMaterializationState, options?: ReconnectCandidateOptions) {
-  const ids = new Set<string>()
+  const viewedIds: string[] = []
+  const nonIdleIds: string[] = []
+  const incompleteIds: string[] = []
 
   for (const [sessionId, status] of Object.entries(state.session_status ?? {})) {
-    if (status && status.type !== "idle") ids.add(sessionId)
+    if (status && status.type !== "idle") nonIdleIds.push(sessionId)
   }
 
   for (const [sessionId, messages] of Object.entries(state.message ?? {})) {
@@ -33,21 +36,10 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
       && lastMessage.role === "assistant"
       && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== "number"
     ) {
-      ids.add(sessionId)
+      incompleteIds.push(sessionId)
     } else if (!getSessionMaterializationStatus({ message: state.message ?? {}, part: state.part ?? {} }, sessionId).renderable) {
-      ids.add(sessionId)
+      incompleteIds.push(sessionId)
     }
-  }
-
-  const parentIds = new Set<string>()
-  for (const session of state.session) {
-    const parentId = (session as Session & { parentID?: string | null }).parentID
-    if (parentId) {
-      parentIds.add(parentId)
-    }
-  }
-  for (const pid of parentIds) {
-    ids.add(pid)
   }
 
   const viewedSession = options?.viewedSession
@@ -58,9 +50,55 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
       || Object.hasOwn(state.message ?? {}, sessionId)
 
     if (sessionExists) {
-      ids.add(sessionId)
+      viewedIds.push(sessionId)
     }
   }
 
-  return Array.from(ids)
+  const selectedChildIds = new Set([...viewedIds, ...nonIdleIds, ...incompleteIds])
+  const parentByChildId = new Map<string, string>()
+
+  // Parent session snapshots only need recovery when a child session is itself
+  // active/incomplete/viewed. Adding every historical child parent makes the
+  // watchdog poll and resync old parent sessions forever in large workspaces.
+  for (const session of state.session) {
+    if (!session?.id || !selectedChildIds.has(session.id)) continue
+    const parentId = (session as Session & { parentID?: string | null }).parentID
+    if (parentId) parentByChildId.set(session.id, parentId)
+  }
+
+  const maxCandidates = options?.maxCandidates ?? 20
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (sessionId: string): boolean => {
+    if (!sessionId || seen.has(sessionId) || out.length >= maxCandidates) return false
+    seen.add(sessionId)
+    out.push(sessionId)
+    return true
+  }
+  const addCandidateWithParent = (sessionId: string) => {
+    if (!sessionId || seen.has(sessionId)) return
+    const parentId = parentByChildId.get(sessionId)
+    if (parentId && !seen.has(parentId)) {
+      const requiredSlots = 1 + (seen.has(sessionId) ? 0 : 1)
+      if (out.length + requiredSlots > maxCandidates) return
+      if (!add(sessionId)) return
+      add(parentId)
+      return
+    }
+    add(sessionId)
+  }
+
+  const childIds = new Set(parentByChildId.keys())
+  const nonIdleChildIds = nonIdleIds.filter((sessionId) => childIds.has(sessionId))
+  const nonIdleRootIds = nonIdleIds.filter((sessionId) => !childIds.has(sessionId))
+  const incompleteChildIds = incompleteIds.filter((sessionId) => childIds.has(sessionId))
+  const incompleteRootIds = incompleteIds.filter((sessionId) => !childIds.has(sessionId))
+
+  for (const sessionId of viewedIds) addCandidateWithParent(sessionId)
+  for (const sessionId of nonIdleChildIds) addCandidateWithParent(sessionId)
+  for (const sessionId of nonIdleRootIds) addCandidateWithParent(sessionId)
+  for (const sessionId of incompleteChildIds) addCandidateWithParent(sessionId)
+  for (const sessionId of incompleteRootIds) addCandidateWithParent(sessionId)
+
+  return out
 }

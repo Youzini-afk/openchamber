@@ -111,6 +111,10 @@ const PASTE_LINK_URL_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
 const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 500;
 const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
+const COMPOSER_HIGHLIGHT_MAX_LENGTH = 10_000;
+const COMPOSER_CODE_HIGHLIGHT_MAX_LENGTH = 4_000;
+const MARKDOWN_HIGHLIGHT_TRIGGER_PATTERN = /[`*_~>#\-+=[\]()!|]/;
+const MARKDOWN_LINE_HIGHLIGHT_TRIGGER_PATTERN = /(^|\n)\s{0,3}(#{1,6}\s|>|[-*+]\s|\d{1,9}[.)]\s)/;
 const VS_CODE_DROP_DATA_TYPES = [
     'CodeFiles',
     'codefiles',
@@ -169,6 +173,16 @@ const collectInlineSkillMentions = (text: string, skillNames: Set<string>): stri
     }
     return mentions;
 };
+
+const shouldTokenizeComposerMarkdown = (text: string): boolean => (
+    text.length <= COMPOSER_HIGHLIGHT_MAX_LENGTH
+    && (MARKDOWN_HIGHLIGHT_TRIGGER_PATTERN.test(text) || MARKDOWN_LINE_HIGHLIGHT_TRIGGER_PATTERN.test(text))
+);
+
+const shouldHighlightComposerCode = (text: string): boolean => (
+    text.length <= COMPOSER_CODE_HIGHLIGHT_MAX_LENGTH
+    && (text.includes('```') || text.includes('~~~'))
+);
 
 const buildSkillMentionInstruction = (skillNames: string[]): string | null => {
     if (skillNames.length === 0) return null;
@@ -979,7 +993,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const [draftMessage, setDraftMessage] = React.useState(''); // Preserves input when entering history mode
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const cursorPosRef = React.useRef(0);
-    const previousMessageLengthRef = React.useRef(message.length);
+    const previousTextareaLayoutRef = React.useRef({ length: message.length, lineBreaks: 0, metricsKey: '' });
     const dropZoneRef = React.useRef<HTMLDivElement>(null);
     const dragEnterCountRef = React.useRef(0);
     const suppressNextFileDropTextInsertRef = React.useRef(false);
@@ -997,6 +1011,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const lastPersistedDraftRef = React.useRef<Map<string, string>>(new Map());
     const currentSessionIdForDraftRef = React.useRef<string | null>(null);
     const pendingPastedAttachmentFilenamesRef = React.useRef<Set<string>>(new Set());
+    const textareaMetricsRef = React.useRef<{ key: string; lineHeight: number; paddingTotal: number } | null>(null);
 
     // TODO: port sendMessage to session-actions (complex — creates sessions, handles attachments, etc.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1083,6 +1098,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const isDesktopExpanded = isExpandedInput && !isMobile;
     const chatInputRadius = 'var(--radius-xl)';
     const useCompactChatPlaceholder = isMobile || isNarrowComposer;
+    const textareaMetricsKey = `${currentTheme.metadata.variant}:${inputMode}:${isDesktopExpanded ? 'expanded' : 'inline'}:${isMobile ? 'mobile' : 'desktop'}:${isNarrowComposer ? 'narrow' : 'wide'}`;
 
     React.useEffect(() => {
         const element = dropZoneRef.current;
@@ -1229,14 +1245,19 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!message || inputMode === 'shell') {
             return null;
         }
+        const includeMarkdown = shouldTokenizeComposerMarkdown(message);
+        const includeCode = shouldHighlightComposerCode(message);
         const ranges = [
-            ...tokenizeMarkdown(message),
-            ...highlightFencedCode(message),
+            ...(includeMarkdown ? tokenizeMarkdown(message) : []),
+            ...(includeCode ? highlightFencedCode(message) : []),
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
             ...composerSnippetRanges,
             ...attachmentCitationRanges,
         ];
+        if (ranges.length === 0) {
+            return null;
+        }
         return buildHighlightParts(message, ranges);
     }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, inputMode, message]);
 
@@ -2653,17 +2674,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             textarea.style.height = 'auto';
         }
 
-        const view = textarea.ownerDocument?.defaultView;
-        const computedStyle = view ? view.getComputedStyle(textarea) : null;
-        const lineHeight = computedStyle ? parseFloat(computedStyle.lineHeight) : NaN;
-        const paddingTop = computedStyle ? parseFloat(computedStyle.paddingTop) : NaN;
-        const paddingBottom = computedStyle ? parseFloat(computedStyle.paddingBottom) : NaN;
         const fallbackLineHeight = 22;
         const fallbackPadding = 16;
-        const paddingTotal = Number.isNaN(paddingTop) || Number.isNaN(paddingBottom)
-            ? fallbackPadding
-            : paddingTop + paddingBottom;
-        const targetLineHeight = Number.isNaN(lineHeight) ? fallbackLineHeight : lineHeight;
+        let metrics = textareaMetricsRef.current;
+        if (!metrics || metrics.key !== textareaMetricsKey) {
+            const view = textarea.ownerDocument?.defaultView;
+            const computedStyle = view ? view.getComputedStyle(textarea) : null;
+            const lineHeight = computedStyle ? parseFloat(computedStyle.lineHeight) : NaN;
+            const paddingTop = computedStyle ? parseFloat(computedStyle.paddingTop) : NaN;
+            const paddingBottom = computedStyle ? parseFloat(computedStyle.paddingBottom) : NaN;
+            metrics = {
+                key: textareaMetricsKey,
+                lineHeight: Number.isNaN(lineHeight) ? fallbackLineHeight : lineHeight,
+                paddingTotal: Number.isNaN(paddingTop) || Number.isNaN(paddingBottom)
+                    ? fallbackPadding
+                    : paddingTop + paddingBottom,
+            };
+            textareaMetricsRef.current = metrics;
+        }
+        const paddingTotal = metrics.paddingTotal;
+        const targetLineHeight = metrics.lineHeight;
         const maxHeight = targetLineHeight * MAX_VISIBLE_TEXTAREA_LINES + paddingTotal;
         const scrollHeight = textarea.scrollHeight || textarea.offsetHeight;
         const nextHeight = Math.min(scrollHeight, maxHeight);
@@ -2680,13 +2710,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             }
             return { height: nextHeight, maxHeight };
         });
-    }, [isDesktopExpanded]);
+    }, [isDesktopExpanded, textareaMetricsKey]);
 
     React.useLayoutEffect(() => {
-        const allowShrink = message.length < previousMessageLengthRef.current;
-        previousMessageLengthRef.current = message.length;
+        const lineBreaks = (message.match(/\n/g) ?? []).length;
+        const previousLayout = previousTextareaLayoutRef.current;
+        const allowShrink = message.length <= previousLayout.length
+            || lineBreaks !== previousLayout.lineBreaks
+            || textareaMetricsKey !== previousLayout.metricsKey;
+        previousTextareaLayoutRef.current = { length: message.length, lineBreaks, metricsKey: textareaMetricsKey };
         adjustTextareaHeight({ allowShrink });
-    }, [adjustTextareaHeight, message, isMobile]);
+    }, [adjustTextareaHeight, message, isMobile, textareaMetricsKey]);
 
     const updateAutocompleteState = React.useCallback((value: string, cursorPosition: number) => {
         if (inputMode === 'shell') {
@@ -2862,7 +2896,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             const nextCursor = Math.max(0, cursorPosition - 1);
             setInputMode('shell');
             setMessage(shellCommand);
-            adjustTextareaHeight();
             setShowCommandAutocomplete(false);
             setShowSkillAutocomplete(false);
             setShowFileMention(false);
@@ -2876,7 +2909,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
 
         setMessage(value);
-        adjustTextareaHeight();
         updateAutocompleteState(value, cursorPosition);
     };
 
