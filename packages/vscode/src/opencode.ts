@@ -8,6 +8,7 @@ import { spawnSync } from 'child_process';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { normalizeWindowsDriveLetter } from './pathUtils';
+import { buildManagedOpenCodeSpawnEnv } from './opencodeManagedEnv';
 
 const READY_CHECK_TIMEOUT_MS = 30000;
 const WINDOWS_EXECUTABLE_EXTENSIONS = (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM')
@@ -610,7 +611,7 @@ async function spawnManagedOpenCodeServer(
   const args = ['serve', '--hostname', '127.0.0.1', '--port', String(port)];
   const child = spawn(binary, args, {
     cwd: workingDirectory,
-    env: { ...process.env },
+    env: buildManagedOpenCodeSpawnEnv(process.env),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     shell: shouldUseWindowsShell(binary),

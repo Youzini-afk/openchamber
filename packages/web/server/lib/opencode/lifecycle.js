@@ -1,5 +1,6 @@
 import { spawn as importedSpawn, spawnSync as importedSpawnSync } from 'node:child_process';
 import net from 'node:net';
+import { withOpenAIStreamNormalizerEnv } from './openai-stream-normalizer.js';
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -466,18 +467,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       : {};
 
     try {
+      const managedEnv = {
+        ...shellEnv,
+        ...process.env,
+        PATH: envPath,
+        OPENCODE_SERVER_PASSWORD: openCodePassword,
+      };
+
       const serverInstance = await createManagedOpenCodeServerProcess({
         hostname: env.ENV_CONFIGURED_OPENCODE_HOSTNAME,
         port: spawnPort,
         timeout: 30000,
         cwd: state.openCodeWorkingDirectory,
         shellEnvKeysCount: Object.keys(shellEnv).length,
-        env: {
-          ...shellEnv,
-          ...process.env,
-          PATH: envPath,
-          OPENCODE_SERVER_PASSWORD: openCodePassword,
-        },
+        env: state.useWslForOpencode ? managedEnv : withOpenAIStreamNormalizerEnv(managedEnv),
       });
 
       if (!serverInstance || !serverInstance.url) {

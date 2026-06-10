@@ -124,6 +124,31 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
+    expect(options.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER).toBe('1');
+    expect(JSON.parse(options.env.OPENCODE_CONFIG_CONTENT).plugin[0]).toMatch(/openai-stream-normalizer-plugin\.mjs$/);
+
+    await server.close();
+  });
+
+  it('preserves existing OPENCODE_CONFIG_CONTENT when injecting the managed stream normalizer', async () => {
+    delete process.env.OPENCODE_BINARY;
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ provider: { test: {} }, plugin: ['existing-plugin'] });
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+    const inlineConfig = JSON.parse(options.env.OPENCODE_CONFIG_CONTENT);
+
+    expect(inlineConfig.provider).toEqual({ test: {} });
+    expect(inlineConfig.plugin[0]).toBe('existing-plugin');
+    expect(inlineConfig.plugin[1]).toMatch(/openai-stream-normalizer-plugin\.mjs$/);
 
     await server.close();
   });
