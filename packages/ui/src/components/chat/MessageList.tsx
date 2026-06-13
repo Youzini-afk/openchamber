@@ -20,7 +20,7 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { getReviewTransferDirection, type ReviewTransferDirection } from '@/lib/reviewFlow';
 import { getOriginalSessionID, getReviewSessionID } from '@/lib/sessionReviewMetadata';
 
-const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = Number.POSITIVE_INFINITY;
+const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const MESSAGE_LIST_OVERSCAN = 6;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
@@ -405,7 +405,7 @@ interface MessageListProps {
         confirmedAt?: number;
         fallbackTimestamp?: number;
     } | null;
-    retryOverlayFallbackMessage: string;
+    retryOverlayFallbackMessage?: string;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     isLoadingOlder: boolean;
@@ -418,6 +418,7 @@ export interface MessageListHandle {
     scrollToMessageId: (messageId: string, options?: { behavior?: ScrollBehavior }) => boolean;
     captureViewportAnchor: () => { messageId: string; offsetTop: number } | null;
     restoreViewportAnchor: (anchor: { messageId: string; offsetTop: number }) => boolean;
+    scrollToBottom: () => void;
 }
 
 type RenderEntry =
@@ -1129,7 +1130,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     activeStreamingMessageId = null,
     activeStreamingPhase = null,
     retryOverlay = null,
-    retryOverlayFallbackMessage,
+    retryOverlayFallbackMessage = 'Quota limit reached. Retrying automatically.',
     onMessageContentChange,
     getAnimationHandlers,
     isLoadingOlder,
@@ -1250,7 +1251,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         });
     }), [baseDisplayMessages, retryOverlay, retryOverlayFallbackMessage]);
 
-    const { projection, staticTurns, streamingTurn, trailingUngroupedMessageId } = useTurnRecords(displayMessages, {
+    const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         sessionKey,
         showTextJustificationActivity: chatRenderMode === 'sorted',
         showTurnChangedFiles,
@@ -1286,9 +1287,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             if (!staticEntryUngroupedIds.has(message.info.id)) {
                 return;
             }
-            if (message.info.id === trailingUngroupedMessageId) {
-                return;
-            }
 
             orderedEntries.push({
                 kind: 'ungrouped',
@@ -1300,7 +1298,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         });
 
         return orderedEntries;
-    }), [projection.lastTurnId, staticEntryMessages, staticEntryUngroupedIds, staticTurns, trailingUngroupedMessageId]);
+    }), [projection.lastTurnId, staticEntryMessages, staticEntryUngroupedIds, staticTurns]);
 
     const trailingStreamingEntry = React.useMemo<RenderEntry | undefined>(() => {
         if (streamingTurn) {
@@ -1312,12 +1310,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             } satisfies RenderEntry;
         }
 
-        if (!trailingUngroupedMessageId) {
+        if (projection.ungroupedMessageIds.size === 0) {
             return undefined;
         }
 
         const lastMessage = displayMessages[displayMessages.length - 1];
-        if (!lastMessage || lastMessage.info.id !== trailingUngroupedMessageId) {
+        if (!lastMessage || !projection.ungroupedMessageIds.has(lastMessage.info.id)) {
             return undefined;
         }
 
@@ -1328,7 +1326,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             previousMessage: displayMessages.length > 1 ? displayMessages[displayMessages.length - 2] : undefined,
             nextMessage: undefined,
         } satisfies RenderEntry;
-    }, [displayMessages, projection.lastTurnId, streamingTurn, trailingUngroupedMessageId]);
+    }, [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, streamingTurn]);
 
     if (trailingStreamingEntry) {
         streamPerfCount('ui.message_list.render.streaming');
@@ -1336,8 +1334,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const historyEntries = staticRenderEntries;
     const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
-    const [historyWidthPx, setHistoryWidthPx] = React.useState<number | null>(null);
-    const historyMeasurementScopeKey = historyWidthPx === null ? 'width:unknown' : `width:${Math.round(historyWidthPx)}`;
 
     const previousHistoryLenRef = React.useRef(historyEntries.length);
     const previousFirstEntryKeyRef = React.useRef(historyEntries[0]?.key);
@@ -1378,54 +1374,48 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         scrollEl.scrollTop += prependedHeight;
     });
 
+    const [historyVirtualRows, setHistoryVirtualRows] = React.useState<VirtualItem[]>(EMPTY_VIRTUAL_ROWS);
+
+    const historyVirtualizer = useVirtualizer({
+        count: historyEntries.length,
+        getScrollElement: resolveScrollContainer,
+        estimateSize: (index) => estimateHistoryEntryHeight(historyEntries[index]),
+        getItemKey: (index) => historyEntries[index]?.key ?? String(index),
+        measureElement: measureVirtualElement,
+        useAnimationFrameWithResizeObserver: true,
+        overscan: MESSAGE_LIST_OVERSCAN,
+        enabled: shouldVirtualizeHistory,
+        onChange: () => {
+            setHistoryVirtualRows(historyVirtualizer.getVirtualItems());
+        },
+    });
+
     React.useLayoutEffect(() => {
         const historyContent = historyContentRef.current;
         if (!historyContent || !shouldVirtualizeHistory) {
-            setHistoryWidthPx((previous) => (previous === null ? previous : null));
             return;
         }
-
-        const updateWidth = (nextWidth: number) => {
-            setHistoryWidthPx((previous) => {
-                if (previous !== null && Math.abs(previous - nextWidth) < 0.5) {
-                    return previous;
-                }
-                return nextWidth;
-            });
-        };
-
-        updateWidth(historyContent.getBoundingClientRect().width);
 
         if (typeof ResizeObserver === 'undefined') {
             return;
         }
 
         const observer = new ResizeObserver(() => {
-            updateWidth(historyContent.getBoundingClientRect().width);
+            historyVirtualizer.measure();
         });
         observer.observe(historyContent);
         return () => {
             observer.disconnect();
         };
-    }, [historyEntries.length, shouldVirtualizeHistory]);
-
-    const historyVirtualizer = useVirtualizer({
-        count: historyEntries.length,
-        getScrollElement: resolveScrollContainer,
-        estimateSize: (index) => estimateHistoryEntryHeight(historyEntries[index]),
-        getItemKey: (index) => `${historyMeasurementScopeKey}:${historyEntries[index]?.key ?? index}`,
-        measureElement: measureVirtualElement,
-        useAnimationFrameWithResizeObserver: true,
-        overscan: MESSAGE_LIST_OVERSCAN,
-        enabled: shouldVirtualizeHistory,
-    });
+    }, [historyEntries.length, shouldVirtualizeHistory, historyVirtualizer]);
 
     React.useEffect(() => {
-        if (!shouldVirtualizeHistory || historyWidthPx === null) {
+        if (!shouldVirtualizeHistory) {
             return;
         }
+
         historyVirtualizer.measure();
-    }, [historyVirtualizer, historyWidthPx, shouldVirtualizeHistory]);
+    }, [historyEntries.length, historyVirtualizer, shouldVirtualizeHistory]);
 
     const scheduleVirtualMeasure = React.useCallback(() => {
         if (!shouldVirtualizeHistory) {
@@ -1452,10 +1442,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         };
     }, []);
 
-    const historyVirtualRows = React.useMemo(
-        () => (shouldVirtualizeHistory ? historyVirtualizer.getVirtualItems() : EMPTY_VIRTUAL_ROWS),
-        [historyVirtualizer, shouldVirtualizeHistory],
-    );
+    // Sync virtual rows on initial mount and when virtualization toggles.
+    // Ongoing updates are handled by the virtualizer's onChange callback.
+    React.useLayoutEffect(() => {
+        setHistoryVirtualRows(
+            shouldVirtualizeHistory ? historyVirtualizer.getVirtualItems() : EMPTY_VIRTUAL_ROWS,
+        );
+    }, [shouldVirtualizeHistory, historyVirtualizer]);
 
     const allEntries = React.useMemo(() => {
         return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
@@ -1696,6 +1689,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
                 return applyAnchor();
             },
+
+            scrollToBottom: () => {
+                if (shouldVirtualizeHistory && historyEntries.length > 0) {
+                    historyVirtualizer.scrollToIndex(historyEntries.length - 1, { align: 'end' });
+                    return;
+                }
+                const container = resolveScrollContainer();
+                if (!container) return;
+                container.scrollTop = container.scrollHeight;
+            },
         };
 
         if (typeof ref === 'function') {
@@ -1710,7 +1713,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return () => {
             objectRef.current = null;
         };
-    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, trailingStreamingEntry, turnIndexMap, ref]);
+    }, [findMessageElement, historyEntries.length, historyVirtualizer, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, shouldVirtualizeHistory, trailingStreamingEntry, turnIndexMap, ref]);
 
     const disableFadeIn = false;
 

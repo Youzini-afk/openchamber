@@ -13,6 +13,8 @@ import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { createTray, createTrayController } from './tray.mjs';
 import { NotificationListener } from './notification-listener.mjs';
+import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
+import { mintOutsideFileGrant } from '@openchamber/web/server/lib/fs/routes.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -1093,8 +1095,13 @@ const spawnLocalServer = async () => {
   // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
   // warning and persists the flag via /api/config/settings.
   const lanAccessEnabled = settings.desktopLanAccessEnabled === true;
-  const bindHost = lanAccessEnabled ? LAN_BIND_HOST : LOOPBACK_BIND_HOST;
   const desktopUiPassword = typeof settings.desktopUiPassword === 'string' ? settings.desktopUiPassword.trim() : '';
+  const lanAccessBlockedByMissingPassword = lanAccessEnabled && !desktopUiPassword;
+  const effectiveLanAccessEnabled = lanAccessEnabled && !lanAccessBlockedByMissingPassword;
+  const bindHost = effectiveLanAccessEnabled ? LAN_BIND_HOST : LOOPBACK_BIND_HOST;
+  if (lanAccessBlockedByMissingPassword) {
+    log.warn('[desktop] LAN access was requested without a desktop UI password; starting on loopback only.');
+  }
 
   // Probe before starting the server — main() in the server module sets up a
   // lot of global state before binding, and calling it twice after a listen
@@ -1116,8 +1123,20 @@ const spawnLocalServer = async () => {
   // set before the first import. After this point, the same env is used by
   // both the Electron main and the server running inside it.
   process.env.OPENCHAMBER_HOST = bindHost;
+  process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_ACTIVE = effectiveLanAccessEnabled ? 'true' : 'false';
+  if (lanAccessBlockedByMissingPassword) {
+    process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON = 'missing-password';
+  } else {
+    delete process.env.OPENCHAMBER_DESKTOP_LAN_ACCESS_BLOCKED_REASON;
+  }
   process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
   process.env.OPENCHAMBER_RUNTIME = 'desktop';
+  // OpenCode uses process cwd as a fallback directory; app userData would make
+  // packaged desktop look like a separate empty workspace.
+  process.env.OPENCHAMBER_OPENCODE_CWD = resolveManagedOpenCodeCwd({
+    env: process.env,
+    homedir: () => os.homedir(),
+  });
   process.env.OPENCHAMBER_DESKTOP_NOTIFY = 'true';
   if (desktopUiPassword) {
     process.env.OPENCHAMBER_UI_PASSWORD = desktopUiPassword;
@@ -4173,8 +4192,43 @@ ipcMain.handle('openchamber:dialog:open', async (event, options) => {
     ].filter(Boolean),
   });
   if (result.canceled) return null;
+  const grantFilePath = async (filePath) => {
+    if (options?.directory) return { path: filePath };
+    try {
+      const grant = await mintOutsideFileGrant(filePath, { scopes: ['stat', 'read', 'raw'], fsPromises: fsp, path });
+      return { path: grant.path, outsideFileGrant: grant.outsideFileGrant, expiresAt: grant.expiresAt };
+    } catch (error) {
+      log.warn(`[ipc] failed to mint outside file grant: ${error?.message || error}`);
+      return { path: filePath };
+    }
+  };
+  if (options?.returnGrant) {
+    if (options?.multiple) {
+      return Promise.all(result.filePaths.map((filePath) => grantFilePath(filePath)));
+    }
+    return result.filePaths[0] ? grantFilePath(result.filePaths[0]) : null;
+  }
   if (options?.multiple) return result.filePaths;
   return result.filePaths[0] || null;
+});
+
+ipcMain.handle('openchamber:file:grant-existing', async (event, filePath) => {
+  if (!isLocalSender(event.sender)) {
+    log.warn(`[ipc] rejected file:grant-existing from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
+    throw new Error('IPC not available for this origin');
+  }
+
+  const targetPath = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!targetPath) {
+    throw new Error('Path is required');
+  }
+
+  const grant = await mintOutsideFileGrant(targetPath, { scopes: ['stat', 'read', 'raw'], fsPromises: fsp, path });
+  return {
+    path: grant.path,
+    outsideFileGrant: grant.outsideFileGrant,
+    expiresAt: grant.expiresAt,
+  };
 });
 
 // --- macOS menu bar (status bar) ---------------------------------------------

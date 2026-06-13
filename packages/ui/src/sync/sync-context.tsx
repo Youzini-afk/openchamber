@@ -33,6 +33,7 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { toast } from "@/components/ui"
 import { appendNotification } from "./notification-store"
+import { applyGlobalSessionStatusEvent } from "./global-session-status"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
@@ -44,9 +45,9 @@ import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-mem
 import { getRuntimeKey } from "@/lib/runtime-switch"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import { setSessionPrefetch } from "./session-prefetch-cache"
-import { getMessagesBeforeRevert } from "./revert-filter"
 import { listGlobalSessionPages } from "@/stores/globalSessions"
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
+import { getMessagesBeforeRevert } from "./revert-filter"
 
 // ---------------------------------------------------------------------------
 // Context
@@ -213,19 +214,6 @@ const syncSnapshotSignature = (value: unknown): string => JSON.stringify(value)
 
 function haveEquivalentSyncSnapshots(left: unknown, right: unknown): boolean {
   return syncSnapshotSignature(left) === syncSnapshotSignature(right)
-}
-
-type RevertSession = Session & { revert?: { messageID?: string } }
-
-function getSessionRevertMessageID(session: Session | undefined): string | undefined {
-  const messageID = (session as RevertSession | undefined)?.revert?.messageID
-  return typeof messageID === "string" && messageID.length > 0 ? messageID : undefined
-}
-
-function preserveLocalRevertMarker(nextSession: Session, currentSession: Session | undefined): Session {
-  if ((nextSession as RevertSession).revert !== undefined) return nextSession
-  const currentRevert = (currentSession as RevertSession | undefined)?.revert
-  return currentRevert?.messageID ? { ...nextSession, revert: currentRevert } as Session : nextSession
 }
 
 // ---------------------------------------------------------------------------
@@ -402,18 +390,21 @@ export function setExternallyViewedSession(directory: string, sessionId: string,
   externallyViewedSessions.set(key, Date.now() + EXTERNAL_VIEW_TTL_MS)
 }
 
-function isAppSurfaceFocused(): boolean {
-  if (typeof document === "undefined") return true
-  if (document.visibilityState !== "visible") return false
-  if (typeof document.hasFocus === "function") return document.hasFocus()
-  return true
+// The window must actually be focused for the active session to count as
+// "seen": if the app is minimized or in the background, a turn finishing in the
+// currently-selected session should still raise an unseen marker (in the tray
+// and in-app), since the user isn't looking at it.
+function isWindowFocused(): boolean {
+  return typeof document !== "undefined" && document.hasFocus()
 }
 
 function isViewedInCurrentSession(directory: string, sessionId?: string): boolean {
   if (!sessionId) return false
-  if (_activeDirectory && _activeSession && directory === _activeDirectory && sessionId === _activeSession) {
-    return isAppSurfaceFocused()
-  }
+  if (
+    _activeDirectory && _activeSession
+    && directory === _activeDirectory && sessionId === _activeSession
+    && isWindowFocused()
+  ) return true
   pruneExternallyViewedSessions()
   return externallyViewedSessions.has(viewedSessionKey(directory, sessionId))
 }
@@ -469,7 +460,6 @@ function getChildDiscoveryParentSessionIds(directory: string, state: DirectorySt
   return getReconnectCandidateSessionIds(state, {
     directory,
     viewedSession: getViewedSessionMaterializationTarget(directory),
-    maxCandidates: Number.MAX_SAFE_INTEGER,
   })
 }
 
@@ -601,17 +591,7 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "session.deleted"
   ) {
     const sessionID = props.sessionID
-    if (typeof sessionID === "string" && sessionID.length > 0) {
-      return sessionID
-    }
-    if (event.type === "session.deleted") {
-      const info = props.info
-      if (info && typeof info === "object") {
-        const id = (info as { id?: unknown }).id
-        return typeof id === "string" && id.length > 0 ? id : null
-      }
-    }
-    return null
+    return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
   }
 
   if (event.type === "message.part.updated") {
@@ -668,44 +648,21 @@ const getSessionInfoFromPayload = (event: Event): Session | null => {
   return stripSessionDiffSnapshots(session as Session)
 }
 
-const applyDeletedSessionEventToGlobalSessions = (payload: Event) => {
-  if (payload.type !== "session.deleted") {
-    return
-  }
-
-  const sessionID = getSessionIdFromPayload(payload) ?? getSessionInfoFromPayload(payload)?.id
-  if (sessionID) {
-    useGlobalSessionsStore.getState().removeSessions([sessionID])
-  }
-}
-
-const withResolvedDirectoryMetadata = (session: Session, directory: string): Session => {
-  const record = session as Session & {
-    directory?: string | null
-    project?: { worktree?: string | null } | null
-  }
-  if (record.directory || record.project?.worktree || !directory || directory === "global") {
-    return session
-  }
-
-  return { ...session, directory } as Session
-}
-
-const applyDirectorySessionEventToGlobalSessions = (payload: Event, directory: string) => {
+const applySessionEventToGlobalSessions = (payload: Event) => {
   if (payload.type === "session.created" || payload.type === "session.updated") {
     const session = getSessionInfoFromPayload(payload)
     if (session) {
-      const archivedAt = session.time?.archived
-      if (archivedAt) {
-        useGlobalSessionsStore.getState().archiveSessions([session.id], archivedAt)
-      } else {
-        useGlobalSessionsStore.getState().upsertSession(withResolvedDirectoryMetadata(session, directory))
-      }
+      useGlobalSessionsStore.getState().upsertSession(session)
     }
     return
   }
 
-  applyDeletedSessionEventToGlobalSessions(payload)
+  if (payload.type === "session.deleted") {
+    const sessionID = getSessionIdFromPayload(payload) ?? getSessionInfoFromPayload(payload)?.id
+    if (sessionID) {
+      useGlobalSessionsStore.getState().removeSessions([sessionID])
+    }
+  }
 }
 
 const getMessageIdFromPayload = (event: Event): string | null => {
@@ -1225,12 +1182,9 @@ async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
   routingIndex: EventRoutingIndex,
-  requestedCandidateSessionIds?: string[],
 ) {
   const current = store.getState()
-  const candidateSessionIds = requestedCandidateSessionIds?.length
-    ? requestedCandidateSessionIds
-    : getActiveSessionCandidateIds(directory, current)
+  const candidateSessionIds = getActiveSessionCandidateIds(directory, current)
   if (candidateSessionIds.length === 0) return
 
   await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
@@ -1261,14 +1215,13 @@ async function resyncDirectoryAfterReconnect(
       complete: !cursor,
     })
 
+    const nextSession = stripSessionDiffSnapshots(session)
     const nextMessages = records
       .filter((record) => !!record?.info?.id)
       .map((record) => stripMessageDiffSnapshots(record.info))
       .sort((a, b) => cmp(a.id, b.id))
 
     store.setState((state: DirectoryStore) => {
-      const currentSession = state.session.find((item) => item.id === sessionId)
-      const nextSession = preserveLocalRevertMarker(stripSessionDiffSnapshots(session), currentSession)
       const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
       let sessions = state.session
       let sessionChanged = false
@@ -1310,7 +1263,7 @@ async function resyncDirectoryAfterReconnect(
       }
     })
 
-    setIndexedSessionDirectory(routingIndex, sessionId, directory)
+    setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
     setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
   }))
 
@@ -1331,7 +1284,12 @@ function handleEvent(
     return
   }
 
-  applyDeletedSessionEventToGlobalSessions(payload)
+  applySessionEventToGlobalSessions(payload)
+  // Keep the cross-project status map current for ALL directories (mirrors the
+  // global-session handling above). Child stores remain the primary source for
+  // synced directories; this map covers sessions a child store doesn't list
+  // (unopened directories, or list/status races for just-created sessions).
+  applyGlobalSessionStatusEvent(directory, payload)
 
   // Global events
   if (directory === "global" || !directory) {
@@ -1397,8 +1355,6 @@ function handleEvent(
     }
     return
   }
-
-  applyDirectorySessionEventToGlobalSessions(payload, resolvedDirectory)
 
   childStores.mark(resolvedDirectory)
 
@@ -1646,7 +1602,7 @@ export function SyncProvider(props: {
     [childStores, props.sdk, props.directory],
   )
 
-  const triggerDirectoryResync = useCallback((directory: string, candidateSessionIds?: string[]) => {
+  const triggerDirectoryResync = useCallback((directory: string) => {
     const store = childStores.children.get(directory)
     if (!store) return
     const resyncing = resyncingDirectoriesRef.current
@@ -1654,7 +1610,7 @@ export function SyncProvider(props: {
 
     lastFullResyncAtByDirectoryRef.current.set(directory, Date.now())
     resyncing.add(directory)
-    void resyncDirectoryAfterReconnect(directory, store, routingIndex, candidateSessionIds)
+    void resyncDirectoryAfterReconnect(directory, store, routingIndex)
       .catch(() => {
         // Transient failure — the watchdog, next SSE event, or reconnect will catch up.
       })
@@ -1702,6 +1658,9 @@ export function SyncProvider(props: {
                 .filter((s) => !!s?.id)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 
+              // Also load child sessions (sub-agent delegations) so they
+              // appear in the sidebar immediately instead of relying on
+              // the async global session store.
               let allSessions: typeof rootSessions = []
               try {
                 const allResult = await props.sdk.session.list({
@@ -1713,15 +1672,15 @@ export function SyncProvider(props: {
                   allSessions = ((allResult as { data?: unknown }).data ?? []) as typeof rootSessions
                 }
               } catch {
-                // Child session loading is best-effort; root sessions remain authoritative.
+                // Child load is best-effort; fall back to roots only
               }
 
+              // Merge: keep root sessions from the first query (for accurate
+              // sessionTotal), plus any child sessions from the broader query.
               const rootIds = new Set(rootSessions.map((s: { id: string }) => s.id))
-              const childSessions = allSessions.filter((s: { id: string; parentID?: string | null }) => (
-                s?.id && !rootIds.has(s.id) && Boolean(s.parentID)
-              ))
-              const sessions = rootSessions.concat(childSessions)
+              const childSessions = allSessions.filter((s: { id: string; parentID?: string | null }) => s?.id && !rootIds.has(s.id) && s.parentID)
 
+              const sessions = rootSessions.concat(childSessions)
               // Race guard: if the list came back empty but event pipeline
               // already populated the store, don't clobber. OpenCode can
               // answer HTTP with empty sessions while WS delivers session
@@ -1868,51 +1827,44 @@ export function SyncProvider(props: {
       parentSessionIds: string[],
     ) => {
       if (parentSessionIds.length === 0) return
-
       try {
         const scopedClient = opencodeClient.getScopedSdkClient(directory)
         const result = await scopedClient.session.list({ directory, limit: 200 })
         const allSessions = ((result as { data?: unknown }).data ?? []) as Session[]
-        const latestState = store.getState()
-        const existingIds = new Set(latestState.session.map((s) => s.id))
+        const state = store.getState()
+        const existingIds = new Set(state.session.map((s) => s.id))
         const parentIdSet = new Set(parentSessionIds)
         const newChildSessions: Session[] = []
-
         for (const session of allSessions) {
-          const parentID = (session as { parentID?: string | null })?.parentID
           if (
             session?.id
             && !existingIds.has(session.id)
-            && parentID
-            && parentIdSet.has(parentID)
+            && (session as { parentID?: string | null }).parentID
+            && parentIdSet.has((session as { parentID: string }).parentID)
           ) {
             newChildSessions.push(session)
           }
         }
-
         if (newChildSessions.length === 0) return
-
+        // Collect unique parent IDs for materialization
         const parentIdsForMaterialization = new Set<string>()
         for (const session of newChildSessions) {
-          const parentID = (session as { parentID?: string | null }).parentID
-          if (parentID) parentIdsForMaterialization.add(parentID)
+          const pid = (session as { parentID?: string | null }).parentID
+          if (pid) parentIdsForMaterialization.add(pid)
         }
-
         store.setState((state: DirectoryStore) => {
-          const currentIds = new Set(state.session.map((session) => session.id))
-          const uniqueNewChildSessions = newChildSessions.filter((session) => !currentIds.has(session.id))
-          if (uniqueNewChildSessions.length === 0) return state
-          const sessions = [...state.session, ...uniqueNewChildSessions].sort((a, b) => (
+          const sessions = [...state.session, ...newChildSessions].sort((a, b) =>
             a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-          ))
+          )
           return { session: sessions, limit: Math.max(sessions.length, 50) }
         })
-
-        for (const parentID of parentIdsForMaterialization) {
-          enqueueSessionMaterialization(directory, parentID, childStores)
+        // Trigger parent session materialization so the task tool part
+        // state (metadata, sessionId, output) is refreshed.
+        for (const pid of parentIdsForMaterialization) {
+          enqueueSessionMaterialization(directory, pid, childStores)
         }
       } catch {
-        // Best-effort: the next watchdog tick or SSE reconnect will retry.
+        // Best-effort — next tick will retry.
       }
     }
 
@@ -1932,7 +1884,7 @@ export function SyncProvider(props: {
           needsSnapshotAfterStatusPoll(before, sessionId, statuses[sessionId])
         ))
         if (needsSnapshot) {
-          triggerDirectoryResync(directory, candidateSessionIds)
+          triggerDirectoryResync(directory)
         }
       } finally {
         polling.delete(directory)
@@ -1953,7 +1905,6 @@ export function SyncProvider(props: {
               lastActiveEventAtByDirectoryRef.current.delete(directory)
               lastStatusPollAtByDirectoryRef.current.delete(directory)
               lastFullResyncAtByDirectoryRef.current.delete(directory)
-              lastChildDiscoveryAtByDirectoryRef.current.delete(directory)
               continue
             }
 
@@ -1977,6 +1928,8 @@ export function SyncProvider(props: {
               triggerDirectoryResync(directory)
             }
 
+            // Discover child sessions created by other OpenCode instances
+            // that didn't broadcast a session.created event on this stream.
             const lastChildDiscoveryAt = lastChildDiscoveryAtByDirectoryRef.current.get(directory) ?? 0
             if (now - lastChildDiscoveryAt >= CHILD_SESSION_DISCOVERY_INTERVAL_MS) {
               const childDiscoveryParentSessionIds = getChildDiscoveryParentSessionIds(directory, state)
@@ -2000,7 +1953,7 @@ export function SyncProvider(props: {
       stopped = true
       clearInterval(interval)
     }
-  }, [childStores, routingIndex, triggerDirectoryResync])
+  }, [childStores, triggerDirectoryResync])
 
   // Ensure current directory's child store exists
   useEffect(() => {
@@ -2095,7 +2048,7 @@ export function useSessionRevertMessageID(sessionID: string, directory?: string)
   return useDirectorySync(
     useCallback((state: State) => {
       const session = state.session.find((s) => s.id === sessionID)
-      return getSessionRevertMessageID(session)
+      return (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
     }, [sessionID]),
     directory,
   )
@@ -2117,7 +2070,6 @@ export function useSessionMessages(sessionID: string, directory?: string) {
 
 /**
  * Get visible session messages — filters out reverted messages.
- * Filters out reverted messages (id >= session.revert.messageID).
  */
 export function useVisibleSessionMessages(sessionID: string, directory?: string) {
   const messages = useSessionMessages(sessionID, directory)
@@ -2485,7 +2437,7 @@ const getReusableSessionMessageRecordsSnapshot = (
   if (!cached) return undefined
   const sourceMessages = state.message[sessionID] ?? EMPTY_MESSAGES
   const session = state.session.find((candidate) => candidate.id === sessionID)
-  const revertMessageID = getSessionRevertMessageID(session)
+  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
   if (
     cached.sourceMessages === sourceMessages
     && cached.revertMessageID === revertMessageID
@@ -2504,7 +2456,7 @@ function getVisibleMessagesForSession(state: State, sessionID: string, previous?
 } {
   const sourceMessages = state.message[sessionID] ?? EMPTY_MESSAGES
   const session = state.session.find((candidate) => candidate.id === sessionID)
-  const revertMessageID = getSessionRevertMessageID(session)
+  const revertMessageID = (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID
 
   if (
     previous

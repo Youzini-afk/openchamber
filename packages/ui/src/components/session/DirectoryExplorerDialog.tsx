@@ -458,7 +458,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         });
         selectedTarget = result.path;
       } else if (shouldCreateSelection) {
-        await opencodeClient.createDirectory(target, { allowOutsideWorkspace: true });
+        await opencodeClient.createDirectory(target);
       }
       const added = addProject(selectedTarget);
       if (!added) {
@@ -675,7 +675,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
                     <span className="rounded-full border border-border/60 px-2 py-0.5 typography-meta text-muted-foreground">
                       {t('directoryExplorerDialog.browse.addedBadge')}
                     </span>
-                  ) : row.type === 'directory' ? (
+                  ) : row.type === 'directory' && mode === 'add-project' ? (
                     <button
                       type="button"
                       onMouseDown={(event) => event.stopPropagation()}

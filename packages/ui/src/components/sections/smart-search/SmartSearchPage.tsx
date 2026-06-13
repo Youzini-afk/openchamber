@@ -494,9 +494,9 @@ export const SmartSearchPage: React.FC = () => {
             </Button>
             {doctor && <StatusPill ok={doctor.ok} label={doctor.ok ? t('settings.smartSearch.status.doctorPassed') : t('settings.smartSearch.status.doctorIssues')} />}
           </div>
-          {doctor?.result && (
+          {doctor?.result !== undefined && doctor.result !== null && (
             <pre className="max-h-72 overflow-auto rounded-md border border-border bg-background p-3 typography-micro text-foreground">
-              {JSON.stringify(doctor.result, null, 2)}
+              {String(JSON.stringify(doctor.result, null, 2) ?? '')}
             </pre>
           )}
           {doctor?.stderr && (

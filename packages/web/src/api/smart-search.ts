@@ -5,6 +5,7 @@ import type {
   SmartSearchDoctorResponse,
   SmartSearchStatusResponse,
 } from '@openchamber/ui/lib/api/types';
+import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
 
 const STATUS_ENDPOINT = '/api/smart-search/status';
 const CONFIG_ENDPOINT = '/api/smart-search/config';
@@ -21,7 +22,7 @@ const readJson = async <T>(response: Response): Promise<T> => {
 
 export const createWebSmartSearchAPI = (): SmartSearchAPI => ({
   async status(): Promise<SmartSearchStatusResponse> {
-    const response = await fetch(STATUS_ENDPOINT, {
+    const response = await runtimeFetch(STATUS_ENDPOINT, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -29,7 +30,7 @@ export const createWebSmartSearchAPI = (): SmartSearchAPI => ({
   },
 
   async loadConfig(): Promise<SmartSearchConfigResponse> {
-    const response = await fetch(CONFIG_ENDPOINT, {
+    const response = await runtimeFetch(CONFIG_ENDPOINT, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -37,7 +38,7 @@ export const createWebSmartSearchAPI = (): SmartSearchAPI => ({
   },
 
   async saveConfig(patch: SmartSearchConfigPatch): Promise<SmartSearchConfigResponse> {
-    const response = await fetch(CONFIG_ENDPOINT, {
+    const response = await runtimeFetch(CONFIG_ENDPOINT, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -49,7 +50,7 @@ export const createWebSmartSearchAPI = (): SmartSearchAPI => ({
   },
 
   async doctor(): Promise<SmartSearchDoctorResponse> {
-    const response = await fetch(DOCTOR_ENDPOINT, {
+    const response = await runtimeFetch(DOCTOR_ENDPOINT, {
       method: 'POST',
       headers: { Accept: 'application/json' },
     });

@@ -281,15 +281,30 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
       const props = payload.properties as { messageID: string; partID: string; field: string }
       return `message.part.delta:${props.messageID}:${props.partID}:${props.field}`
     }
+    return undefined
+  }
+
+  const clearPartDeltaCoalescingBarrier = (queue: DirectoryQueue, payload: Event): void => {
+    let messageID = ""
+    let partID = ""
+
     if (payload.type === "message.part.updated") {
       const props = payload.properties as { part?: { id?: unknown; messageID?: unknown } }
-      const messageID = props.part && typeof props.part.messageID === "string" ? props.part.messageID : ""
-      const partID = props.part && typeof props.part.id === "string" ? props.part.id : ""
-      if (messageID && partID) {
-        return `message.part.updated:${messageID}:${partID}`
+      messageID = typeof props.part?.messageID === "string" ? props.part.messageID : ""
+      partID = typeof props.part?.id === "string" ? props.part.id : ""
+    } else if (payload.type === "message.part.removed") {
+      const props = payload.properties as { messageID?: unknown; partID?: unknown }
+      messageID = typeof props.messageID === "string" ? props.messageID : ""
+      partID = typeof props.partID === "string" ? props.partID : ""
+    }
+
+    if (!messageID || !partID) return
+    const prefix = `message.part.delta:${messageID}:${partID}:`
+    for (const coalescedKey of queue.coalesced.keys()) {
+      if (coalescedKey.startsWith(prefix)) {
+        queue.coalesced.delete(coalescedKey)
       }
     }
-    return undefined
   }
 
   const flushDir = (directory: string) => {
@@ -454,6 +469,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     const normalizedPayload = normalizeEventType(payload)
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory
     const d = getOrCreateDir(routedDirectory)
+    clearPartDeltaCoalescingBarrier(d, normalizedPayload)
     const k = key(normalizedPayload)
     if (k) {
       const i = d.coalesced.get(k)

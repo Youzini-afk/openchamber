@@ -1,5 +1,4 @@
 import React from 'react';
-import { RiArrowDownSLine, RiArrowRightSLine, RiStackLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
@@ -11,6 +10,7 @@ import { MinDurationShineText } from './MinDurationShineText';
 import { ToolRevealOnMount } from './ToolRevealOnMount';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Text } from '@/components/ui/text';
+import { Icon } from "@/components/icon/Icon";
 import { FadeInOnReveal } from '../FadeInOnReveal';
 import { getToolIcon } from './toolPresentation';
 import { getToolMetadata } from '@/lib/toolHelpers';
@@ -18,15 +18,13 @@ import { isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUt
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
-import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 import { useSkillsStore } from '@/stores/useSkillsStore';
+import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import ReasoningPart from './ReasoningPart';
 import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { getExternalFaviconUrl } from '@/lib/url';
-import { getDirectoryForFilePath, getRelativeFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
-import { useI18n } from '@/lib/i18n';
-import { buildStaticToolDetailEntries, type StaticToolDetailEntry } from './staticToolDetails';
+import { getDirectoryForFilePath, getRelativeFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-4 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -575,7 +573,6 @@ const StaticToolRowInner: React.FC<{
     activities: TurnActivityPart[];
     animateTailText: boolean;
 }> = ({ toolName, activities, animateTailText }) => {
-    const { t } = useI18n();
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
     const displayName = getToolMetadata(toolName).displayName;
     const icon = getToolIcon(toolName);
@@ -584,7 +581,6 @@ const StaticToolRowInner: React.FC<{
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
     const skills = useSkillsStore((state) => state.skills);
     const hasRunningActivity = React.useMemo(() => activities.some((activity) => isActivityRunning(activity)), [activities]);
-    const [isDetailsExpanded, setIsDetailsExpanded] = React.useState(false);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
 
     const descriptions = React.useMemo(() => {
@@ -597,27 +593,6 @@ const StaticToolRowInner: React.FC<{
         }
         return descs;
     }, [activities]);
-
-    const detailEntries = React.useMemo(() => buildStaticToolDetailEntries(activities), [activities]);
-    const hasDetails = detailEntries.length > 0;
-
-    React.useEffect(() => {
-        if (!hasDetails) {
-            setIsDetailsExpanded(false);
-        }
-    }, [hasDetails]);
-
-    const toggleDetails = React.useCallback(() => {
-        if (!hasDetails) return;
-        setIsDetailsExpanded((value) => !value);
-    }, [hasDetails]);
-
-    const handleDetailsKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-        if (!hasDetails) return;
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        toggleDetails();
-    }, [hasDetails, toggleDetails]);
 
     const skillEntries = React.useMemo(() => {
         if (toolName.toLowerCase() !== 'skill') return [] as Array<{ name: string; path: string }>;
@@ -664,12 +639,26 @@ const StaticToolRowInner: React.FC<{
             return;
         }
 
-        const contextDirectory = getDirectoryForFilePath(currentDirectory, absolutePath);
-        if (offset && Number.isFinite(offset)) {
-            openFileInMainEditor(contextDirectory, absolutePath, { line: Math.max(1, Math.trunc(offset)), column: 1 });
+        if (!isFilePathWithinDirectory(absolutePath, currentDirectory)) {
+            void ensureOutsideFileGrantForDesktop(absolutePath, currentDirectory).then(() => {
+                const uiStore = useUIStore.getState();
+                const contextDirectory = currentDirectory || getDirectoryForFilePath(currentDirectory, absolutePath);
+                if (offset && Number.isFinite(offset)) {
+                    uiStore.openContextFileAtLine(contextDirectory, absolutePath, Math.max(1, Math.trunc(offset)), 1);
+                    return;
+                }
+                uiStore.openContextFile(contextDirectory, absolutePath);
+            });
             return;
         }
-        openFileInMainEditor(contextDirectory, absolutePath);
+
+        const uiStore = useUIStore.getState();
+        const contextDirectory = getDirectoryForFilePath(currentDirectory, absolutePath);
+        if (offset && Number.isFinite(offset)) {
+            uiStore.openContextFileAtLine(contextDirectory, absolutePath, Math.max(1, Math.trunc(offset)), 1);
+            return;
+        }
+        uiStore.openContextFile(contextDirectory, absolutePath);
     }, [currentDirectory, runtime]);
 
     const handleSkillClick = React.useCallback((skillPath: string) => {
@@ -689,61 +678,15 @@ const StaticToolRowInner: React.FC<{
     const isFetchGroup = normalizedToolName === 'webfetch' || normalizedToolName === 'fetch' || normalizedToolName === 'curl' || normalizedToolName === 'wget';
     const isSkillGroup = normalizedToolName === 'skill';
 
-    const renderDetailSection = (label: string, value: string, tone: 'default' | 'error' = 'default') => (
-        <div className="space-y-1">
-            <div className="typography-micro font-medium uppercase tracking-[0.08em] text-muted-foreground/70">{label}</div>
-            <pre
-                className={cn(
-                    'max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border px-2 py-1.5 typography-code text-[12px] leading-5',
-                    tone === 'error'
-                        ? 'border-[var(--status-error-border)] bg-[var(--status-error-background)] text-[var(--status-error)]'
-                        : 'border-border/50 bg-background/70 text-muted-foreground'
-                )}
-            >
-                {value}
-            </pre>
-        </div>
-    );
-
-    const renderDetailEntry = (entry: StaticToolDetailEntry, index: number) => {
-        const showEntryTitle = detailEntries.length > 1;
-        return (
-            <div key={entry.id} className="space-y-2 border-t border-border/40 pt-2 first:border-t-0 first:pt-0">
-                {showEntryTitle ? (
-                    <div className="typography-micro font-medium text-muted-foreground">
-                        {displayName} #{index + 1}
-                    </div>
-                ) : null}
-                {entry.input ? renderDetailSection(t('chat.toolPart.input'), entry.input) : null}
-                {entry.output ? renderDetailSection(t('chat.toolPart.output'), entry.output) : null}
-                {entry.error ? renderDetailSection(t('chat.toolPart.error'), entry.error, 'error') : null}
-                {entry.metadata ? renderDetailSection(t('chat.toolPart.metadata'), entry.metadata) : null}
-            </div>
-        );
-    };
-
     return (
-        <div>
-            <div
-                className={cn(
-                    'flex w-full items-center gap-x-1.5 pr-2 pl-px py-1.5 rounded-xl min-w-0',
-                    hasDetails && 'cursor-pointer hover:bg-muted/20'
-                )}
-                role={hasDetails ? 'button' : undefined}
-                tabIndex={hasDetails ? 0 : undefined}
-                aria-expanded={hasDetails ? isDetailsExpanded : undefined}
-                aria-label={hasDetails ? t('chat.toolPart.details') : undefined}
-                onClick={toggleDetails}
-                onKeyDown={handleDetailsKeyDown}
-            >
+        <div
+            className={cn(
+                'flex w-full items-center gap-x-1.5 pr-2 pl-px py-1.5 rounded-xl min-w-0'
+            )}
+        >
             <div className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
-                {hasDetails ? (isDetailsExpanded ? <RiArrowDownSLine className="h-3.5 w-3.5" /> : <RiArrowRightSLine className="h-3.5 w-3.5" />) : icon}
+                {icon}
             </div>
-            {hasDetails ? (
-                <div className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
-                    {icon}
-                </div>
-            ) : null}
             <MinDurationShineText
                 active={hasRunningActivity}
                 minDurationMs={1000}
@@ -793,7 +736,6 @@ const StaticToolRowInner: React.FC<{
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={(event) => event.stopPropagation()}
                         className={cn(
                             'min-w-0 flex-1 inline-flex items-center gap-1.5 underline decoration-[color:var(--status-info)] underline-offset-2 hover:opacity-90',
                             'truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS
@@ -832,15 +774,6 @@ const StaticToolRowInner: React.FC<{
                 >
                     {descriptions.join(' ')}
                 </Text>
-            ) : null}
-            </div>
-            {hasDetails && isDetailsExpanded ? (
-                <div className="ml-5 mt-1 mb-1 rounded-xl border border-border/60 bg-muted/20 p-2 shadow-sm">
-                    <div className="mb-2 typography-micro font-medium text-muted-foreground">{t('chat.toolPart.details')}</div>
-                    <div className="space-y-2">
-                        {detailEntries.map(renderDetailEntry)}
-                    </div>
-                </div>
             ) : null}
         </div>
     );
@@ -1044,7 +977,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                     onClick={onToggle}
                 >
                     <span className="inline-flex h-5 items-center flex-shrink-0" style={{ color: 'var(--tools-icon)' }}>
-                        <RiStackLine className="h-3.5 w-3.5" />
+                        <Icon name="stack" className="h-3.5 w-3.5" />
                     </span>
                     <span
                         className="leading-5 font-semibold inline-flex h-5 items-center flex-shrink-0"

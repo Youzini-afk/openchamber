@@ -260,7 +260,7 @@ export const ProjectsPage: React.FC = () => {
           <section className="px-2 pb-2 pt-0 space-y-0.5">
             
             {/* Name */}
-            <div className="py-1.5">
+            <div data-settings-item="projects.name" className="py-1.5">
               <div className="flex min-w-0 flex-col">
                 <span className="typography-ui-label text-foreground">{t('settings.projects.page.field.projectName')}</span>
               </div>
@@ -275,7 +275,7 @@ export const ProjectsPage: React.FC = () => {
             </div>
 
             {/* Color */}
-            <div className="py-1.5">
+            <div data-settings-item="projects.accent-color" className="py-1.5">
               <div className="flex min-w-0 flex-col">
                 <span className="typography-ui-label text-foreground">{t('settings.projects.page.field.accentColor')}</span>
               </div>
@@ -312,7 +312,7 @@ export const ProjectsPage: React.FC = () => {
             </div>
 
             {/* Icon */}
-            <div className="py-1.5">
+            <div data-settings-item="projects.icon" className="py-1.5">
               <div className="flex min-w-0 flex-col">
                 <span className="typography-ui-label text-foreground">{t('settings.projects.page.field.projectIcon')}</span>
               </div>
@@ -482,7 +482,7 @@ export const ProjectsPage: React.FC = () => {
         </div>
 
         {/* Worktree Group */}
-        <div className="mb-8">
+        <div data-settings-item="projects.worktree" className="mb-8">
           <section className="px-2 pb-2 pt-0">
             {selectedProjectRef && <ProjectActionsSection projectRef={selectedProjectRef} />}
           </section>

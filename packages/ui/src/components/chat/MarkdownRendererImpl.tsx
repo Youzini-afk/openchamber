@@ -10,16 +10,20 @@ import { marked, type Tokens } from 'marked';
 import remend from 'remend';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { Icon } from '@/components/icon/Icon';
 import { cn } from '@/lib/utils';
-import { RiFileCopyLine, RiCheckLine, RiDownloadLine, RiEyeLine, RiCodeLine } from '@remixicon/react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { toast } from '@/components/ui';
+import { Icon } from "@/components/icon/Icon";
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
 import { getExternalFaviconUrl, isExternalHttpUrl, isLoopbackHttpUrl, openExternalUrl } from '@/lib/url';
+import {
+  buildAgentMentionUrl,
+  parseAgentHref,
+  parseSkillHref,
+} from '@/lib/messages/inlineMessageLinks';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
@@ -29,9 +33,9 @@ import { useDeviceInfo } from '@/lib/device';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
-import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
-import { isVSCodeRuntime } from '@/lib/desktop';
-import { getDirectoryForFilePath, isAbsoluteFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
+import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
+import { getDirectoryForFilePath, isAbsoluteFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -333,7 +337,7 @@ const TableDownloadButton: React.FC<{ tableRef: React.RefObject<HTMLDivElement |
         className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
         title={t('markdownRenderer.table.actions.downloadTitle')}
       >
-        <RiDownloadLine className="size-3.5" />
+        <Icon name="download" className="size-3.5" />
       </button>
       {showMenu && (
         <div className="absolute top-full right-0 z-10 mt-1 min-w-[100px] overflow-hidden rounded-md border border-border bg-background shadow-none">
@@ -472,7 +476,7 @@ const MermaidBlock: React.FC<{ source: string; mode: 'svg' | 'ascii' }> = ({ sou
             className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
             title={t('markdownRenderer.mermaid.actions.copyTitle')}
           >
-            {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
+            {copied ? <Icon name="check" className="size-3.5" /> : <Icon name="file-copy" className="size-3.5" />}
           </button>
         </div>
       </div>
@@ -496,7 +500,7 @@ const MermaidBlock: React.FC<{ source: string; mode: 'svg' | 'ascii' }> = ({ sou
             className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
             title={t('markdownRenderer.mermaid.actions.copyTitle')}
           >
-            {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
+            {copied ? <Icon name="check" className="size-3.5" /> : <Icon name="file-copy" className="size-3.5" />}
           </button>
         </div>
       </div>
@@ -519,14 +523,14 @@ const MermaidBlock: React.FC<{ source: string; mode: 'svg' | 'ascii' }> = ({ sou
           className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
           title={t('markdownRenderer.mermaid.actions.copySourceTitle')}
         >
-          {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
+          {copied ? <Icon name="check" className="size-3.5" /> : <Icon name="file-copy" className="size-3.5" />}
         </button>
         <button
           onClick={handleDownloadSvg}
           className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
           title={t('markdownRenderer.mermaid.actions.downloadSvgTitle')}
         >
-          {downloaded ? <RiCheckLine className="size-3.5" /> : <RiDownloadLine className="size-3.5" />}
+          {downloaded ? <Icon name="check" className="size-3.5" /> : <Icon name="download" className="size-3.5" />}
         </button>
       </div>
     </div>
@@ -790,7 +794,6 @@ const MarkdownCodeBlock: React.FC<{
   language: string;
   syntaxTheme: { [key: string]: React.CSSProperties };
 }> = ({ code, language, syntaxTheme }) => {
-  const { t } = useI18n();
   const [copied, setCopied] = React.useState(false);
   const [highlight, setHighlight] = React.useState(true);
   const [viewMode, setViewMode] = React.useState<'code' | 'preview'>('code');
@@ -857,11 +860,11 @@ const MarkdownCodeBlock: React.FC<{
               type="button"
               onClick={() => setViewMode((mode) => (mode === 'preview' ? 'code' : 'preview'))}
               className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-              title={viewMode === 'preview' ? t('markdownRenderer.code.actions.showCode') : t('markdownRenderer.code.actions.preview')}
+              title={viewMode === 'preview' ? 'Show code' : 'Preview'}
               aria-pressed={viewMode === 'preview'}
-              aria-label={viewMode === 'preview' ? t('markdownRenderer.code.actions.showCode') : t('markdownRenderer.code.actions.previewHtml')}
+              aria-label={viewMode === 'preview' ? 'Show code' : 'Preview HTML'}
             >
-              {viewMode === 'preview' ? <RiCodeLine className="size-3.5" /> : <RiEyeLine className="size-3.5" />}
+              {viewMode === 'preview' ? <Icon name="code" className="size-3.5" /> : <Icon name="eye" className="size-3.5" />}
             </button>
           ) : null}
           {canPreview ? (
@@ -869,20 +872,20 @@ const MarkdownCodeBlock: React.FC<{
               type="button"
               onClick={handleDownload}
               className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-              title={t('markdownRenderer.code.actions.downloadHtml')}
-              aria-label={t('markdownRenderer.code.actions.downloadHtml')}
+              title="Download HTML"
+              aria-label="Download HTML"
             >
-              <RiDownloadLine className="size-3.5" />
+              <Icon name="download" className="size-3.5" />
             </button>
           ) : null}
           <button
             type="button"
             onClick={() => { void handleCopy(); }}
             className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-            title={copied ? t('markdownRenderer.code.actions.copied') : t('markdownRenderer.code.actions.copyCode')}
-            aria-label={copied ? t('markdownRenderer.code.actions.copied') : t('markdownRenderer.code.actions.copyCode')}
+            title={copied ? 'Copied' : 'Copy code'}
+            aria-label={copied ? 'Copied' : 'Copy code'}
           >
-            {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
+            {copied ? <Icon name="check" className="size-3.5" /> : <Icon name="file-copy" className="size-3.5" />}
           </button>
         </div>
       </div>
@@ -890,7 +893,7 @@ const MarkdownCodeBlock: React.FC<{
         <div className="h-[320px] md:h-[420px] bg-background">
           <iframe
             srcDoc={code}
-            title={t('markdownRenderer.code.previewTitle')}
+            title="HTML preview"
             className="h-full w-full border-0"
             sandbox="allow-scripts allow-forms"
           />
@@ -926,8 +929,8 @@ const buildMarkdownComponents = ({
 }: {
   syntaxTheme: { [key: string]: React.CSSProperties };
   onPreviewLoopback?: (url: string) => void;
-  previewLabel: string;
-  previewTitle: string;
+  previewLabel?: string;
+  previewTitle?: string;
 }): Components => ({
   table({ children, ...props }) {
     return <TableWrapper className={props.className}>{children}</TableWrapper>;
@@ -1003,6 +1006,38 @@ const buildMarkdownComponents = ({
   },
   a({ href, children, ...props }) {
     const targetHref = href ?? '';
+    const agentName = parseAgentHref(targetHref);
+    if (agentName) {
+      return (
+        <a
+          {...props}
+          href={buildAgentMentionUrl(agentName)}
+          data-openchamber-agent-mention="true"
+          className={cn('text-primary hover:underline', props.className)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {children}
+        </a>
+      );
+    }
+
+    const skillName = parseSkillHref(targetHref);
+    if (skillName) {
+      return (
+        <a
+          {...props}
+          href={targetHref}
+          data-skill-name={skillName}
+          className={cn('text-primary hover:underline', props.className)}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {children}
+        </a>
+      );
+    }
+
     const isExternal = isExternalHttpUrl(targetHref);
     const isLoopback = onPreviewLoopback ? isLoopbackHttpUrl(targetHref) : false;
     return (
@@ -1025,12 +1060,12 @@ const buildMarkdownComponents = ({
               onPreviewLoopback(targetHref);
             }}
             className="ml-1 inline-flex h-5 items-center gap-0.5 rounded border border-[var(--border)] bg-[var(--surface-background)] px-1.5 align-middle text-[11px] leading-none text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
-            aria-label={previewTitle}
-            title={previewTitle}
+            aria-label={previewTitle ?? previewLabel ?? 'Open preview pane'}
+            title={previewTitle ?? previewLabel ?? 'Open preview pane'}
             data-loopback-preview-trigger="true"
           >
-            <RiEyeLine className="size-3" aria-hidden="true" />
-            <span className="font-medium">{previewLabel}</span>
+            <Icon name="eye" className="size-3"  aria-hidden="true"/>
+            <span className="font-medium">{previewLabel ?? 'Preview'}</span>
           </button>
         ) : null}
       </>
@@ -1067,6 +1102,20 @@ interface MarkdownRendererProps {
 
 const MERMAID_BLOCK_SELECTOR = '[data-markdown="mermaid-block"]';
 const FILE_LINK_SELECTOR = '[data-openchamber-file-link="true"]';
+const BLOCK_PATH_TOKEN_ATTR = 'data-openchamber-block-path-token';
+const BLOCK_PATH_TOKEN_SELECTOR = `[${BLOCK_PATH_TOKEN_ATTR}]`;
+const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
+// Matches `path[:line[:col]]` inside shell/grep-style output. Requires a file
+// extension (1-8 alphanumerics) so plain words don't qualify; the path itself
+// must contain at least one extension-bearing segment.
+//
+// Known limitation: backslash-separated Windows paths (e.g.
+// `C:\Users\test\file.ts:12`) are not matched because the path character class
+// does not include `\`. Compiler output inside fenced code blocks predominantly
+// uses forward slashes, so this is a niche gap. The inline-code pipeline is not
+// affected — it reads full text content rather than matching with a regex.
+const BLOCK_PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[\w.\-/@+]*[\w\-/@+]\.[A-Za-z0-9]{1,8}(?::\d+){0,2}/g;
+const MAX_BLOCK_CODE_SCAN_LENGTH = 200_000;
 const FILE_REFERENCE_STAT_CONCURRENCY = 4;
 const FILE_REFERENCE_STAT_CACHE_MAX = 1000;
 const VSCODE_FILE_REFERENCE_STAT_CACHE_MAX = 200;
@@ -1258,6 +1307,34 @@ const isLikelyFilePath = (value: string): boolean => {
   return isLikelyFilePathValue(parsed.path);
 };
 
+const findTextPosition = (textNodes: Text[], targetOffset: number): { node: Text; offset: number } | null => {
+  let currentOffset = 0;
+
+  for (const node of textNodes) {
+    const nextOffset = currentOffset + node.data.length;
+    if (targetOffset <= nextOffset) {
+      return { node, offset: Math.max(0, targetOffset - currentOffset) };
+    }
+    currentOffset = nextOffset;
+  }
+
+  const lastNode = textNodes.at(-1);
+  return lastNode ? { node: lastNode, offset: lastNode.data.length } : null;
+};
+
+const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
+  const tokenSpans = container.querySelectorAll<HTMLElement>(BLOCK_PATH_TOKEN_SELECTOR);
+  for (const span of Array.from(tokenSpans)) {
+    span.replaceWith(container.ownerDocument.createTextNode(span.textContent ?? ''));
+  }
+
+  const scannedBlocks = container.querySelectorAll<HTMLElement>(`code[${CODE_BLOCK_PATH_SCANNED_ATTR}]`);
+  for (const codeBlock of Array.from(scannedBlocks)) {
+    codeBlock.removeAttribute(CODE_BLOCK_PATH_SCANNED_ATTR);
+    codeBlock.normalize();
+  }
+};
+
 const extractPathCandidateFromElement = (element: HTMLElement): string => {
   if (element.tagName.toLowerCase() === 'a') {
     const href = element.getAttribute('href')?.trim();
@@ -1267,6 +1344,87 @@ const extractPathCandidateFromElement = (element: HTMLElement): string => {
   }
 
   return (element.textContent || '').trim();
+};
+
+// Walks text nodes inside `<pre><code>` subtrees and wraps any substring that
+// looks like a `path[:line[:col]]` reference in a span carrying
+// `data-openchamber-block-path-token`. `annotateFileLinks` then promotes those
+// spans into clickable file links via the same existing pipeline used for
+// inline code (parseFileReference → fileReferenceExists → openFileReference).
+//
+// Idempotent: each `<code>` node is marked with
+// `data-openchamber-block-paths-scanned` once processed so the walk is not
+// repeated on the same element. When the renderer replaces the `<code>` subtree
+// (e.g. on content change during streaming), the new element lacks the marker and
+// will be rescanned on the next mutation-observer callback.
+const wrapBlockCodePathTokens = (container: HTMLElement): void => {
+  const codeBlocks = container.querySelectorAll<HTMLElement>('pre code');
+  if (codeBlocks.length === 0) {
+    return;
+  }
+
+  const doc = container.ownerDocument;
+  if (!doc) {
+    return;
+  }
+
+  for (const codeBlock of Array.from(codeBlocks)) {
+    if (codeBlock.getAttribute(CODE_BLOCK_PATH_SCANNED_ATTR) === 'true') {
+      continue;
+    }
+
+    // Skip absurdly large code blocks to keep DOM work bounded.
+    if ((codeBlock.textContent ?? '').length > MAX_BLOCK_CODE_SCAN_LENGTH) {
+      codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
+      continue;
+    }
+
+    const walker = doc.createTreeWalker(codeBlock, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      textNodes.push(currentNode as Text);
+      currentNode = walker.nextNode();
+    }
+
+    const fullText = codeBlock.textContent ?? '';
+    if (!fullText.includes('.')) {
+      codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
+      continue;
+    }
+
+    BLOCK_PATH_TOKEN_RE.lastIndex = 0;
+    const matches: Array<{ start: number; end: number; raw: string }> = [];
+    let match: RegExpExecArray | null = BLOCK_PATH_TOKEN_RE.exec(fullText);
+    while (match) {
+      const raw = match[0];
+      if (raw && isLikelyFilePath(raw)) {
+        matches.push({ start: match.index, end: match.index + raw.length, raw });
+      }
+      match = BLOCK_PATH_TOKEN_RE.exec(fullText);
+    }
+
+    for (const { start, end, raw } of matches.reverse()) {
+      const startPosition = findTextPosition(textNodes, start);
+      const endPosition = findTextPosition(textNodes, end);
+      if (!startPosition || !endPosition) {
+        continue;
+      }
+
+      const range = doc.createRange();
+      range.setStart(startPosition.node, startPosition.offset);
+      range.setEnd(endPosition.node, endPosition.offset);
+
+      const span = doc.createElement('span');
+      span.setAttribute(BLOCK_PATH_TOKEN_ATTR, 'true');
+      span.textContent = raw;
+
+      range.deleteContents();
+      range.insertNode(span);
+    }
+
+    codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
+  }
 };
 
 const getResolvedReference = (rawValue: string, effectiveDirectory: string): (ParsedFileReference & { resolvedPath: string }) | null => {
@@ -1337,7 +1495,7 @@ const fileReferenceExists = (resolvedPath: string): Promise<boolean> => {
 };
 
 const getContextDirectory = (effectiveDirectory: string, resolvedPath: string): string => {
-  return getDirectoryForFilePath(effectiveDirectory, resolvedPath);
+  return effectiveDirectory || getDirectoryForFilePath(effectiveDirectory, resolvedPath);
 };
 
 const useFileReferenceInteractions = ({
@@ -1346,14 +1504,12 @@ const useFileReferenceInteractions = ({
   editor,
   preferRuntimeEditor,
   enabled,
-  openFileTitle,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
   enabled: boolean;
-  openFileTitle: string;
 }) => {
   const annotationDebounceRef = React.useRef<number | null>(null);
 
@@ -1369,7 +1525,7 @@ const useFileReferenceInteractions = ({
       candidate.removeAttribute('data-openchamber-file-link');
       candidate.removeAttribute('data-openchamber-file-ref');
       candidate.removeAttribute('data-openchamber-file-path');
-      if (candidate.getAttribute('title') === openFileTitle || candidate.getAttribute('title') === 'Open file') {
+      if (candidate.getAttribute('title') === 'Open file') {
         candidate.removeAttribute('title');
       }
       if (candidate.tagName.toLowerCase() !== 'a') {
@@ -1383,6 +1539,7 @@ const useFileReferenceInteractions = ({
       for (const candidate of Array.from(annotated)) {
         clearFileLinkAttributes(candidate);
       }
+      unwrapBlockCodePathTokens(container);
     };
 
     if (!enabled) {
@@ -1391,7 +1548,12 @@ const useFileReferenceInteractions = ({
     }
 
     const annotateFileLinks = () => {
-      const candidates = container.querySelectorAll<HTMLElement>('[data-markdown="inline-code"], a');
+      if (enabled) {
+        wrapBlockCodePathTokens(container);
+      }
+      const candidates = container.querySelectorAll<HTMLElement>(
+        `[data-markdown="inline-code"], a, ${BLOCK_PATH_TOKEN_SELECTOR}`,
+      );
       let linkedCount = 0;
 
       for (const candidate of Array.from(candidates)) {
@@ -1409,7 +1571,14 @@ const useFileReferenceInteractions = ({
 
         linkedCount += 1;
 
-        void fileReferenceExists(resolved.resolvedPath).then((exists) => {
+        const canGrantOutsideFile = isDesktopShell()
+          && isDesktopLocalOriginActive()
+          && !isFilePathWithinDirectory(resolved.resolvedPath, effectiveDirectory);
+        const existsPromise = canGrantOutsideFile
+          ? Promise.resolve(true)
+          : fileReferenceExists(resolved.resolvedPath);
+
+        void existsPromise.then((exists) => {
           if (cancelled || !exists || !container.contains(candidate)) {
             return;
           }
@@ -1423,7 +1592,7 @@ const useFileReferenceInteractions = ({
           candidate.setAttribute('data-openchamber-file-link', 'true');
           candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
           candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          candidate.setAttribute('title', openFileTitle);
+          candidate.setAttribute('title', 'Open file');
           if (candidate.tagName.toLowerCase() !== 'a') {
             candidate.setAttribute('role', 'button');
             candidate.setAttribute('tabindex', '0');
@@ -1432,7 +1601,7 @@ const useFileReferenceInteractions = ({
       }
     };
 
-    const openFileReference = (sourceElement: HTMLElement) => {
+    const openFileReference = async (sourceElement: HTMLElement) => {
       const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
       const resolved = getResolvedReference(raw, effectiveDirectory);
       if (!resolved) {
@@ -1453,19 +1622,22 @@ const useFileReferenceInteractions = ({
         return;
       }
 
+      if (!isFilePathWithinDirectory(resolved.resolvedPath, effectiveDirectory)) {
+        await ensureOutsideFileGrantForDesktop(resolved.resolvedPath, effectiveDirectory);
+      }
+
+      const uiStore = useUIStore.getState();
       if (Number.isFinite(resolved.line ?? Number.NaN)) {
-        openFileInMainEditor(
+        uiStore.openContextFileAtLine(
           contextDirectory,
           resolved.resolvedPath,
-          {
-            line: Math.max(1, Math.trunc(resolved.line as number)),
-            column: Number.isFinite(resolved.column ?? Number.NaN)
-              ? Math.max(1, Math.trunc(resolved.column as number))
-              : 1,
-          },
+          Math.max(1, Math.trunc(resolved.line as number)),
+          Number.isFinite(resolved.column ?? Number.NaN)
+            ? Math.max(1, Math.trunc(resolved.column as number))
+            : 1,
         );
       } else {
-        openFileInMainEditor(contextDirectory, resolved.resolvedPath);
+        uiStore.openContextFile(contextDirectory, resolved.resolvedPath);
       }
     };
 
@@ -1483,7 +1655,7 @@ const useFileReferenceInteractions = ({
       event.preventDefault();
       event.stopPropagation();
 
-      openFileReference(fileRefElement);
+      void openFileReference(fileRefElement);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1499,7 +1671,7 @@ const useFileReferenceInteractions = ({
       event.preventDefault();
       event.stopPropagation();
 
-      openFileReference(target);
+      void openFileReference(target);
     };
 
     annotateFileLinks();
@@ -1535,7 +1707,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled, openFileTitle]);
+  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1648,7 +1820,6 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const { editor, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const { t } = useI18n();
   const mermaidBlocks = React.useMemo(() => extractMermaidBlocks(content), [content]);
   useMermaidInlineInteractions({ containerRef, mermaidBlocks, onShowPopup });
   useFileReferenceInteractions({
@@ -1657,10 +1828,10 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     enabled: enableFileReferences && !isStreaming,
-    openFileTitle: t('markdownRenderer.fileReference.openFileTitle'),
   });
   useExternalLinkInteractions({ containerRef });
   const openContextPreview = useUIStore((state) => state.openContextPreview);
+  const { t } = useI18n();
   const handlePreviewLoopback = React.useCallback((url: string) => {
     if (!effectiveDirectory) return;
     openContextPreview(effectiveDirectory, url);
@@ -1741,9 +1912,6 @@ const SimpleMarkdownRendererImpl: React.FC<{
   enableFileReferences = true,
 }) => {
   const { editor, runtime } = useRuntimeAPIs();
-  const { t } = useI18n();
-  const previewLabel = t('terminalView.preview.open');
-  const previewTitle = t('terminalView.preview.openTitle');
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
     [content, stripFrontmatter],
@@ -1764,11 +1932,10 @@ const SimpleMarkdownRendererImpl: React.FC<{
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     enabled: enableFileReferences,
-    openFileTitle: t('markdownRenderer.fileReference.openFileTitle'),
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
   const syntaxTheme = React.useMemo(() => generateSyntaxTheme(currentTheme), [currentTheme]);
-  const markdownComponents = React.useMemo(() => buildMarkdownComponents({ syntaxTheme, previewLabel, previewTitle }), [syntaxTheme, previewLabel, previewTitle]);
+  const markdownComponents = React.useMemo(() => buildMarkdownComponents({ syntaxTheme }), [syntaxTheme]);
   const markdownBlocks = useStableMarkdownBlocks(renderedContent, false, `simple:${variant}`);
 
   const markdownClassName = variant === 'tool'

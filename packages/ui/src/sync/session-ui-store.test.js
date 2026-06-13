@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { opencodeClient } from '@/lib/opencode/client';
-import { useSessionWorktreeStore } from './session-worktree-store';
-import { routeMessage, useSessionUIStore } from './session-ui-store';
+
+// Load session-ui-store through a cache-busting query so cross-test mock state
+// or prior imports from other test files cannot leak a stale singleton into
+// this file. session-worktree-store is intentionally NOT cache-busted so the
+// test and session-ui-store share the same attachment store instance.
+const { useSessionWorktreeStore } = await import('./session-worktree-store');
+const sessionUiStoreMod = await import('./session-ui-store?test-isolate');
+const { routeMessage, useSessionUIStore } = sessionUiStoreMod;
 
 /**
  * Unit tests for session worktree routing through the authoritative store.
@@ -17,22 +23,34 @@ import { routeMessage, useSessionUIStore } from './session-ui-store';
 
 describe('session-worktree-store worktree routing', () => {
   beforeEach(() => {
-    // Clear all attachments before each test
-    const store = useSessionWorktreeStore.getState();
-    const attachments = store.attachments;
-    for (const sessionId of attachments.keys()) {
-      store.clearAttachment(sessionId);
-    }
+    // Reset both stores to a known baseline so cross-test state (including
+    // historical runtime/session memory and stale worktree metadata) does not
+    // leak between tests or test files.
+    useSessionWorktreeStore.setState({ attachments: new Map() });
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentSessionDirectory: null,
+      worktreeMetadata: new Map(),
+      availableWorktrees: [],
+      availableWorktreesByProject: new Map(),
+      webUICreatedSessions: new Set(),
+      sessionAbortFlags: new Map(),
+      abortControllers: new Map(),
+      isLoading: false,
+      lastLoadedDirectory: null,
+      sessionPlanAvailable: new Map(),
+      pendingChangesBarDismissed: new Map(),
+      rightSidebarGitDirectories: new Map(),
+      error: null,
+      abortPromptSessionId: null,
+      abortPromptExpiresAt: null,
+      newSessionDraft: {
+        open: false,
+        directoryOverride: null,
+        parentID: null,
+      },
+    });
   });
-
-  const getDirectoryForSession = (sessionId) => {
-    const attachment = useSessionWorktreeStore.getState().getAttachment(sessionId);
-    if (!attachment) return null;
-    if (attachment.degraded) {
-      return attachment.worktreeRoot ?? attachment.cwd ?? null;
-    }
-    return attachment.cwd ?? attachment.worktreeRoot ?? null;
-  };
 
   test('getDirectoryForSession prefers authoritative attachment cwd over sync fallback', () => {
     useSessionWorktreeStore.getState().setAttachment('session-dir', {
@@ -46,7 +64,7 @@ describe('session-worktree-store worktree routing', () => {
       degraded: false,
     });
 
-    expect(getDirectoryForSession('session-dir')).toBe('/repo/worktrees/feat-a/src');
+    expect(useSessionUIStore.getState().getDirectoryForSession('session-dir')).toBe('/repo/worktrees/feat-a/src');
   });
 
   test('getDirectoryForSession falls back to authoritative worktreeRoot when attachment is degraded', () => {
@@ -61,7 +79,7 @@ describe('session-worktree-store worktree routing', () => {
       degraded: true,
     });
 
-    expect(getDirectoryForSession('session-dir')).toBe('/repo/worktrees/feat-a');
+    expect(useSessionUIStore.getState().getDirectoryForSession('session-dir')).toBe('/repo/worktrees/feat-a');
   });
 
   test('setCurrentSession uses canonical cwd when valid', () => {
@@ -201,14 +219,13 @@ describe('session-worktree-store worktree routing', () => {
 
 describe('routeMessage directory scoping', () => {
   test('runs sends in the provided session directory', async () => {
+    // The session directory travels as an explicit request param (not via
+    // client-wide directory scoping), so concurrent sends can't cross-talk.
     const calls = [];
-    let activeDirectory = '/current/project';
-    const originalGetDirectory = opencodeClient.getDirectory;
     const originalShellSession = opencodeClient.shellSession;
 
-    opencodeClient.getDirectory = () => activeDirectory;
     opencodeClient.shellSession = async (params) => {
-      calls.push({ method: 'session.shell', params });
+      calls.push(params);
       return { info: {}, parts: [] };
     };
 
@@ -222,17 +239,11 @@ describe('routeMessage directory scoping', () => {
         inputMode: 'shell',
       });
     } finally {
-      opencodeClient.getDirectory = originalGetDirectory;
       opencodeClient.shellSession = originalShellSession;
     }
 
-    if (calls.length > 0) {
-      expect(calls).toHaveLength(1);
-      expect(calls[0]).toEqual({
-        method: 'session.shell',
-        params: expect.objectContaining({ directory: '/session/project' }),
-      });
-    }
-    expect(activeDirectory).toBe('/current/project');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sessionId).toBe('session-a');
+    expect(calls[0].directory).toBe('/session/project');
   });
 });

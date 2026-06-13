@@ -22,6 +22,7 @@ const sdkClient = {
 };
 
 const createOpencodeClient = mock(() => sdkClient);
+const originalFetch = globalThis.fetch;
 const rawFetch = mock(async () => {
   throw new Error('raw fetch should not be used');
 });
@@ -95,6 +96,7 @@ const { handleSpecialGitBridgeMessage } = await import('./bridge-git-special-run
 
 describe('bridge git special runtime', () => {
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     createOpencodeClient.mockImplementation(createRuntimeFetchCompatibleClient);
   });
 

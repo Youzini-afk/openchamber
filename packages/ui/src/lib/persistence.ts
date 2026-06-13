@@ -11,18 +11,19 @@ import { sanitizeStarterRefs } from '@/lib/draftStarters';
 import { normalizeMobileKeyboardMode, setStoredMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
-const DEFAULT_CHECKPOINT_RETENTION_LIMIT = 200;
-const MIN_CHECKPOINT_RETENTION_LIMIT = 1;
-const MAX_CHECKPOINT_RETENTION_LIMIT = 5000;
-
-const normalizeCheckpointRetentionLimit = (value: unknown): number | undefined => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return undefined;
+export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void => {
+  if (typeof window === 'undefined') {
+    return;
   }
-  return Math.min(
-    MAX_CHECKPOINT_RETENTION_LIMIT,
-    Math.max(MIN_CHECKPOINT_RETENTION_LIMIT, Math.round(value)),
-  );
+  if (typeof window.__OPENCHAMBER_HOME__ === 'string' && window.__OPENCHAMBER_HOME__.length > 0) {
+    return;
+  }
+
+  try {
+    window.__OPENCHAMBER_HOME__ = homeDirectory;
+  } catch {
+    /* read-only contextBridge property — leave preload-seeded value */
+  }
 };
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
@@ -50,15 +51,7 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   }
   if (settings.homeDirectory) {
     localStorage.setItem('homeDirectory', settings.homeDirectory);
-    // Electron's preload exposes __OPENCHAMBER_HOME__ as a read-only
-    // contextBridge property; assignment throws TypeError there. In VSCode
-    // webview and plain web runtime the property is writable. Swallow the
-    // error in Electron — preload already seeded the value correctly.
-    try {
-      window.__OPENCHAMBER_HOME__ = settings.homeDirectory;
-    } catch {
-      /* read-only contextBridge property — leave preload-seeded value */
-    }
+    applyPersistedHomeDirectoryToWindow(settings.homeDirectory);
   }
   if (Array.isArray(settings.projects) && settings.projects.length > 0) {
     localStorage.setItem('projects', JSON.stringify(settings.projects));
@@ -120,7 +113,7 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
       localStorage.removeItem('opencode-update-toast-dismissed-version');
     }
   }
-  if (settings.sttProvider === 'browser' || settings.sttProvider === 'server' || settings.sttProvider === 'wasm') {
+  if (settings.sttProvider === 'browser' || settings.sttProvider === 'server') {
     localStorage.setItem('sttProvider', settings.sttProvider);
   }
   if (typeof settings.sttServerUrl === 'string') {
@@ -128,9 +121,6 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   }
   if (typeof settings.sttModel === 'string') {
     localStorage.setItem('sttModel', settings.sttModel);
-  }
-  if (typeof settings.wasmSttModel === 'string') {
-    localStorage.setItem('wasmSttModel', settings.wasmSttModel);
   }
   if (typeof settings.sttLanguage === 'string') {
     localStorage.setItem('sttLanguage', settings.sttLanguage);
@@ -392,6 +382,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   const configStore = typeof window !== 'undefined'
     ? window.__zustand_config_store__?.getState?.() ?? null
     : null;
+  const configStoreApi = typeof window !== 'undefined'
+    ? window.__zustand_config_store__ ?? null
+    : null;
   const queueStore = useMessageQueueStore.getState();
 
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
@@ -514,6 +507,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
       store.setUserMessageRenderingMode(settings.userMessageRenderingMode);
     }
   }
+  if (typeof settings.collapsibleUserMessages === 'boolean' && settings.collapsibleUserMessages !== store.collapsibleUserMessages) {
+    store.setCollapsibleUserMessages(settings.collapsibleUserMessages);
+  }
   if (typeof settings.messageStreamTransport === 'string'
     && (settings.messageStreamTransport === 'auto' || settings.messageStreamTransport === 'ws' || settings.messageStreamTransport === 'sse')) {
     if (configStore && settings.messageStreamTransport !== configStore.settingsMessageStreamTransport) {
@@ -522,6 +518,9 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.stickyUserHeader === 'boolean' && settings.stickyUserHeader !== store.stickyUserHeader) {
     store.setStickyUserHeader(settings.stickyUserHeader);
+  }
+  if (typeof settings.expandedEditorToolbar === 'boolean' && settings.expandedEditorToolbar !== store.expandedEditorToolbar) {
+    store.setExpandedEditorToolbar(settings.expandedEditorToolbar);
   }
   if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
     store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
@@ -534,13 +533,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   }
   if (typeof settings.reportUsage === 'boolean' && settings.reportUsage !== store.reportUsage) {
     store.setReportUsage(settings.reportUsage);
-  }
-  if (
-    typeof settings.autoUpdateChecksEnabled === 'boolean'
-    && configStore
-    && settings.autoUpdateChecksEnabled !== configStore.settingsAutoUpdateChecksEnabled
-  ) {
-    configStore.setSettingsAutoUpdateChecksEnabled(settings.autoUpdateChecksEnabled);
   }
   if (typeof settings.fontSize === 'number' && Number.isFinite(settings.fontSize) && settings.fontSize !== store.fontSize) {
     store.setFontSize(settings.fontSize);
@@ -576,6 +568,33 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
     const mode = normalizeMobileKeyboardMode(settings.mobileKeyboardMode, store.mobileKeyboardMode);
     if (mode !== store.mobileKeyboardMode) {
       store.setMobileKeyboardMode(mode);
+    }
+  }
+  if (configStoreApi && configStore) {
+    const nextConfigState: Partial<typeof configStore> = {};
+    if ((settings.sttProvider === 'browser' || settings.sttProvider === 'server') && settings.sttProvider !== configStore.sttProvider) {
+      nextConfigState.sttProvider = settings.sttProvider;
+    }
+    if (typeof settings.sttServerUrl === 'string' && settings.sttServerUrl !== configStore.sttServerUrl) {
+      nextConfigState.sttServerUrl = settings.sttServerUrl;
+    }
+    if (typeof settings.sttModel === 'string' && settings.sttModel !== configStore.sttModel) {
+      nextConfigState.sttModel = settings.sttModel;
+    }
+    if (typeof settings.sttLanguage === 'string' && settings.sttLanguage !== configStore.sttLanguage) {
+      nextConfigState.sttLanguage = settings.sttLanguage;
+    }
+    if (typeof settings.sttSilenceThresholdDb === 'number' && Number.isFinite(settings.sttSilenceThresholdDb) && settings.sttSilenceThresholdDb !== configStore.sttSilenceThresholdDb) {
+      nextConfigState.sttSilenceThresholdDb = settings.sttSilenceThresholdDb;
+    }
+    if (typeof settings.sttSilenceHoldMs === 'number' && Number.isFinite(settings.sttSilenceHoldMs) && settings.sttSilenceHoldMs !== configStore.sttSilenceHoldMs) {
+      nextConfigState.sttSilenceHoldMs = settings.sttSilenceHoldMs;
+    }
+    if (typeof settings.sttTranscribeOnStop === 'boolean' && settings.sttTranscribeOnStop !== configStore.sttTranscribeOnStop) {
+      nextConfigState.sttTranscribeOnStop = settings.sttTranscribeOnStop;
+    }
+    if (Object.keys(nextConfigState).length > 0) {
+      configStoreApi.setState(nextConfigState);
     }
   }
 
@@ -672,11 +691,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     result.activeProjectId = candidate.activeProjectId;
   }
 
-  if (Array.isArray(candidate.approvedDirectories)) {
-    result.approvedDirectories = candidate.approvedDirectories.filter(
-      (entry): entry is string => typeof entry === 'string' && entry.length > 0
-    );
-  }
   if (Array.isArray(candidate.securityScopedBookmarks)) {
     result.securityScopedBookmarks = candidate.securityScopedBookmarks.filter(
       (entry): entry is string => typeof entry === 'string' && entry.length > 0
@@ -707,8 +721,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
     result.sessionRetentionAction = candidate.sessionRetentionAction;
   }
-  const checkpointRetentionLimit = normalizeCheckpointRetentionLimit(candidate.checkpointRetentionLimit);
-  result.checkpointRetentionLimit = checkpointRetentionLimit ?? DEFAULT_CHECKPOINT_RETENTION_LIMIT;
   if (typeof candidate.tunnelProvider === 'string') {
     const provider = candidate.tunnelProvider.trim().toLowerCase();
     if (provider.length > 0) {
@@ -953,30 +965,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.openCodeUpdateToastDismissedVersion === 'string') {
     result.openCodeUpdateToastDismissedVersion = candidate.openCodeUpdateToastDismissedVersion.trim().slice(0, 128);
   }
-  if (candidate.sttProvider === 'browser' || candidate.sttProvider === 'server' || candidate.sttProvider === 'wasm') {
-    result.sttProvider = candidate.sttProvider;
-  }
-  if (typeof candidate.sttServerUrl === 'string') {
-    result.sttServerUrl = candidate.sttServerUrl.trim().slice(0, 2048);
-  }
-  if (typeof candidate.sttModel === 'string') {
-    result.sttModel = candidate.sttModel.trim().slice(0, 256);
-  }
-  if (typeof candidate.wasmSttModel === 'string') {
-    result.wasmSttModel = candidate.wasmSttModel.trim().slice(0, 256);
-  }
-  if (typeof candidate.sttLanguage === 'string') {
-    result.sttLanguage = candidate.sttLanguage.trim().slice(0, 64);
-  }
-  if (typeof candidate.sttSilenceThresholdDb === 'number' && Number.isFinite(candidate.sttSilenceThresholdDb)) {
-    result.sttSilenceThresholdDb = candidate.sttSilenceThresholdDb;
-  }
-  if (typeof candidate.sttSilenceHoldMs === 'number' && Number.isFinite(candidate.sttSilenceHoldMs)) {
-    result.sttSilenceHoldMs = candidate.sttSilenceHoldMs;
-  }
-  if (typeof candidate.sttTranscribeOnStop === 'boolean') {
-    result.sttTranscribeOnStop = candidate.sttTranscribeOnStop;
-  }
   if (typeof candidate.showToolFileIcons === 'boolean') {
     result.showToolFileIcons = candidate.showToolFileIcons;
   }
@@ -1017,6 +1005,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     && (candidate.userMessageRenderingMode === 'markdown' || candidate.userMessageRenderingMode === 'plain')) {
     result.userMessageRenderingMode = candidate.userMessageRenderingMode;
   }
+  if (typeof candidate.collapsibleUserMessages === 'boolean') {
+    result.collapsibleUserMessages = candidate.collapsibleUserMessages;
+  }
   if (typeof candidate.stickyUserHeader === 'boolean') {
     result.stickyUserHeader = candidate.stickyUserHeader;
   }
@@ -1025,9 +1016,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
     result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;
-  }
-  if (typeof candidate.autoUpdateChecksEnabled === 'boolean') {
-    result.autoUpdateChecksEnabled = candidate.autoUpdateChecksEnabled;
   }
   if (typeof candidate.fontSize === 'number' && Number.isFinite(candidate.fontSize)) {
     result.fontSize = candidate.fontSize;
@@ -1133,6 +1121,27 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.responseStyleCustomInstructions === 'string') {
     result.responseStyleCustomInstructions = candidate.responseStyleCustomInstructions;
+  }
+  if (candidate.sttProvider === 'browser' || candidate.sttProvider === 'server') {
+    result.sttProvider = candidate.sttProvider;
+  }
+  if (typeof candidate.sttServerUrl === 'string') {
+    result.sttServerUrl = candidate.sttServerUrl.trim();
+  }
+  if (typeof candidate.sttModel === 'string') {
+    result.sttModel = candidate.sttModel.trim();
+  }
+  if (typeof candidate.sttLanguage === 'string') {
+    result.sttLanguage = candidate.sttLanguage.trim();
+  }
+  if (typeof candidate.sttSilenceThresholdDb === 'number' && Number.isFinite(candidate.sttSilenceThresholdDb)) {
+    result.sttSilenceThresholdDb = candidate.sttSilenceThresholdDb;
+  }
+  if (typeof candidate.sttSilenceHoldMs === 'number' && Number.isFinite(candidate.sttSilenceHoldMs)) {
+    result.sttSilenceHoldMs = candidate.sttSilenceHoldMs;
+  }
+  if (typeof candidate.sttTranscribeOnStop === 'boolean') {
+    result.sttTranscribeOnStop = candidate.sttTranscribeOnStop;
   }
 
   return result;

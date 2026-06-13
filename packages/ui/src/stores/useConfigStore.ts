@@ -43,6 +43,7 @@ interface OpenChamberDefaults {
     sttLanguage?: string;
     sttSilenceThresholdDb?: number;
     sttSilenceHoldMs?: number;
+    sttTranscribeOnStop?: boolean;
 }
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
@@ -91,6 +92,9 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                     const sttSilenceHoldMs = typeof data?.sttSilenceHoldMs === 'number' && Number.isFinite(data.sttSilenceHoldMs)
                         ? data.sttSilenceHoldMs
                         : undefined;
+                    const sttTranscribeOnStop = typeof data?.sttTranscribeOnStop === 'boolean'
+                        ? data.sttTranscribeOnStop
+                        : undefined;
 
                     return finish('runtime-settings', {
                         defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -108,6 +112,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         sttLanguage,
                         sttSilenceThresholdDb,
                         sttSilenceHoldMs,
+                        sttTranscribeOnStop,
                     });
                 }
             } catch {
@@ -149,6 +154,9 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
         const sttSilenceHoldMs = typeof data?.sttSilenceHoldMs === 'number' && Number.isFinite(data.sttSilenceHoldMs)
             ? data.sttSilenceHoldMs
             : undefined;
+        const sttTranscribeOnStop = typeof data?.sttTranscribeOnStop === 'boolean'
+            ? data.sttTranscribeOnStop
+            : undefined;
 
         return finish('settings-route', {
             defaultModel: defaultModel.length > 0 ? defaultModel : undefined,
@@ -166,6 +174,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             sttLanguage,
             sttSilenceThresholdDb,
             sttSilenceHoldMs,
+            sttTranscribeOnStop,
         });
     } catch (error) {
         markStartupTrace('config.defaults:error', { error: error instanceof Error ? error.message : String(error) });
@@ -685,6 +694,7 @@ interface ConfigStore {
     sttLanguage: string;
     sttSilenceThresholdDb: number;
     sttSilenceHoldMs: number;
+    sttTranscribeOnStop: boolean;
     showMessageTTSButtons: boolean;
     ttsInputMode: 'sanitized' | 'raw';
     voiceModeEnabled: boolean;
@@ -712,6 +722,7 @@ interface ConfigStore {
     setSttLanguage: (lang: string) => void;
     setSttSilenceThresholdDb: (db: number) => void;
     setSttSilenceHoldMs: (ms: number) => void;
+    setSttTranscribeOnStop: (enabled: boolean) => void;
     setShowMessageTTSButtons: (show: boolean) => void;
     setTtsInputMode: (mode: 'sanitized' | 'raw') => void;
     setVoiceModeEnabled: (enabled: boolean) => void;
@@ -956,6 +967,14 @@ export const useConfigStore = create<ConfigStore>()(
                         }
                     }
                     return -45;
+                })(),
+                sttTranscribeOnStop: (() => {
+                    if (typeof window !== 'undefined') {
+                        const saved = localStorage.getItem('sttTranscribeOnStop');
+                        if (saved === 'true') return true;
+                        if (saved === 'false') return false;
+                    }
+                    return true;
                 })(),
                 sttSilenceHoldMs: (() => {
                     if (typeof window !== 'undefined') {
@@ -1686,6 +1705,7 @@ export const useConfigStore = create<ConfigStore>()(
                                     sttLanguage: openChamberDefaults.sttLanguage ?? state.sttLanguage,
                                     sttSilenceThresholdDb: openChamberDefaults.sttSilenceThresholdDb ?? state.sttSilenceThresholdDb,
                                     sttSilenceHoldMs: openChamberDefaults.sttSilenceHoldMs ?? state.sttSilenceHoldMs,
+                                    sttTranscribeOnStop: openChamberDefaults.sttTranscribeOnStop ?? state.sttTranscribeOnStop,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -2321,6 +2341,14 @@ export const useConfigStore = create<ConfigStore>()(
                     if (typeof window !== 'undefined') {
                         localStorage.setItem('sttSilenceHoldMs', String(ms));
                     }
+                },
+
+                setSttTranscribeOnStop: (enabled: boolean) => {
+                    set({ sttTranscribeOnStop: enabled });
+                    if (typeof window !== 'undefined') {
+                        localStorage.setItem('sttTranscribeOnStop', String(enabled));
+                    }
+                    updateDesktopSettings({ sttTranscribeOnStop: enabled });
                 },
 
                 setShowMessageTTSButtons: (show: boolean) => {

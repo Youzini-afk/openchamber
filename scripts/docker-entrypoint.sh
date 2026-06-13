@@ -62,8 +62,14 @@ if [ -d "${OPENCHAMBER_VALIDATION_NODE_MODULES}" ]; then
   fi
 fi
 
-# Handle UI password environment variable
-if [ -n "${UI_PASSWORD:-}" ]; then
+# Handle UI password environment variables. UI_PASSWORD is kept as a legacy
+# alias; OPENCHAMBER_UI_PASSWORD is the canonical runtime variable.
+if [ -z "${OPENCHAMBER_UI_PASSWORD:-}" ] && [ -n "${UI_PASSWORD:-}" ]; then
+  OPENCHAMBER_UI_PASSWORD="$UI_PASSWORD"
+  export OPENCHAMBER_UI_PASSWORD
+fi
+
+if [ -n "${OPENCHAMBER_UI_PASSWORD:-}" ]; then
   echo "[entrypoint] UI password set, enabling authentication"
 fi
 
@@ -100,7 +106,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 set -- bun packages/web/bin/cli.js --foreground
-if [ -n "${UI_PASSWORD:-}" ]; then
-  set -- "$@" --ui-password "$UI_PASSWORD"
+if [ -n "${OPENCHAMBER_UI_PASSWORD:-}" ]; then
+  set -- "$@" --ui-password "$OPENCHAMBER_UI_PASSWORD"
 fi
 exec "$@"

@@ -15,6 +15,7 @@ import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from '@/components/icon/Icon';
 import { serializeQuestionAsJson, serializeQuestionAsMarkdown } from './questionSerializers';
+import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, getQuestionCustomTextareaHeight } from './questionTextareaSizing';
 
 interface QuestionCardProps {
   question: QuestionRequest;
@@ -22,6 +23,70 @@ interface QuestionCardProps {
 
 type TabKey = string;
 const SUMMARY_TAB = 'summary';
+
+interface CustomAnswerTextareaProps {
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  onValueChange: (value: string) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+}
+
+const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
+  value,
+  placeholder,
+  disabled,
+  onValueChange,
+  onKeyDown,
+}: CustomAnswerTextareaProps) {
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const [localValue, setLocalValue] = React.useState(value);
+  const [height, setHeight] = React.useState(QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT);
+  const [isScrollable, setIsScrollable] = React.useState(false);
+
+  React.useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  React.useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const nextHeight = getQuestionCustomTextareaHeight({
+      scrollHeight: textarea.scrollHeight,
+      currentHeight: height,
+    });
+    const nextScrollable = textarea.scrollHeight > (nextHeight ?? height);
+    if (isScrollable !== nextScrollable) {
+      setIsScrollable(nextScrollable);
+    }
+    if (nextHeight !== null) {
+      setHeight(nextHeight);
+    }
+  }, [height, isScrollable, localValue]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={localValue}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        setLocalValue(nextValue);
+        onValueChange(nextValue);
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+      rows={2}
+      onKeyDown={onKeyDown}
+      style={{ height }}
+      className={cn(
+        'w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none',
+        isScrollable ? 'overflow-y-auto' : 'overflow-hidden'
+      )}
+      autoFocus
+    />
+  );
+});
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const { t } = useI18n();
@@ -41,7 +106,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
 
   const [selectedOptions, setSelectedOptions] = React.useState<Record<number, string[]>>({});
   const [customMode, setCustomMode] = React.useState<Record<number, boolean>>({});
-  const [customText, setCustomText] = React.useState<Record<number, string>>({});
+  const customTextRef = React.useRef<Record<number, string>>({});
+  const [customTextFilled, setCustomTextFilled] = React.useState<Record<number, boolean>>({});
 
   const questions = React.useMemo(() => question.questions ?? [], [question.questions]);
   const isSummaryTab = activeTab === SUMMARY_TAB;
@@ -57,7 +123,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     setActiveTab('0');
     setSelectedOptions({});
     setCustomMode({});
-    setCustomText({});
+    customTextRef.current = {};
+    setCustomTextFilled({});
     setHasResponded(false);
   }, [question.id]);
 
@@ -77,12 +144,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const getAnswerDisplay = React.useCallback((index: number): string => {
     const isCustom = Boolean(customMode[index]);
     if (isCustom) {
-      const value = (customText[index] ?? '').trim();
+      const value = (customTextRef.current[index] ?? '').trim();
       return value || t('chat.questionCard.noAnswer');
     }
     const answers = selectedOptions[index] ?? [];
     return answers.length > 0 ? answers.join(', ') : t('chat.questionCard.noAnswer');
-  }, [customMode, customText, selectedOptions, t]);
+  }, [customMode, selectedOptions, t]);
 
   const isMultiple = Boolean(activeQuestion?.multiple);
   const selectedForActive = selectedOptions[activeIndex] ?? [];
@@ -93,8 +160,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     for (let index = 0; index < questions.length; index += 1) {
       const isCustom = Boolean(customMode[index]);
       if (isCustom) {
-        const value = (customText[index] ?? '').trim();
-        if (!value) pending.push(index);
+        if (!customTextFilled[index]) pending.push(index);
         continue;
       }
 
@@ -104,7 +170,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
       }
     }
     return pending;
-  }, [customMode, customText, questions.length, selectedOptions]);
+  }, [customMode, customTextFilled, questions.length, selectedOptions]);
 
   const requiredSatisfied = React.useMemo(() => {
     if (questions.length === 0) return false;
@@ -132,7 +198,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     for (let index = 0; index < questions.length; index += 1) {
       const isCustom = Boolean(customMode[index]);
       if (isCustom) {
-        const value = (customText[index] ?? '').trim();
+        const value = (customTextRef.current[index] ?? '').trim();
         answers.push(value ? [value] : []);
         continue;
       }
@@ -141,13 +207,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     }
 
     return answers;
-  }, [customMode, customText, questions.length, selectedOptions]);
+  }, [customMode, questions.length, selectedOptions]);
 
   const handleToggleOption = React.useCallback(
     (label: string) => {
       if (!activeQuestion) return;
 
       setCustomMode((prev) => ({ ...prev, [activeIndex]: false }));
+      setCustomTextFilled((prev) => (prev[activeIndex] ? { ...prev, [activeIndex]: false } : prev));
 
       setSelectedOptions((prev) => {
         const current = prev[activeIndex] ?? [];
@@ -165,6 +232,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const handleSelectCustom = React.useCallback(() => {
     setCustomMode((prev) => ({ ...prev, [activeIndex]: true }));
     setSelectedOptions((prev) => ({ ...prev, [activeIndex]: [] }));
+    const hasValue = (customTextRef.current[activeIndex] ?? '').trim().length > 0;
+    setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
+  }, [activeIndex]);
+
+  const handleCustomValueChange = React.useCallback((value: string) => {
+    customTextRef.current[activeIndex] = value;
+    const hasValue = value.trim().length > 0;
+    setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
   }, [activeIndex]);
 
   const handleConfirm = React.useCallback(async () => {
@@ -439,32 +514,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
 
                   {isCustomActive ? (
                     <div className="pl-6 pr-1 pt-0.5">
-                      <textarea
-                        ref={(el) => {
-                          if (el) {
-                            el.style.height = 'auto';
-                            const lineHeight = 20; // approx typography-meta line height
-                            const minHeight = lineHeight * 2;
-                            const maxHeight = lineHeight * 4;
-                            el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
-                          }
-                        }}
-                        value={customText[activeIndex] ?? ''}
-                        onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-                          const el = event.target;
-                          el.style.height = 'auto';
-                          const lineHeight = 20;
-                          const minHeight = lineHeight * 2;
-                          const maxHeight = lineHeight * 4;
-                          el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
-                          setCustomText((prev) => ({ ...prev, [activeIndex]: el.value }));
-                        }}
+                      <CustomAnswerTextarea
+                        value={customTextRef.current[activeIndex] ?? ''}
+                        onValueChange={handleCustomValueChange}
                         placeholder={t('chat.questionCard.yourAnswer')}
                         disabled={isResponding}
-                        rows={2}
                         onKeyDown={handleKeyDown}
-                        className="w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none overflow-hidden"
-                        autoFocus
                       />
                     </div>
                   ) : null}

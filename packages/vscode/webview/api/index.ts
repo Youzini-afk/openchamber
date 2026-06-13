@@ -9,6 +9,7 @@ import { createVSCodeActionsAPI } from './vscode';
 import { createVSCodeGitHubAPI } from './github';
 import { createVSCodeNotificationsAPI } from './notifications';
 import { createVSCodeCheckpointsAPI } from './checkpoints';
+import { createVSCodeWorkspaceAPI } from './workspace';
 
 // Stub APIs return sensible defaults instead of throwing
 const createStubTerminalAPI = (): TerminalAPI => ({
@@ -23,6 +24,7 @@ export const createVSCodeAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'vscode', isDesktop: false, isVSCode: true, label: 'VS Code Extension' },
   terminal: createStubTerminalAPI(),
   git: createVSCodeGitAPI(),
+  workspace: createVSCodeWorkspaceAPI(),
   files: createVSCodeFilesAPI(),
   settings: createVSCodeSettingsAPI(),
   permissions: createVSCodePermissionsAPI(),

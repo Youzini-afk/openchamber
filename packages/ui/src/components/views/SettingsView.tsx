@@ -1,47 +1,18 @@
 import React from 'react';
 import { cn, getModifierLabel } from '@/lib/utils';
-import { Icon } from '@/components/icon/Icon';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { AGENT_ORCHESTRATION_SELECTION, reloadOpenCodeConfiguration, useAgentsStore } from '@/stores/useAgentsStore';
+import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
 import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
-import {
-  RiAiAgentLine,
-  RiAiGenerate2,
-  RiArrowLeftSLine,
-  RiBarChart2Line,
-  RiBookLine,
-  RiBookOpenLine,
-  RiChatAi3Line,
-  RiChatHistoryLine,
-  RiCloseLine,
-  RiCommandLine,
-  RiCloudLine,
-  RiCodeBoxLine,
-  RiFoldersLine,
-  RiGitBranchLine,
-  RiGlobalLine,
-  RiMicLine,
-  RiListUnordered,
-  RiNotification3Line,
-  RiPaletteLine,
-  RiInformationLine,
-  RiRobot2Line,
-  RiRestartLine,
-  RiServerLine,
-  RiSlashCommands2,
-  RiSearchEyeLine,
-  RiBrainLine,
-} from '@remixicon/react';
+import { useConfigStore } from '@/stores/useConfigStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
 import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
 import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
 import { CommandsPage } from '@/components/sections/commands/CommandsPage';
@@ -51,6 +22,7 @@ import { PluginsSidebar, PluginsPage } from '@/components/sections/plugins';
 import { usePluginsStore } from '@/stores/usePluginsStore';
 import { SkillsSidebar } from '@/components/sections/skills/SkillsSidebar';
 import { SkillsPage } from '@/components/sections/skills/SkillsPage';
+import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { ProjectsSidebar } from '@/components/sections/projects/ProjectsSidebar';
 import { ProjectsPage } from '@/components/sections/projects/ProjectsPage';
 import { RemoteInstancesPage } from '@/components/sections/remote-instances/RemoteInstancesPage';
@@ -65,10 +37,14 @@ import { SnippetsPage } from '@/components/sections/snippets/SnippetsPage';
 import { GitPage } from '@/components/sections/git-identities/GitPage';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
 import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
-import { McpIcon } from '@/components/icons/McpIcon';
+import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
 import { useDeviceInfo } from '@/lib/device';
-import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
+import { Icon } from "@/components/icon/Icon";
+import type { IconName } from "@/components/icon/icons";
+import { McpIcon } from '@/components/icons/McpIcon';
+import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsPageMeta,
@@ -77,6 +53,7 @@ import {
   type SettingsRuntimeContext,
   type SettingsPageMeta,
 } from '@/lib/settings/metadata';
+import { buildSettingsSearchResults, type SettingsSearchResult } from '@/lib/settings/search';
 
 // Same constraints as main sidebar
 const SETTINGS_NAV_MIN_WIDTH = 176;
@@ -93,7 +70,6 @@ type SettingsDetailHistoryEntry = {
   page: SettingsPageSlug;
   stage: 'page-content';
 };
-type SkillsSystemTool = 'smart-search' | null;
 
 interface SettingsViewProps {
   onClose?: () => void;
@@ -103,13 +79,13 @@ interface SettingsViewProps {
   isWindowed?: boolean;
   /** Restrict top-level settings navigation to a specific product surface. */
   visiblePageSlugs?: SettingsPageSlug[];
+  initialMobileStage?: MobileStage;
 }
 
 const pageOrder: SettingsPageSlug[] = [
   'appearance',
   'chat',
   'notifications',
-  'about',
   'sessions',
   'shortcuts',
   'git',
@@ -125,16 +101,20 @@ const pageOrder: SettingsPageSlug[] = [
   'providers',
   'usage',
   'skills.installed',
-  'skills.catalog',
   'smart-search',
+  'skills.catalog',
   'voice',
   'tunnel',
+  'about',
 ];
 
-function buildRuntimeContext(isDesktop: boolean): SettingsRuntimeContext {
+const SNIPPETS_SETTINGS_ICON = { icon: 'chat-thread' } as const;
+const ADD_PROVIDER_SETTINGS_ID = '__add_provider__';
+
+function buildRuntimeContext(isDesktop: boolean, isMobile: boolean): SettingsRuntimeContext {
   const isVSCode = isVSCodeRuntime();
   const isWeb = !isDesktop && isWebRuntime();
-  return { isVSCode, isWeb, isDesktop };
+  return { isVSCode, isWeb, isDesktop, isMobile };
 }
 
 function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): boolean {
@@ -146,6 +126,17 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function nextUniqueName(baseName: string, existingNames: Iterable<string>): string {
+  const existing = new Set(existingNames);
+  let name = baseName;
+  let counter = 1;
+  while (existing.has(name)) {
+    name = `${baseName}-${counter}`;
+    counter += 1;
+  }
+  return name;
 }
 
 function getSettingsDetailHistoryEntry(state: unknown): SettingsDetailHistoryEntry | null {
@@ -176,62 +167,60 @@ function getCurrentHistoryState(): Record<string, unknown> {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<{ className?: string }> | null {
+export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
   switch (slug) {
     case 'projects':
-      return RiFoldersLine;
+      return 'folders';
     case 'remote-instances':
-      return RiServerLine;
+      return 'server';
     case 'appearance':
-      return RiPaletteLine;
+      return 'palette';
     case 'chat':
-      return RiChatAi3Line;
+      return 'chat-ai-3';
     case 'magic-prompts':
-      return RiAiGenerate2;
+      return 'ai-generate-2';
     case 'snippets':
-      return RiChatHistoryLine;
+      return SNIPPETS_SETTINGS_ICON.icon;
     case 'notifications':
-      return RiNotification3Line;
-    case 'about':
-      return RiInformationLine;
+      return 'notification-3';
     case 'shortcuts':
-      return RiCommandLine;
+      return 'command';
     case 'sessions':
-      return RiChatHistoryLine;
+      return 'chat-history';
 
     case 'providers':
-      return RiCloudLine;
+      return 'cloud';
     case 'agents':
-      return RiAiAgentLine;
-    case 'smart-search':
-      return RiSearchEyeLine;
+      return 'ai-agent';
     case 'behavior':
-      return RiBrainLine;
+      return 'brain';
     case 'commands':
-      return RiSlashCommands2;
+      return 'slash-commands-2';
     case 'mcp':
-      return McpIcon;
+      return null;
     case 'plugins':
-      return RiCodeBoxLine;
+      return 'code-box';
 
     case 'skills.installed':
-      return RiBookOpenLine;
+      return 'book-open';
     case 'skills.catalog':
-      return RiBookLine;
+      return 'book';
 
     case 'git':
-      return RiGitBranchLine;
+      return 'git-branch';
 
     case 'usage':
-      return RiBarChart2Line;
+      return 'bar-chart-2';
     case 'voice':
-      return RiMicLine;
+      return 'mic';
     case 'tunnel':
-      return RiGlobalLine;
+      return 'global';
+    case 'about':
+      return 'information';
     case 'home':
       return null;
     default:
-      return RiRobot2Line;
+      return 'robot-2';
   }
 }
 
@@ -311,7 +300,7 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
   );
 };
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile, isWindowed, visiblePageSlugs }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile, isWindowed, visiblePageSlugs, initialMobileStage = 'nav' }) => {
   const { t } = useI18n();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
@@ -321,30 +310,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const settingsSlug = resolveSettingsSlug(settingsPageRaw);
 
-  const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
-  const [selectedSkillsSystemTool, setSelectedSkillsSystemTool] = React.useState<SkillsSystemTool>(null);
+  const [mobileStage, setMobileStage] = React.useState<MobileStage>(initialMobileStage);
   const autoNavSlugRef = React.useRef<string | null>(null);
 
   const [navWidth, setNavWidth] = React.useState(216);
+  const [settingsSearchQuery, setSettingsSearchQuery] = React.useState('');
+  const [pendingSearchItemId, setPendingSearchItemId] = React.useState<string | null>(null);
+  const [activeSearchResultIndex, setActiveSearchResultIndex] = React.useState(0);
   const [hasManuallyResized, setHasManuallyResized] = React.useState(false);
   const [isResizing, setIsResizing] = React.useState(false);
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(navWidth);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const searchResultRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const activeSearchResultIndexRef = React.useRef(0);
+  const keyboardSearchNavigationRef = React.useRef(false);
 
   const isDesktopApp = React.useMemo(() => {
     return isDesktopShell();
   }, []);
+  const isDesktopLocalOrigin = React.useMemo(() => {
+    return isDesktopShell() && isDesktopLocalOriginActive();
+  }, []);
 
   // keep platform check available for future window chrome tweaks
 
-  const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp), [isDesktopApp]);
+  const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp, isMobile), [isDesktopApp, isMobile]);
 
   const visiblePages = React.useMemo(() => {
     const allowedPages = visiblePageSlugs ? new Set<SettingsPageSlug>(visiblePageSlugs) : null;
     return SETTINGS_PAGE_METADATA
       .filter((page) => page.slug !== 'home')
-      .filter((page) => page.primaryNav !== false)
       .filter((page) => !allowedPages || allowedPages.has(page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
       .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'))
@@ -429,9 +425,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     if (settingsSlug === 'agents') {
-      if (settingsPageRaw === 'openagent' || settingsPageRaw === 'agent-orchestration') {
-        useAgentsStore.getState().setSelectedAgent(AGENT_ORCHESTRATION_SELECTION);
-      }
       void useAgentsStore.getState().loadAgents();
       return;
     }
@@ -444,30 +437,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     if (settingsSlug === 'plugins') {
-      void (async () => {
-        const loaded = await usePluginsStore.getState().loadPlugins();
-        if (loaded && settingsPageRaw === 'magic-context') {
-          const hasSurface = usePluginsStore.getState().managementSurfaces.some((surface) => surface.id === 'magic-context-settings');
-          if (hasSurface) {
-            usePluginsStore.getState().selectSurface('magic-context-settings');
-          }
-        }
-      })();
+      void usePluginsStore.getState().loadPlugins();
       return;
     }
-    if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog' || settingsSlug === 'smart-search') {
+    if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
       void useSkillsStore.getState().loadSkills();
       void useSkillsCatalogStore.getState().loadCatalog();
     }
     if (settingsSlug === 'snippets') {
       void useSnippetsStore.getState().loadSnippets();
     }
-  }, [activeProjectId, isSettingsDialogOpen, isWindowed, runtimeCtx.isVSCode, settingsPageRaw, settingsSlug]);
+  }, [activeProjectId, isSettingsDialogOpen, isWindowed, runtimeCtx.isVSCode, settingsSlug]);
 
   const openPage = React.useCallback((slug: SettingsPageSlug) => {
-    if (slug !== 'smart-search') {
-      setSelectedSkillsSystemTool(null);
-    }
     setSettingsPage(slug);
     autoNavSlugRef.current = slug;
     if (!isMobile) {
@@ -493,7 +475,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     shortcuts: 'shortcuts',
     sessions: 'sessions',
     notifications: 'notifications',
-    about: 'about',
     voice: 'voice',
     tunnel: 'tunnel',
   }), []);
@@ -510,8 +491,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.usage.title');
       case 'agents':
         return t('settings.page.agents.title');
-      case 'smart-search':
-        return t('settings.page.smartSearch.title');
       case 'behavior':
         return t('settings.page.behavior.title');
       case 'commands':
@@ -540,17 +519,215 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.snippets.title');
       case 'notifications':
         return t('settings.page.notifications.title');
-      case 'about':
-        return t('settings.page.about.title');
       case 'voice':
         return t('settings.page.voice.title');
       case 'tunnel':
         return t('settings.page.tunnel.title');
+      case 'about':
+        return t('settings.page.about.title');
       case 'home':
       default:
         return t('settings.view.home.title');
     }
   }, [t]);
+
+  const settingsSearchResults = React.useMemo(() => {
+    return buildSettingsSearchResults({
+      query: settingsSearchQuery,
+      runtimeCtx: { ...runtimeCtx, isDesktopLocalOrigin },
+      visiblePageSlugs,
+      t,
+      getPageTitle,
+    });
+  }, [getPageTitle, isDesktopLocalOrigin, runtimeCtx, settingsSearchQuery, t, visiblePageSlugs]);
+
+  const prepareSettingsSearchTarget = React.useCallback((result: SettingsSearchResult): string => {
+    if (result.id.startsWith('agents.')) {
+      const store = useAgentsStore.getState();
+      const name = nextUniqueName('new-agent', store.agents.map((agent) => agent.name));
+      store.setAgentDraft({ name, scope: 'user' });
+      store.setSelectedAgent(name);
+      return result.id === 'agents.create' ? 'agents.name' : result.id;
+    }
+
+    if (result.id.startsWith('commands.')) {
+      const store = useCommandsStore.getState();
+      const name = nextUniqueName('new-command', store.commands.map((command) => command.name));
+      store.setCommandDraft({ name, scope: 'user' });
+      store.setSelectedCommand(name);
+      return result.id === 'commands.create' ? 'commands.name' : result.id;
+    }
+
+    if (result.id.startsWith('mcp.')) {
+      const store = useMcpConfigStore.getState();
+      const name = nextUniqueName('new-mcp-server', store.mcpServers.map((server) => server.name));
+      store.setMcpDraft({
+        name,
+        scope: 'user',
+        type: 'local',
+        command: [],
+        url: '',
+        environment: [],
+        headers: [],
+        oauthEnabled: true,
+        oauthClientId: '',
+        oauthClientSecret: '',
+        oauthScope: '',
+        oauthRedirectUri: '',
+        timeout: '',
+        enabled: true,
+      });
+      store.setSelectedMcp(name);
+      return result.id === 'mcp.create' ? 'mcp.server' : result.id;
+    }
+
+    if (result.id.startsWith('snippets.')) {
+      const store = useSnippetsStore.getState();
+      const name = nextUniqueName('new-snippet', store.snippets.map((snippet) => snippet.name));
+      store.setSnippetDraft({ name, scope: 'global' });
+      store.setSelectedSnippet(name);
+      return result.id === 'snippets.create' ? 'snippets.content' : result.id;
+    }
+
+    if (result.id.startsWith('skills.')) {
+      const store = useSkillsStore.getState();
+      const name = nextUniqueName('new-skill', store.skills.map((skill) => skill.name));
+      store.setSkillDraft({ name, scope: 'user', source: 'opencode', description: '', instructions: '' });
+      store.setSelectedSkill(name);
+      return result.id === 'skills.create' ? 'skills.basic-information' : result.id;
+    }
+
+    if (result.id === 'providers.connect') {
+      useConfigStore.getState().setSelectedProvider(ADD_PROVIDER_SETTINGS_ID);
+    }
+
+    if (result.id === 'plugins.create') {
+      return 'plugins.spec';
+    }
+
+    return result.id;
+  }, []);
+
+  const groupedSettingsSearchResults = React.useMemo(() => {
+    const groups: Array<{ page: SettingsPageSlug; pageTitle: string; results: SettingsSearchResult[] }> = [];
+    const groupByPage = new Map<SettingsPageSlug, { page: SettingsPageSlug; pageTitle: string; results: SettingsSearchResult[] }>();
+    for (const result of settingsSearchResults) {
+      let group = groupByPage.get(result.page);
+      if (!group) {
+        group = { page: result.page, pageTitle: result.pageTitle, results: [] };
+        groupByPage.set(result.page, group);
+        groups.push(group);
+      }
+      group.results.push(result);
+    }
+    return groups;
+  }, [settingsSearchResults]);
+
+  React.useEffect(() => {
+    setActiveSearchResultIndex(0);
+    activeSearchResultIndexRef.current = 0;
+    keyboardSearchNavigationRef.current = false;
+  }, [settingsSearchQuery]);
+
+  React.useEffect(() => {
+    activeSearchResultIndexRef.current = activeSearchResultIndex;
+  }, [activeSearchResultIndex]);
+
+  React.useEffect(() => {
+    searchResultRefs.current[activeSearchResultIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [activeSearchResultIndex]);
+
+  React.useEffect(() => {
+    if (activeSearchResultIndex >= settingsSearchResults.length) {
+      setActiveSearchResultIndex(Math.max(0, settingsSearchResults.length - 1));
+    }
+    searchResultRefs.current.length = settingsSearchResults.length;
+  }, [activeSearchResultIndex, settingsSearchResults.length]);
+
+  const openSearchResult = React.useCallback((result: SettingsSearchResult) => {
+    const targetId = prepareSettingsSearchTarget(result);
+    setPendingSearchItemId(targetId);
+    openPage(result.page);
+    if (isMobile) {
+      setMobileStage('page-content');
+    }
+    if (result.id === 'plugins.create' && typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('openchamber:settings-open-plugin-add'));
+      }, 50);
+    }
+  }, [isMobile, openPage, prepareSettingsSearchTarget]);
+
+  const handleSettingsSearchKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!settingsSearchQuery.trim()) {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSettingsSearchQuery('');
+      return;
+    }
+
+    if (settingsSearchResults.length === 0) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      keyboardSearchNavigationRef.current = true;
+      setActiveSearchResultIndex((current) => (current + 1) % settingsSearchResults.length);
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      keyboardSearchNavigationRef.current = true;
+      setActiveSearchResultIndex((current) => (current - 1 + settingsSearchResults.length) % settingsSearchResults.length);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const safeIndex = ((activeSearchResultIndexRef.current % settingsSearchResults.length) + settingsSearchResults.length) % settingsSearchResults.length;
+      const result = settingsSearchResults[safeIndex] ?? settingsSearchResults[0];
+      if (result) {
+        openSearchResult(result);
+      }
+    }
+  }, [openSearchResult, settingsSearchQuery, settingsSearchResults]);
+
+  React.useEffect(() => {
+    const targetId = pendingSearchItemId;
+    if (!targetId) {
+      return;
+    }
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (cancelled) {
+        return;
+      }
+      const escapedId = typeof CSS !== 'undefined' && CSS.escape
+        ? CSS.escape(targetId)
+        : targetId.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+      const target = containerRef.current?.querySelector<HTMLElement>(`[data-settings-item="${escapedId}"]`);
+      if (!target) {
+        return;
+      }
+      setPendingSearchItemId(null);
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.setAttribute('data-settings-search-highlight', 'true');
+      window.setTimeout(() => {
+        target.removeAttribute('data-settings-search-highlight');
+      }, 1600);
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [pendingSearchItemId, settingsSlug]);
 
   const renderUnavailable = React.useCallback(() => {
     return (
@@ -564,16 +741,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [t]);
 
   const renderPageSidebar = React.useCallback((slug: SettingsPageSlug, opts: { onItemSelect?: () => void }) => {
-    const handleSelectSkill = () => {
-      setSelectedSkillsSystemTool(null);
-      if (slug === 'smart-search') {
-        openPage('skills.installed');
-      }
-    };
-    const handleOpenSmartSearch = () => {
-      setSelectedSkillsSystemTool('smart-search');
-    };
-
     switch (slug) {
       case 'projects':
         return <ProjectsSidebar onItemSelect={opts.onItemSelect} />;
@@ -586,9 +753,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'plugins':
         return <PluginsSidebar onItemSelect={opts.onItemSelect} />;
       case 'skills.installed':
-        return <SkillsSidebar onItemSelect={opts.onItemSelect} onSelectSkill={handleSelectSkill} onOpenSmartSearch={handleOpenSmartSearch} showSmartSearchTool={!runtimeCtx.isVSCode} selectedSystemTool={selectedSkillsSystemTool} />;
+        return <SkillsSidebar onItemSelect={opts.onItemSelect} />;
       case 'smart-search':
-        return <SkillsSidebar onItemSelect={opts.onItemSelect} onSelectSkill={handleSelectSkill} onOpenSmartSearch={handleOpenSmartSearch} showSmartSearchTool={!runtimeCtx.isVSCode} selectedSystemTool="smart-search" />;
+        return null;
       case 'providers':
         return <ProvidersSidebar onItemSelect={opts.onItemSelect} />;
       case 'usage':
@@ -600,7 +767,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return null;
     }
-  }, [openPage, runtimeCtx.isVSCode, selectedSkillsSystemTool]);
+  }, []);
 
   const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const meta = getSettingsPageMeta(slug);
@@ -617,8 +784,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <RemoteInstancesPage />;
       case 'agents':
         return <AgentsPage />;
-      case 'smart-search':
-        return <SmartSearchPage />;
       case 'behavior':
         return <BehaviorPage />;
       case 'commands':
@@ -628,16 +793,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'plugins':
         return <PluginsPage />;
       case 'skills.installed':
-        if (selectedSkillsSystemTool === 'smart-search') {
-          return <SmartSearchPage />;
-        }
         return <SkillsPage view="installed" />;
+      case 'smart-search':
+        return <SmartSearchPage />;
       case 'skills.catalog':
         return <SkillsPage view="catalog" />;
       case 'providers':
         return <ProvidersPage />;
       case 'usage':
         return <UsagePage />;
+      case 'about':
+        return <div className="h-full overflow-auto px-5 py-6"><AboutSettings /></div>;
       case 'magic-prompts':
         return <MagicPromptsPage />;
       case 'snippets':
@@ -649,7 +815,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'shortcuts':
       case 'sessions':
       case 'notifications':
-      case 'about':
       case 'voice':
       case 'tunnel': {
         const section = openChamberSectionBySlug[slug] ?? 'visual';
@@ -658,7 +823,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       default:
         return <SettingsHome onOpen={openPage} />;
     }
-  }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx, selectedSkillsSystemTool]);
+  }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx]);
 
   // Mobile: if opened via deep-link / palette to a non-home page, jump into it once.
   React.useEffect(() => {
@@ -679,11 +844,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       return;
     }
     autoNavSlugRef.current = settingsSlug;
-    setMobileStage(def.kind === 'split' && settingsSlug !== 'smart-search' ? 'page-sidebar' : 'page-content');
+    setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
   }, [isMobile, mobileStage, settingsSlug]);
 
   const showBackButton = isMobile && mobileStage !== 'nav';
-  const backButtonTargetsPageSidebar = isMobile && mobileStage === 'page-content' && (settingsSlug === 'skills.installed' || settingsSlug === 'smart-search');
+  const backButtonTargetsPageSidebar = isMobile && mobileStage === 'page-content' && settingsSlug === 'skills.installed';
   const showOpenPageSidebarButton = mobileStage === 'page-content'
     && activePageMeta?.kind === 'split'
     && !backButtonTargetsPageSidebar;
@@ -716,7 +881,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const handleMobilePageSidebarItemSelect = React.useCallback(() => {
     setMobileStage('page-content');
-    if (settingsSlug === 'skills.installed' || settingsSlug === 'smart-search') {
+    if (settingsSlug === 'skills.installed') {
       pushMobileSplitDetailHistory(settingsSlug);
     }
   }, [pushMobileSplitDetailHistory, settingsSlug]);
@@ -743,12 +908,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     const handlePopState = (event: PopStateEvent) => {
-      if (settingsSlug !== 'skills.installed' && settingsSlug !== 'smart-search') {
+      if (settingsSlug !== 'skills.installed') {
         return;
       }
 
       const detail = getSettingsDetailHistoryEntry(event.state);
-      if (detail?.page === settingsSlug) {
+      if (detail?.page === 'skills.installed') {
         setMobileStage('page-content');
         return;
       }
@@ -767,15 +932,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, []);
 
   const renderSettingsNav = () => {
+    const hasSearchQuery = settingsSearchQuery.trim().length > 0;
+
     return (
       <div className="flex h-full flex-col overflow-hidden">
+        <div className="px-2 pt-3">
+          <div className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/40 sm:h-8">
+            <Icon name="search" className="h-4 w-4 shrink-0" />
+            <input
+              value={settingsSearchQuery}
+              onChange={(event) => setSettingsSearchQuery(event.target.value)}
+              onKeyDown={handleSettingsSearchKeyDown}
+              placeholder={t('settings.view.search.placeholder')}
+              aria-label={t('settings.view.search.aria')}
+              className="typography-ui min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground/70"
+            />
+            {hasSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setSettingsSearchQuery('')}
+                aria-label={t('settings.view.search.clear')}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-interactive-hover hover:text-foreground sm:h-5 sm:w-5"
+              >
+                <Icon name="close" className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Scrollable nav items */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           <div className="flex flex-col gap-0.5 pt-4 pb-2 px-2">
-            {sortedFilteredPages.map((page) => {
-              const selected = settingsSlug === page.slug || (settingsSlug === 'smart-search' && page.slug === 'skills.installed');
-              const Icon = getSettingsNavIcon(page.slug);
-              if (!Icon) return null;
+            {hasSearchQuery ? (
+              settingsSearchResults.length > 0 ? (() => {
+                let resultIndex = 0;
+                return groupedSettingsSearchResults.map((group) => (
+                  <div key={group.page} className="space-y-0.5">
+                    <div className="px-2 pb-0.5 pt-2 typography-micro font-medium text-muted-foreground/70">
+                      {group.pageTitle}
+                    </div>
+                    {group.results.map((result) => {
+                      const currentIndex = resultIndex;
+                      resultIndex += 1;
+                      const active = currentIndex === activeSearchResultIndex;
+                      const hasDescription = Boolean(result.description);
+                      return (
+                        <button
+                          key={result.id}
+                          type="button"
+                          ref={(element) => {
+                            searchResultRefs.current[currentIndex] = element;
+                          }}
+                          onMouseMove={() => {
+                            keyboardSearchNavigationRef.current = false;
+                            setActiveSearchResultIndex(currentIndex);
+                          }}
+                          onClick={() => openSearchResult(result)}
+                          className={cn(
+                            'flex w-full flex-col rounded-md px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                            hasDescription ? 'min-h-11 py-1.5' : 'py-2',
+                            active ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
+                          )}
+                        >
+                          <span className="typography-ui-label text-foreground truncate">{result.title}</span>
+                          {hasDescription && (
+                            <span className="typography-micro text-muted-foreground/70 line-clamp-2">{result.description}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ));
+              })() : (
+                <div className="px-2 py-6 text-center typography-ui text-muted-foreground">
+                  {t('settings.view.search.noResults')}
+                </div>
+              )
+            ) : sortedFilteredPages.map((page) => {
+              const selected = settingsSlug === page.slug;
+              const iconName = getSettingsNavIcon(page.slug);
+              if (!iconName && page.slug !== 'mcp') return null;
 
               return (
                 <Tooltip key={page.slug}>
@@ -791,7 +1027,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                           : 'text-foreground hover:bg-interactive-hover'
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      {page.slug === 'mcp'
+                        ? <McpIcon className="h-4 w-4 shrink-0" />
+                        : <Icon name={iconName!} className="h-4 w-4 shrink-0" />}
                       <span className="flex items-center gap-1.5 whitespace-nowrap overflow-hidden transition-opacity duration-150 opacity-100">
                         <span className="typography-ui-label font-normal truncate">{getPageTitle(page.slug)}</span>
                         {(page.slug === 'voice' || page.slug === 'tunnel') && (
@@ -823,7 +1061,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                     )}
                     onClick={() => void reloadOpenCodeConfiguration({ message: 'Restarting OpenCode…', mode: 'projects', scopes: ['all'] }).catch(() => undefined)}
                   >
-                    <RiRestartLine className="h-4 w-4 shrink-0" />
+                    <Icon name="restart" className="h-4 w-4 shrink-0" />
                     <span>{t('settings.view.actions.reloadOpenCode')}</span>
                   </button>
                 </TooltipTrigger>
@@ -942,7 +1180,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
               aria-label={t('settings.view.actions.openSectionList')}
               className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <RiListUnordered className="h-5 w-5" />
+              <Icon name="list-unordered" className="h-5 w-5" />
             </button>
           )}
 
@@ -954,7 +1192,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
               title={t('settings.view.actions.closeSettingsWithShortcut', { shortcut: shortcutKey })}
               className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              <RiCloseLine className="h-5 w-5" />
+              <Icon name="close" className="h-5 w-5" />
             </button>
           )}
         </div>
@@ -968,7 +1206,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                 aria-label={t('settings.view.actions.back')}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                <RiArrowLeftSLine className="h-5 w-5" />
+                <Icon name="arrow-left-s" className="h-5 w-5" />
               </button>
             </div>
           )}
@@ -982,7 +1220,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             title={t('settings.view.actions.closeSettingsWithShortcut', { shortcut: shortcutKey })}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <RiCloseLine className="h-5 w-5" />
+            <Icon name="close" className="h-5 w-5" />
           </button>
         </div>
       )}

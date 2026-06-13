@@ -3,7 +3,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
-import { isProcessRunning, parseArgs } from './cli.js';
+import { assertAuthenticatedNetworkExposure, parseArgs } from './cli.js';
 
 describe('cli args', () => {
   it('accepts legacy daemon flags as no-ops', () => {
@@ -74,6 +74,37 @@ describe('cli args', () => {
   });
 });
 
+describe('network-exposed auth validation', () => {
+  it('allows loopback without a UI password', () => {
+    expect(() => assertAuthenticatedNetworkExposure({ host: '127.0.0.1' })).not.toThrow();
+    expect(() => assertAuthenticatedNetworkExposure({ host: 'localhost' })).not.toThrow();
+    expect(() => assertAuthenticatedNetworkExposure({ host: '::1' })).not.toThrow();
+  });
+
+  it('requires a UI password for LAN and wildcard bind hosts', () => {
+    expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0' })).toThrow(/refuses to bind/);
+    expect(() => assertAuthenticatedNetworkExposure({ host: '192.168.1.10' })).toThrow(/refuses to bind/);
+  });
+
+  it('allows network-exposed bind hosts with a UI password', () => {
+    expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0', uiPassword: 'secret' })).not.toThrow();
+  });
+
+  it('allows explicit unsafe LAN override from process env only', () => {
+    const previous = process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+    process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = 'true';
+    try {
+      expect(() => assertAuthenticatedNetworkExposure({ host: '0.0.0.0' })).not.toThrow();
+    } finally {
+      if (typeof previous === 'string') {
+        process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN = previous;
+      } else {
+        delete process.env.OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN;
+      }
+    }
+  });
+});
+
 describe('cli entry detection', () => {
   const modulePath = '/tmp/openchamber/bin/cli.js';
   const moduleUrl = pathToFileURL(modulePath).href;
@@ -122,29 +153,5 @@ describe('cli entry detection', () => {
     };
 
     expect(normalizeCliEntryPath(unresolvedPath, realpath)).toBe(path.resolve(unresolvedPath));
-  });
-});
-
-describe('process detection', () => {
-  it('does not treat zombie processes as running instances on linux', () => {
-    const kill = (pid, signal) => {
-      expect(pid).toBe(27);
-      expect(signal).toBe(0);
-      return true;
-    };
-    const readFile = (filePath, encoding) => {
-      expect(filePath).toBe('/proc/27/stat');
-      expect(encoding).toBe('utf8');
-      return '27 (bun) Z 1 27 27 0 -1 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 0';
-    };
-
-    expect(isProcessRunning(27, { platform: 'linux', kill, readFile })).toBe(false);
-  });
-
-  it('treats live processes as running when proc state is not zombie', () => {
-    const kill = () => true;
-    const readFile = () => '27 (bun) S 1 27 27 0 -1 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 0';
-
-    expect(isProcessRunning(27, { platform: 'linux', kill, readFile })).toBe(true);
   });
 });

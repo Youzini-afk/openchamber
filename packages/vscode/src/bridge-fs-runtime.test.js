@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import { promisify } from 'node:util';
+import { spawnSync } from 'node:child_process';
 
 const execCalls = [];
 const execMock = mock(() => {
@@ -15,9 +16,13 @@ execMock[promisify.custom] = (command, options) => {
   });
 };
 
-mock.module('child_process', () => ({
+const childProcessMock = {
   exec: execMock,
-}));
+  spawnSync,
+};
+
+mock.module('child_process', () => childProcessMock);
+mock.module('node:child_process', () => childProcessMock);
 
 mock.module('vscode', () => ({
   workspace: {

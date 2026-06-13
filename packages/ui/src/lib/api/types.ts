@@ -1,7 +1,7 @@
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 
-export type RuntimePlatform = 'web' | 'desktop' | 'vscode' | 'mobile-app';
+export type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
 export interface RuntimeDescriptor {
   platform: RuntimePlatform;
@@ -88,7 +88,6 @@ export interface TerminalHandlers {
 export interface ForceKillOptions {
   sessionId?: string;
   cwd?: string;
-  workspacePath?: string;
 }
 
 export interface TerminalAPI {
@@ -552,168 +551,6 @@ export interface GitAPI {
   worktree?: GitWorktreeAPI;
 }
 
-export interface WorkspaceGitSummary {
-  branch: string | null;
-  remote?: string | null;
-  dirty: boolean;
-  ahead: number;
-  behind: number;
-}
-
-export interface WorkspaceEntry {
-  name: string;
-  path: string;
-  relativePath: string;
-  type: 'file' | 'directory' | 'symlink';
-  size: number;
-  modifiedAt: string;
-  mtimeMs: number;
-  isProject?: boolean;
-  git?: WorkspaceGitSummary | null;
-  children?: WorkspaceEntry[];
-}
-
-export interface WorkspaceRootInfo {
-  root: string;
-  relativeRoot: string;
-  exists: boolean;
-  mtimeMs: number;
-    limits: {
-      maxReadBytes: number;
-      maxUploadBytes: number;
-      maxArchiveBytes?: number;
-      maxExtractBytes?: number;
-      maxExtractFiles?: number;
-      archivePreviewLimit?: number;
-    };
-  features: {
-    lockdown: boolean;
-    trash: boolean;
-    customCommands: boolean;
-  };
-  separator: string;
-}
-
-export interface WorkspaceListResult {
-  path: string;
-  relativePath: string;
-  entries: WorkspaceEntry[];
-}
-
-export interface WorkspaceReadResult {
-  content: string;
-  path: string;
-  relativePath: string;
-  mtimeMs: number;
-}
-
-export interface WorkspaceMutationResult {
-  success: boolean;
-  entry: WorkspaceEntry;
-}
-
-export interface WorkspaceDeleteResult {
-  success: boolean;
-  trashed: boolean;
-  trashPath?: string;
-}
-
-export type WorkspaceUploadFile = File | {
-  name: string;
-  contentBase64: string;
-};
-
-export interface WorkspaceUploadResult {
-  success: boolean;
-  entries: WorkspaceEntry[];
-}
-
-export interface WorkspaceProjectOpenResult {
-  success: boolean;
-  project: ProjectEntry;
-  settings: SettingsPayload;
-}
-
-export type WorkspaceGitStatus = GitStatus & {
-  isGitRepository?: boolean;
-};
-
-export interface WorkspaceGitCloneOptions {
-  url: string;
-  branch?: string;
-  directoryName?: string;
-}
-
-export interface WorkspaceGitCloneResult {
-  success: boolean;
-  stdout?: string;
-  stderr?: string;
-  directoryName?: string | null;
-}
-
-export interface WorkspaceArchivePreviewEntry {
-  path: string;
-  type: 'file' | 'directory';
-  size: number;
-}
-
-export interface WorkspaceArchivePreview {
-  archive: WorkspaceEntry;
-  format: 'zip' | 'tar' | 'tgz';
-  entries: WorkspaceArchivePreviewEntry[];
-  totalFiles: number;
-  totalDirectories: number;
-  totalBytes: number;
-  truncated: boolean;
-}
-
-export interface WorkspaceArchiveExtractRequest {
-  path: string;
-  destination: string;
-  mode: 'new-folder' | 'merge';
-  conflict: 'rename' | 'skip' | 'error';
-  deleteArchive?: boolean;
-}
-
-export interface WorkspaceArchiveExtractResult {
-  success: true;
-  destination: string;
-  destinationEntry: WorkspaceEntry;
-  filesCreated: number;
-  directoriesCreated: number;
-  bytesWritten: number;
-  conflictsRenamed: number;
-  conflictsSkipped: number;
-  deletedArchive: boolean;
-}
-
-export interface WorkspaceAPI {
-  getRoot(): Promise<WorkspaceRootInfo>;
-  list(path?: string): Promise<WorkspaceListResult>;
-  tree(path?: string, depth?: number): Promise<WorkspaceListResult>;
-  entry(path: string): Promise<WorkspaceEntry>;
-  createFolder(path: string): Promise<WorkspaceMutationResult>;
-  createFile(path: string, content?: string): Promise<WorkspaceMutationResult>;
-  move(from: string, to: string): Promise<WorkspaceMutationResult>;
-  deleteEntry(path: string, options?: { permanent?: boolean }): Promise<WorkspaceDeleteResult>;
-  readFile(path: string): Promise<WorkspaceReadResult>;
-  writeFile(path: string, content: string, expectedMtimeMs?: number | null): Promise<WorkspaceMutationResult>;
-  upload(path: string, files: WorkspaceUploadFile[]): Promise<WorkspaceUploadResult>;
-  download(path: string): Promise<void>;
-  previewArchive(path: string): Promise<WorkspaceArchivePreview>;
-  extractArchive(request: WorkspaceArchiveExtractRequest): Promise<WorkspaceArchiveExtractResult>;
-  openProject(path: string): Promise<WorkspaceProjectOpenResult>;
-  gitStatus(path: string, options?: { mode?: 'light' }): Promise<WorkspaceGitStatus>;
-  gitFetch(path: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
-  gitClone(path: string, options: WorkspaceGitCloneOptions): Promise<WorkspaceGitCloneResult>;
-  gitPull(path: string, options?: { remote?: string; branch?: string }): Promise<GitPullResult>;
-  gitPush(path: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
-  gitCheckout(path: string, branch: string): Promise<{ success: boolean; branch: string }>;
-  gitCommit(path: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
-  gitLog(path: string, options?: GitLogOptions): Promise<GitLogResponse>;
-  gitRemotes(path: string): Promise<GitRemote[]>;
-}
-
 export interface FileListEntry {
   name: string;
   path: string;
@@ -756,6 +593,7 @@ export interface ListDirectoryOptions {
 
 export interface FileReadOptions {
   allowOutsideWorkspace?: boolean;
+  outsideFileGrant?: string;
   optional?: boolean;
 }
 
@@ -772,90 +610,6 @@ export interface FilesAPI {
   revealPath?(path: string): Promise<{ success: boolean }>;
   execCommands?(commands: string[], cwd: string): Promise<{ success: boolean; results: CommandExecResult[] }>;
   downloadFile?(path: string): Promise<void>;
-}
-
-export interface CheckpointRecord {
-  id: string;
-  sessionId: string;
-  messageId: string;
-  directory: string;
-  createdAt: number;
-  label?: string;
-  phase: 'before-message' | 'before-restore' | 'manual';
-  backupDir: string;
-  type: 'full' | 'incremental';
-  baseCheckpointId?: string;
-  changes?: Array<{
-    path: string;
-    type: 'added' | 'modified' | 'deleted';
-    hash?: string;
-  }>;
-  fileCount: number;
-  totalBytes: number;
-  contentHash: string;
-  hasFileHashes: boolean;
-}
-
-export interface CheckpointChangedFile {
-  path: string;
-  type: 'added' | 'modified' | 'deleted';
-}
-
-export interface CheckpointRestoreResult {
-  success: boolean;
-  restored: number;
-  deleted: number;
-  skipped: number;
-  safetyCheckpoint?: CheckpointRecord;
-}
-
-export interface CheckpointRestoreReviewResult {
-  restore: boolean;
-  cancelled?: boolean;
-  changedCount: number;
-  openedDiff?: boolean;
-}
-
-export interface CheckpointCleanupResult {
-  deletedCheckpoints: number;
-  deletedSessions: number;
-  deletedBytes: number;
-  remainingCheckpoints: number;
-}
-
-export interface CheckpointStorageStats {
-  sessionCount: number;
-  checkpointCount: number;
-  totalBytes: number;
-  retentionLimit: number;
-}
-
-export interface CheckpointsAPI {
-  create(input: {
-    sessionId: string;
-    messageId: string;
-    directory: string;
-    label?: string;
-    phase?: CheckpointRecord['phase'];
-  }): Promise<CheckpointRecord | null>;
-  getForMessage(input: {
-    sessionId: string;
-    messageId: string;
-    directory?: string;
-  }): Promise<CheckpointRecord | null>;
-  list(sessionId: string): Promise<CheckpointRecord[]>;
-  diff(input: { sessionId: string; checkpointId: string }): Promise<{ files: CheckpointChangedFile[] }>;
-  openFileDiff(input: { sessionId: string; checkpointId: string; filePath: string }): Promise<void>;
-  reviewRestore?(input: { sessionId: string; checkpointId: string }): Promise<CheckpointRestoreReviewResult>;
-  restore(input: {
-    sessionId: string;
-    checkpointId: string;
-    createSafetyCheckpoint?: boolean;
-  }): Promise<CheckpointRestoreResult>;
-  stats?(): Promise<CheckpointStorageStats>;
-  cleanupSession?(sessionId: string): Promise<CheckpointCleanupResult>;
-  cleanupRetention?(limit?: number): Promise<CheckpointCleanupResult>;
-  cleanupAll?(): Promise<CheckpointCleanupResult>;
 }
 
 export interface ProjectEntry {
@@ -886,7 +640,6 @@ export interface SettingsPayload {
   opencodeBinary?: string;
   projects?: ProjectEntry[];
   activeProjectId?: string;
-  approvedDirectories?: string[];
   securityScopedBookmarks?: string[];
   pinnedDirectories?: string[];
   showReasoningTraces?: boolean;
@@ -993,68 +746,6 @@ export interface ToolsAPI {
   getAvailableTools(): Promise<string[]>;
 }
 
-export type SmartSearchConfigSource = 'environment' | 'config_file' | 'default';
-
-export interface SmartSearchConfigValue {
-  key: string;
-  isSet: boolean;
-  value?: string;
-  maskedValue?: string;
-  secret: boolean;
-  source: SmartSearchConfigSource;
-  editable: boolean;
-}
-
-export interface SmartSearchPathInfo {
-  ok?: boolean;
-  config_file?: string;
-  config_dir?: string;
-  config_dir_source?: string;
-  default_config_file?: string;
-  legacy_windows_config_file?: string;
-  legacy_windows_config_exists?: boolean;
-  config_dir_override_value?: string;
-  config_dir_override_matches_default?: boolean;
-  exists?: boolean;
-}
-
-export interface SmartSearchConfigResponse {
-  ok: boolean;
-  path?: SmartSearchPathInfo;
-  values: Record<string, SmartSearchConfigValue>;
-  error?: string;
-}
-
-export interface SmartSearchStatusResponse {
-  ok: boolean;
-  available: boolean;
-  binary: string;
-  version?: string;
-  path?: SmartSearchPathInfo;
-  error?: string;
-}
-
-export interface SmartSearchConfigPatch {
-  set?: Record<string, string>;
-  unset?: string[];
-}
-
-export interface SmartSearchDoctorResponse {
-  ok: boolean;
-  exitCode?: number | null;
-  signal?: string | null;
-  result?: Record<string, unknown>;
-  stderr?: string;
-  error?: string;
-}
-
-export interface SmartSearchAPI {
-  status(): Promise<SmartSearchStatusResponse>;
-  loadConfig(): Promise<SmartSearchConfigResponse>;
-  saveConfig(patch: SmartSearchConfigPatch): Promise<SmartSearchConfigResponse>;
-  doctor(): Promise<SmartSearchDoctorResponse>;
-}
-
 export interface EditorAPI {
   openFile(path: string, line?: number, column?: number): Promise<void>;
   openDiff(
@@ -1068,7 +759,7 @@ export interface EditorAPI {
 export interface VSCodeAPI {
   executeCommand(command: string, ...args: unknown[]): Promise<unknown>;
   openAgentManager(): Promise<void>;
-  openSettings(settingsPage?: string): Promise<void>;
+  openSettings?(settingsPage?: string): Promise<void>;
   openExternalUrl(url: string): Promise<void>;
   pickFiles?(): Promise<unknown>;
   saveImage?(payload: unknown): Promise<unknown>;
@@ -1093,6 +784,256 @@ export interface PushAPI {
   subscribe(payload: PushSubscribePayload): Promise<{ ok: true } | null>;
   unsubscribe(payload: PushUnsubscribePayload): Promise<{ ok: true } | null>;
   setVisibility(payload: { visible: boolean }): Promise<{ ok: true } | null>;
+}
+
+
+export interface WorkspaceGitSummary {
+  isRepository: boolean;
+  branch: string | null;
+  isClean: boolean;
+  dirty?: number;
+  ahead?: number;
+  behind?: number;
+}
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  relativePath: string;
+  type: 'file' | 'directory' | 'symlink';
+  size: number;
+  modifiedAt: string;
+  mtimeMs: number;
+  isProject?: boolean;
+  git?: WorkspaceGitSummary | null;
+  children?: WorkspaceEntry[];
+}
+
+export interface WorkspaceRootInfo {
+  root: string;
+  relativeRoot: string;
+  exists: boolean;
+  mtimeMs: number;
+  limits: {
+    maxReadBytes: number;
+    maxUploadBytes: number;
+    maxArchiveBytes?: number;
+    maxExtractBytes?: number;
+    maxExtractFiles?: number;
+    archivePreviewLimit?: number;
+  };
+  features: {
+    lockdown: boolean;
+    trash: boolean;
+    customCommands: boolean;
+  };
+  separator: string;
+}
+
+export interface WorkspaceListResult {
+  path: string;
+  relativePath: string;
+  entries: WorkspaceEntry[];
+}
+
+export interface WorkspaceReadResult {
+  content: string;
+  path: string;
+  relativePath: string;
+  mtimeMs: number;
+}
+
+export interface WorkspaceMutationResult {
+  success: boolean;
+  entry: WorkspaceEntry;
+}
+
+export interface WorkspaceDeleteResult {
+  success: boolean;
+  trashed: boolean;
+  trashPath?: string;
+}
+
+export type WorkspaceUploadFile = File | {
+  name: string;
+  contentBase64: string;
+};
+
+export interface WorkspaceUploadResult {
+  success: boolean;
+  entries: WorkspaceEntry[];
+}
+
+export interface WorkspaceProjectOpenResult {
+  success: boolean;
+  project: ProjectEntry;
+  settings: SettingsPayload;
+}
+
+export type WorkspaceGitStatus = GitStatus & {
+  isGitRepository?: boolean;
+};
+
+export interface WorkspaceGitCloneOptions {
+  url: string;
+  branch?: string;
+  directoryName?: string;
+}
+
+export interface WorkspaceGitCloneResult {
+  success: boolean;
+  stdout?: string;
+  stderr?: string;
+  directoryName?: string | null;
+}
+
+export interface WorkspaceArchivePreviewEntry {
+  path: string;
+  type: 'file' | 'directory';
+  size: number;
+}
+
+export interface WorkspaceArchivePreview {
+  archive: WorkspaceEntry;
+  format: 'zip' | 'tar' | 'tgz';
+  entries: WorkspaceArchivePreviewEntry[];
+  totalFiles: number;
+  totalDirectories: number;
+  totalBytes: number;
+  truncated: boolean;
+}
+
+export interface WorkspaceArchiveExtractRequest {
+  path: string;
+  destination: string;
+  mode: 'new-folder' | 'merge';
+  conflict: 'rename' | 'skip' | 'error';
+  deleteArchive?: boolean;
+}
+
+export interface WorkspaceArchiveExtractResult {
+  success: true;
+  destination: string;
+  destinationEntry: WorkspaceEntry;
+  filesCreated: number;
+  directoriesCreated: number;
+  bytesExtracted?: number;
+  archiveDeleted?: boolean;
+  bytesWritten?: number;
+  conflictsRenamed?: number;
+  conflictsSkipped?: number;
+  deletedArchive?: boolean;
+}
+
+export interface WorkspaceAPI {
+  getRoot(): Promise<WorkspaceRootInfo>;
+  list(path?: string): Promise<WorkspaceListResult>;
+  tree(path?: string, depth?: number): Promise<WorkspaceListResult>;
+  entry(path: string): Promise<WorkspaceEntry>;
+  createFolder(path: string): Promise<WorkspaceMutationResult>;
+  createFile(path: string, content?: string): Promise<WorkspaceMutationResult>;
+  move(from: string, to: string): Promise<WorkspaceMutationResult>;
+  deleteEntry(path: string, options?: { permanent?: boolean }): Promise<WorkspaceDeleteResult>;
+  readFile(path: string): Promise<WorkspaceReadResult>;
+  writeFile(path: string, content: string, expectedMtimeMs?: number | null): Promise<WorkspaceMutationResult>;
+  upload(path: string, files: WorkspaceUploadFile[]): Promise<WorkspaceUploadResult>;
+  download(path: string): Promise<void>;
+  previewArchive(path: string): Promise<WorkspaceArchivePreview>;
+  extractArchive(request: WorkspaceArchiveExtractRequest): Promise<WorkspaceArchiveExtractResult>;
+  openProject(path: string): Promise<WorkspaceProjectOpenResult>;
+  gitStatus(path: string, options?: { mode?: 'light' }): Promise<WorkspaceGitStatus>;
+  gitFetch(path: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
+  gitClone(path: string, options: WorkspaceGitCloneOptions): Promise<WorkspaceGitCloneResult>;
+  gitPull(path: string, options?: { remote?: string; branch?: string }): Promise<GitPullResult>;
+  gitPush(path: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
+  gitCheckout(path: string, branch: string): Promise<{ success: boolean; branch: string }>;
+  gitCommit(path: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
+  gitLog(path: string, options?: GitLogOptions): Promise<GitLogResponse>;
+  gitRemotes(path: string): Promise<GitRemote[]>;
+}
+
+export interface CheckpointRecord {
+  id: string;
+  sessionId: string;
+  messageId: string;
+  directory: string;
+  createdAt: number;
+  label?: string;
+  phase: 'before-message' | 'before-restore' | 'manual';
+  backupDir: string;
+  type: 'full' | 'incremental';
+  baseCheckpointId?: string;
+  changes?: Array<{
+    path: string;
+    type: 'added' | 'modified' | 'deleted';
+    hash?: string;
+  }>;
+  fileCount: number;
+  totalBytes: number;
+  contentHash: string;
+  hasFileHashes: boolean;
+}
+
+export interface CheckpointChangedFile {
+  path: string;
+  type: 'added' | 'modified' | 'deleted';
+}
+
+export interface CheckpointRestoreResult {
+  success: boolean;
+  restored: number;
+  deleted: number;
+  skipped: number;
+  safetyCheckpoint?: CheckpointRecord;
+}
+
+export interface CheckpointRestoreReviewResult {
+  restore: boolean;
+  cancelled?: boolean;
+  changedCount: number;
+  openedDiff?: boolean;
+}
+
+export interface CheckpointCleanupResult {
+  deletedCheckpoints: number;
+  deletedSessions: number;
+  deletedBytes: number;
+  remainingCheckpoints: number;
+}
+
+export interface CheckpointStorageStats {
+  sessionCount: number;
+  checkpointCount: number;
+  totalBytes: number;
+  retentionLimit: number;
+}
+
+export interface CheckpointsAPI {
+  create(input: {
+    sessionId: string;
+    messageId: string;
+    directory: string;
+    label?: string;
+    phase?: CheckpointRecord['phase'];
+  }): Promise<CheckpointRecord | null>;
+  getForMessage(input: {
+    sessionId: string;
+    messageId: string;
+    directory?: string;
+  }): Promise<CheckpointRecord | null>;
+  list(sessionId: string): Promise<CheckpointRecord[]>;
+  diff(input: { sessionId: string; checkpointId: string }): Promise<{ files: CheckpointChangedFile[] }>;
+  openFileDiff(input: { sessionId: string; checkpointId: string; filePath: string }): Promise<void>;
+  reviewRestore?(input: { sessionId: string; checkpointId: string }): Promise<CheckpointRestoreReviewResult>;
+  restore(input: {
+    sessionId: string;
+    checkpointId: string;
+    createSafetyCheckpoint?: boolean;
+  }): Promise<CheckpointRestoreResult>;
+  stats?(): Promise<CheckpointStorageStats>;
+  cleanupSession?(sessionId: string): Promise<CheckpointCleanupResult>;
+  cleanupRetention?(limit?: number): Promise<CheckpointCleanupResult>;
+  cleanupAll?(): Promise<CheckpointCleanupResult>;
 }
 
 export interface MobileDevice {
@@ -1389,6 +1330,12 @@ export type GitHubAuthStatus = {
   user?: GitHubUserSummary | null;
   scope?: string;
   accounts?: GitHubAuthAccount[];
+  ghCli?: {
+    available: boolean;
+    disabled: boolean;
+    active: boolean;
+    user?: GitHubUserSummary | null;
+  } | null;
 };
 
 export type GitHubAuthAccount = {
@@ -1396,6 +1343,7 @@ export type GitHubAuthAccount = {
   user: GitHubUserSummary;
   scope?: string;
   current?: boolean;
+  source?: 'oauth' | 'gh-cli';
 };
 
 export type GitHubDeviceFlowStart = {
@@ -1412,28 +1360,13 @@ export type GitHubDeviceFlowComplete =
   | { connected: true; user: GitHubUserSummary; scope?: string }
   | { connected: false; status?: string; error?: string };
 
-export type GitHubTerminalAuthSyncResult = {
-  success: boolean;
-  ghConfigPath: string;
-  helperPath: string;
-  gitCredentialHelperConfigured: boolean;
-  gitCredentialHelperError?: string;
-};
-
-export type GitHubGitAuthorSyncResult = {
-  success: boolean;
-  userName: string;
-  userEmail: string;
-};
-
 export interface GitHubAPI {
   authStatus(): Promise<GitHubAuthStatus>;
   authStart(): Promise<GitHubDeviceFlowStart>;
   authComplete(deviceCode: string): Promise<GitHubDeviceFlowComplete>;
   authDisconnect(): Promise<{ removed: boolean }>;
   authActivate(accountId: string): Promise<GitHubAuthStatus>;
-  authSyncTerminal?(): Promise<GitHubTerminalAuthSyncResult>;
-  authConfigureGitAuthor?(): Promise<GitHubGitAuthorSyncResult>;
+  authSetGhCliDisabled(disabled: boolean): Promise<{ disabled: boolean }>;
   me?(): Promise<GitHubUserSummary>;
 
   prStatus(directory: string, branch: string, remote?: string, options?: { force?: boolean }): Promise<GitHubPullRequestStatus>;
@@ -1487,6 +1420,62 @@ export interface ClientAuthAPI {
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;
 }
 
+export type SmartSearchConfigValueSource = 'default' | 'environment' | 'config_file';
+
+export interface SmartSearchConfigValue {
+  key: string;
+  isSet: boolean;
+  value?: string;
+  maskedValue?: string;
+  secret: boolean;
+  source: SmartSearchConfigValueSource;
+  editable: boolean;
+}
+
+export interface SmartSearchPathInfo {
+  ok?: boolean;
+  binary?: string;
+  config_file?: string;
+  config_dir?: string;
+  config_dir_source?: string;
+  error?: string;
+}
+
+export interface SmartSearchConfigResponse {
+  ok: boolean;
+  path?: SmartSearchPathInfo;
+  values: Record<string, SmartSearchConfigValue>;
+}
+
+export interface SmartSearchConfigPatch {
+  set?: Record<string, string>;
+  unset?: string[];
+}
+
+export interface SmartSearchStatusResponse {
+  ok: boolean;
+  available: boolean;
+  binary: string;
+  version?: string;
+  path?: SmartSearchPathInfo;
+  error?: string;
+}
+
+export interface SmartSearchDoctorResponse {
+  ok: boolean;
+  exitCode?: number | null;
+  signal?: string | null;
+  result?: unknown;
+  stderr?: string;
+}
+
+export interface SmartSearchAPI {
+  status(): Promise<SmartSearchStatusResponse>;
+  loadConfig(): Promise<SmartSearchConfigResponse>;
+  saveConfig(patch: SmartSearchConfigPatch): Promise<SmartSearchConfigResponse>;
+  doctor(): Promise<SmartSearchDoctorResponse>;
+}
+
 export interface RuntimeAPIs {
   runtime: RuntimeDescriptor;
   terminal: TerminalAPI;
@@ -1502,8 +1491,8 @@ export interface RuntimeAPIs {
   mobile?: MobileAPI;
   diagnostics?: DiagnosticsAPI;
   clientAuth?: ClientAuthAPI;
-  tools: ToolsAPI;
   smartSearch?: SmartSearchAPI;
+  tools: ToolsAPI;
   editor?: EditorAPI;
   vscode?: VSCodeAPI;
   worktrees?: WorktreeMetadata[];

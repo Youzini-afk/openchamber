@@ -33,6 +33,7 @@ local-dev*
 .opencode/plans/*
 .hive
 docs/personal/*
+SECURITY_HARDENING_IMPLEMENTATION_PLAN.md
 
 # Build outputs
 build/

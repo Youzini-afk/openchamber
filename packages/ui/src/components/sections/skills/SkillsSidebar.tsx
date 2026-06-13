@@ -17,34 +17,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiSearchEyeLine } from '@remixicon/react';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
 import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
+import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 
 interface SkillsSidebarProps {
   onItemSelect?: () => void;
-  onSelectSkill?: () => void;
-  onOpenSmartSearch?: () => void;
-  selectedSystemTool?: 'smart-search' | null;
-  showSmartSearchTool?: boolean;
 }
 
 const BUILT_IN_SKILL_LOCATION = '<built-in>';
 
 const isBuiltInSkill = (skill: DiscoveredSkill | null | undefined): boolean => skill?.path === BUILT_IN_SKILL_LOCATION;
 
-export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
-  onItemSelect,
-  onSelectSkill,
-  onOpenSmartSearch,
-  selectedSystemTool = null,
-  showSmartSearchTool = false,
-}) => {
+export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
   const [renameDialogSkill, setRenameDialogSkill] = React.useState<DiscoveredSkill | null>(null);
   const [renameNewName, setRenameNewName] = React.useState('');
@@ -55,30 +46,22 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
   const {
     selectedSkillName,
     skills,
-    discoveryMeta,
-    lastLoadError,
     setSelectedSkill,
     setSkillDraft,
     createSkill,
     deleteSkill,
     getSkillDetail,
-    loadSkills,
   } = useSkillsStore(useShallow((s) => ({
     selectedSkillName: s.selectedSkillName,
     skills: s.skills,
-    discoveryMeta: s.discoveryMeta,
-    lastLoadError: s.lastLoadError,
     setSelectedSkill: s.setSelectedSkill,
     setSkillDraft: s.setSkillDraft,
     createSkill: s.createSkill,
     deleteSkill: s.deleteSkill,
     getSkillDetail: s.getSkillDetail,
-    loadSkills: s.loadSkills,
   })));
 
-  React.useEffect(() => {
-    void loadSkills();
-  }, [loadSkills]);
+  // Skills are loaded by the Settings shell when this page is active.
 
   const bgClass = 'bg-background';
 
@@ -93,11 +76,9 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
     }
 
     // Set draft and open the page for editing
-    onSelectSkill?.();
     setSkillDraft({ name: newName, scope: 'user', source: 'opencode', description: '' });
     setSelectedSkill(newName);
     onItemSelect?.();
-
 
   };
 
@@ -146,7 +127,6 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
     }
 
     // Set draft with prefilled values from source skill
-    onSelectSkill?.();
       setSkillDraft({
         name: newName,
         scope: skill.scope || 'user',
@@ -155,7 +135,6 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
         instructions: '',
       });
     setSelectedSkill(newName);
-
 
   };
 
@@ -210,7 +189,6 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
       const deleteSuccess = await deleteSkill(renameDialogSkill.name);
       if (deleteSuccess) {
         toast.success(`Skill renamed to "${sanitizedName}"`);
-        onSelectSkill?.();
         setSelectedSkill(sanitizedName);
       } else {
         toast.error(t('settings.skills.sidebar.toast.removeOldAfterRenameFailed'));
@@ -250,49 +228,6 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
 
   const groupedProjectSkills = useMemo(() => groupSkillsByFolder(projectSkills), [projectSkills]);
   const groupedUserSkills = useMemo(() => groupSkillsByFolder(userSkills), [userSkills]);
-  const userSkillDirs = discoveryMeta?.userSkillDirs ?? [];
-  const projectSkillDirs = discoveryMeta?.projectSkillDirs ?? [];
-  const userSkillDirStatus = discoveryMeta?.userSkillDirStatus ?? [];
-  const projectSkillDirStatus = discoveryMeta?.projectSkillDirStatus ?? [];
-
-  const renderEmptyScopeHint = (scope: 'user' | 'project') => {
-    const dirs = scope === 'user' ? userSkillDirs : projectSkillDirs;
-    const dirStatus = scope === 'user' ? userSkillDirStatus : projectSkillDirStatus;
-    const title = scope === 'user'
-      ? t('settings.skills.sidebar.empty.userTitle')
-      : t('settings.skills.sidebar.empty.projectTitle');
-    return (
-      <div className="px-2 pb-3 text-xs text-muted-foreground">
-        <div>{title}</div>
-        {dirStatus.length > 0 ? (
-          <div className="mt-1 space-y-0.5">
-            {dirStatus.map((entry) => (
-              <div key={entry.path} className="break-all font-mono text-[11px] opacity-75">
-                {entry.path} · {entry.exists ? t('settings.skills.sidebar.diagnostics.exists') : t('settings.skills.sidebar.diagnostics.missing')} · {entry.readable ? t('settings.skills.sidebar.diagnostics.readable') : t('settings.skills.sidebar.diagnostics.unreadable')} · {t('settings.skills.sidebar.diagnostics.skillMdCount', { count: entry.skillMdCount })}
-                {entry.error ? ` · ${entry.error}` : ''}
-              </div>
-            ))}
-          </div>
-        ) : dirs.length > 0 ? (
-          <div className="mt-1 space-y-0.5">
-            {dirs.map((dir) => (
-              <div key={dir} className="break-all font-mono text-[11px] opacity-75">{dir}</div>
-            ))}
-          </div>
-        ) : lastLoadError ? (
-          <div className="mt-1 space-y-0.5 text-[11px] opacity-75">
-            <div>{t('settings.skills.sidebar.diagnostics.loadError', { message: lastLoadError.message })}</div>
-            {lastLoadError.status ? <div>HTTP {lastLoadError.status}</div> : null}
-            {lastLoadError.url ? <div className="break-all font-mono">{lastLoadError.url}</div> : null}
-            {lastLoadError.responseShape ? <div>{t('settings.skills.sidebar.diagnostics.responseShape', { shape: lastLoadError.responseShape })}</div> : null}
-            {lastLoadError.responseSnippet ? <div className="break-all font-mono">{lastLoadError.responseSnippet}</div> : null}
-          </div>
-        ) : (
-          <div className="mt-1 text-[11px] opacity-75">{t('settings.skills.sidebar.diagnostics.noMeta')}</div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
@@ -302,59 +237,30 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
         <div className="flex items-center justify-between gap-2">
           <span className="typography-meta text-muted-foreground">{t('settings.skills.sidebar.total', { count: skills.length })}</span>
           <Button size="sm"
+            data-settings-item="skills.create"
             variant="ghost"
             className="h-7 w-7 px-0 -my-1 text-muted-foreground"
             onClick={handleCreateNew}
           >
-            <RiAddLine className="h-3.5 w-3.5" />
+            <Icon name="add" className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        <>
-          {showSmartSearchTool && onOpenSmartSearch ? (
-            <>
-              <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('settings.skills.sidebar.section.systemTools')}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenSmartSearch();
-                  onItemSelect?.();
-                }}
-                aria-current={selectedSystemTool === 'smart-search' ? 'page' : undefined}
-                className={cn(
-                  'group relative flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-all duration-200 select-none',
-                  selectedSystemTool === 'smart-search' ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
-                )}
-              >
-                <RiSearchEyeLine className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="typography-ui-label font-normal truncate text-foreground">
-                    {t('settings.skills.sidebar.systemTools.smartSearch.title')}
-                  </div>
-                  <div className="typography-micro truncate text-muted-foreground/70">
-                    {t('settings.skills.sidebar.systemTools.smartSearch.description')}
-                  </div>
-                </div>
-              </button>
-            </>
-          ) : null}
-
-          {skills.length === 0 && (
-            <div className="py-8 px-4 text-center text-muted-foreground">
-              <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
-              <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
-              <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
-            </div>
-          )}
-          <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('settings.skills.sidebar.section.project')}
+        {skills.length === 0 ? (
+          <div className="py-12 px-4 text-center text-muted-foreground">
+            <Icon name="book-open" className="mx-auto mb-3 h-10 w-10 opacity-50" />
+            <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
+            <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
           </div>
-          {projectSkills.length > 0 ? (
-            <>
+        ) : (
+          <>
+            {projectSkills.length > 0 && (
+              <>
+                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('settings.skills.sidebar.section.project')}
+                </div>
                 {groupedProjectSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
                   <SidebarGroup
                     key={groupName}
@@ -366,9 +272,8 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                       <SkillListItem
                         key={skill.name}
                         skill={skill}
-                        isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
+                        isSelected={selectedSkillName === skill.name}
                         onSelect={() => {
-                          onSelectSkill?.();
                           setSelectedSkill(skill.name);
                           onItemSelect?.();
 
@@ -386,9 +291,8 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                   <SkillListItem
                     key={skill.name}
                     skill={skill}
-                    isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
+                    isSelected={selectedSkillName === skill.name}
                     onSelect={() => {
-                      onSelectSkill?.();
                       setSelectedSkill(skill.name);
                       onItemSelect?.();
 
@@ -400,14 +304,14 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                     onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
                   />
                 ))}
-            </>
-          ) : renderEmptyScopeHint('project')}
+              </>
+            )}
 
-          <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('settings.skills.sidebar.section.user')}
-          </div>
-          {userSkills.length > 0 ? (
-            <>
+            {userSkills.length > 0 && (
+              <>
+                <div className="px-2 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('settings.skills.sidebar.section.user')}
+                </div>
                 {groupedUserSkills.sortedGroups.map(({ name: groupName, skills: groupSkills }) => (
                   <SidebarGroup
                     key={groupName}
@@ -419,9 +323,8 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                       <SkillListItem
                         key={skill.name}
                         skill={skill}
-                        isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
+                        isSelected={selectedSkillName === skill.name}
                         onSelect={() => {
-                          onSelectSkill?.();
                           setSelectedSkill(skill.name);
                           onItemSelect?.();
 
@@ -439,9 +342,8 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                   <SkillListItem
                     key={skill.name}
                     skill={skill}
-                    isSelected={selectedSystemTool === null && selectedSkillName === skill.name}
+                    isSelected={selectedSkillName === skill.name}
                     onSelect={() => {
-                      onSelectSkill?.();
                       setSelectedSkill(skill.name);
                       onItemSelect?.();
 
@@ -453,9 +355,10 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({
                     onMenuOpenChange={(open) => setOpenMenuSkill(open ? skill.name : null)}
                   />
                 ))}
-            </>
-          ) : renderEmptyScopeHint('user')}
-        </>
+              </>
+            )}
+          </>
+        )}
       </ScrollableOverlay>
 
       <Dialog
@@ -559,17 +462,26 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
       : t('settings.skills.sidebar.badge.opencode');
   const badgeClassName = 'typography-micro text-muted-foreground bg-[var(--surface-muted)] px-1 rounded flex-shrink-0 leading-none pb-px border border-[var(--interactive-border)]/50';
   const isBuiltIn = isBuiltInSkill(skill);
+  const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
+  const renderMenuItems = (Item: React.ElementType) => (
+    <>
+      <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onRename(); }}>
+        <Icon name="edit" className="h-4 w-4 mr-px" />
+        {t('settings.common.actions.rename')}
+      </Item>
+      <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDuplicate(); }}>
+        <Icon name="file-copy" className="h-4 w-4 mr-px" />
+        {t('settings.common.actions.duplicate')}
+      </Item>
+      <Item onClick={(e: React.MouseEvent) => { e.stopPropagation(); onDelete(); }} className="text-destructive focus:text-destructive">
+        <Icon name="delete-bin" className="h-4 w-4 mr-px" />
+        {t('settings.common.actions.delete')}
+      </Item>
+    </>
+  );
   return (
-    <div
-      className={cn(
-        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none',
-        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
-      )}
-      onContextMenu={!isMobile ? (e) => {
-        e.preventDefault();
-        onMenuOpenChange(true);
-      } : undefined}
-    >
+    <ContextMenu open={!isBuiltIn && isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
+      <ContextMenuTrigger render={<div className={cn('group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none', isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover')} onContextMenu={!isMobile && !isBuiltIn ? (e) => { e.preventDefault(); setIsContextMenuOpen(true); } : undefined} />}>
       <div className="flex min-w-0 flex-1 items-center">
         <button
           onClick={onSelect}
@@ -587,49 +499,26 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
           </div>
         </button>
 
-        {!isBuiltIn ? <DropdownMenu open={isMenuOpen} onOpenChange={onMenuOpenChange}>
+        {!isBuiltIn ? <DropdownMenu open={isMenuOpen} onOpenChange={(open) => { if (open) setIsContextMenuOpen(false); onMenuOpenChange(open); }}>
           <DropdownMenuTrigger asChild>
             <Button size="sm"
               variant="ghost"
               className="h-6 w-6 px-0 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
             >
-              <RiMore2Line className="h-3.5 w-3.5" />
+              <Icon name="more-2" className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-fit min-w-20">
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                onRename();
-              }}
-            >
-              <RiEditLine className="h-4 w-4 mr-px" />
-              {t('settings.common.actions.rename')}
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                onDuplicate();
-              }}
-            >
-              <RiFileCopyLine className="h-4 w-4 mr-px" />
-              {t('settings.common.actions.duplicate')}
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="text-destructive focus:text-destructive"
-            >
-              <RiDeleteBinLine className="h-4 w-4 mr-px" />
-              {t('settings.common.actions.delete')}
-            </DropdownMenuItem>
+            {renderMenuItems(DropdownMenuItem)}
           </DropdownMenuContent>
         </DropdownMenu> : null}
       </div>
-    </div>
+      </ContextMenuTrigger>
+      {!isBuiltIn ? (
+        <ContextMenuContent className="w-fit min-w-20">
+          {renderMenuItems(ContextMenuItem)}
+        </ContextMenuContent>
+      ) : null}
+    </ContextMenu>
   );
 };

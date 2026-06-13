@@ -74,7 +74,7 @@ describe("createEventPipeline", () => {
       ], resolveStreamFinished),
       onEvent: (_directory, payload) => {
         delivered.push(payload)
-        if (delivered.length === 2 || delivered.length === 3) {
+        if (delivered.length === 3) {
           resolveDelivered()
         }
       },
@@ -94,7 +94,48 @@ describe("createEventPipeline", () => {
         return `delta:${(event.properties as { delta: string }).delta}`
       }
       return `updated:${((event.properties as { part: { text: string } }).part).text}`
-    })).toEqual(["updated:ab", "delta:b"])
+    })).toEqual(["updated:a", "delta:b", "updated:ab"])
+  })
+
+  test("does not merge text deltas across part update barriers", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: () => void
+    const deliveredAll = new Promise<void>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const delivered: Event[] = []
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        deltaEvent("a"),
+        partUpdatedEvent("a"),
+        deltaEvent("b"),
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        delivered.push(payload)
+        if (delivered.length === 3) {
+          resolveDelivered()
+        }
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      await Promise.race([deliveredAll, failAfter(500)])
+    } finally {
+      pipeline.cleanup()
+    }
+
+    expect(delivered.map((event) => {
+      if (event.type === "message.part.delta") {
+        return `delta:${(event.properties as { delta: string }).delta}`
+      }
+      return `updated:${((event.properties as { part: { text: string } }).part).text}`
+    })).toEqual(["delta:a", "updated:a", "delta:b"])
   })
 
   test("normalizes openchamber session status events", async () => {
