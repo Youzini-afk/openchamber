@@ -10,6 +10,7 @@ import {
   RiFileSearchLine,
   RiFileZipLine,
   RiFolderAddLine,
+  RiFolderOpenLine,
   RiFolderLine,
   RiGitBranchLine,
   RiCheckLine,
@@ -48,6 +49,7 @@ import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useWorkspaceStore } from '@/stores/useWorkspaceStore';
 import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
+import { canChooseDesktopWorkspace, switchDesktopWorkspaceFromPicker } from '@/lib/desktopWorkspace';
 import {
   DEFAULT_WORKSPACE_SORT_MODE,
   WORKSPACE_SORT_MODES,
@@ -227,6 +229,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const [renameError, setRenameError] = React.useState<string | null>(null);
   const [renameSubmitting, setRenameSubmitting] = React.useState(false);
   const [sortMode, setSortModeState] = React.useState<WorkspaceSortMode>(getInitialSortMode);
+  const [isSwitchingWorkspace, setIsSwitchingWorkspace] = React.useState(false);
+  const canSwitchDesktopWorkspace = canChooseDesktopWorkspace();
 
   React.useEffect(() => {
     if (didInitialLoadRef.current) {
@@ -399,6 +403,28 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
       toast.error(message || t('workspace.sidebar.toast.uploadFailed'));
     }
   }, [openArchiveDialog, t, uploadFiles]);
+
+  const handleChooseWorkspace = React.useCallback(async () => {
+    if (isSwitchingWorkspace) return;
+
+    setIsSwitchingWorkspace(true);
+    try {
+      const result = await switchDesktopWorkspaceFromPicker();
+      if (result.status === 'selected') {
+        toast.success(t('workspace.sidebar.toast.workspaceSelected'), {
+          description: result.path,
+        });
+        return;
+      }
+      if (result.status === 'error') {
+        toast.error(t('workspace.sidebar.toast.workspaceSelectFailed'), {
+          description: result.error,
+        });
+      }
+    } finally {
+      setIsSwitchingWorkspace(false);
+    }
+  }, [isSwitchingWorkspace, t]);
 
   const handleCopyPath = React.useCallback(async (entry: WorkspaceEntry) => {
     try {
@@ -706,6 +732,23 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
             {root?.root || '/workspace'}
           </div>
         </div>
+        {canSwitchDesktopWorkspace ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => void handleChooseWorkspace()}
+                disabled={isSwitchingWorkspace}
+              >
+                <RiFolderOpenLine className={cn('h-4 w-4', isSwitchingWorkspace && 'animate-pulse')} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t('workspace.sidebar.actions.chooseWorkspace')}</TooltipContent>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

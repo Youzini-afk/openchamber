@@ -96,5 +96,18 @@ export function detectInitialLocale(): Locale {
     return stored;
   }
 
+  if (typeof navigator !== 'undefined') {
+    const candidates = Array.isArray(navigator.languages) && navigator.languages.length > 0
+      ? navigator.languages
+      : [navigator.language];
+
+    for (const candidate of candidates) {
+      const locale = normalizeLocale(candidate);
+      if (locale !== DEFAULT_LOCALE || candidate?.toLowerCase().startsWith('en')) {
+        return locale;
+      }
+    }
+  }
+
   return DEFAULT_LOCALE;
 }

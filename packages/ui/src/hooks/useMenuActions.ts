@@ -10,6 +10,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { showOpenCodeStatus } from '@/lib/openCodeStatus';
+import { canChooseDesktopWorkspace, switchDesktopWorkspaceFromPicker } from '@/lib/desktopWorkspace';
 
 const getActiveElementSelectedText = (): string => {
   if (typeof document === 'undefined') {
@@ -138,6 +139,17 @@ export const useMenuActions = (
   }, [checkForUpdates]);
 
   const handleChangeWorkspace = React.useCallback(() => {
+    if (canChooseDesktopWorkspace()) {
+      void switchDesktopWorkspaceFromPicker().then((result) => {
+        if (result.status === 'error') {
+          toast.error('Failed to switch workspace', {
+            description: result.error,
+          });
+        }
+      });
+      return;
+    }
+
     sessionEvents.requestDirectoryDialog();
   }, []);
 

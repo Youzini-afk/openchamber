@@ -92,6 +92,7 @@ type WorkspaceStore = {
   closeGitPanel: () => void;
   openArchiveDialog: (path: string, mode?: WorkspaceArchiveMode) => void;
   closeArchiveDialog: () => void;
+  clearWorkspaceCache: () => void;
   resetForTests: () => void;
 };
 
@@ -583,6 +584,15 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
     closeArchiveDialog: () => {
       set({ archiveDialog: EMPTY_ARCHIVE_DIALOG });
+    },
+
+    clearWorkspaceCache: () => {
+      set({
+        ...initialState,
+        terminalDialog: EMPTY_TERMINAL_DIALOG,
+        gitPanel: EMPTY_GIT_PANEL,
+        archiveDialog: EMPTY_ARCHIVE_DIALOG,
+      });
     },
 
     resetForTests: () => {

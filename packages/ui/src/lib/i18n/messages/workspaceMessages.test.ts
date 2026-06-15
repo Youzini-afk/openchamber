@@ -8,6 +8,7 @@ import { dict as zhDict } from './zh-CN';
 
 const WORKSPACE_KEYS = [
   'workspace.sidebar.title',
+  'workspace.sidebar.actions.chooseWorkspace',
   'workspace.sidebar.actions.terminal',
   'workspace.sidebar.actions.newFolder',
   'workspace.sidebar.actions.upload',
@@ -44,6 +45,8 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.dialog.rename.submit',
   'workspace.sidebar.confirm.permanentDelete',
   'workspace.sidebar.toast.addedToSession',
+  'workspace.sidebar.toast.workspaceSelected',
+  'workspace.sidebar.toast.workspaceSelectFailed',
   'workspace.sidebar.toast.permanentlyDeleted',
   'workspace.archive.menu.preview',
   'workspace.archive.menu.extractNewFolder',
