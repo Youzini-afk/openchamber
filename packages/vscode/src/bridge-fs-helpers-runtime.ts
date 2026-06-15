@@ -538,7 +538,7 @@ export const fetchModelsMetadata = async () => {
   }
 };
 
-const getFsAccessRoot = (): string => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+export const getFsAccessRoot = (): string => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
 
 export const getFsMimeType = (filePath: string): string => {
   const ext = path.extname(filePath).toLowerCase();

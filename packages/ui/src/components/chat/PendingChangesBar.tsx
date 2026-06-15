@@ -1,22 +1,19 @@
 import React from 'react';
-import { Popover } from '@base-ui/react/popover';
-import { RiFileEditLine, RiArrowDownSLine, RiArrowUpSLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
-import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { Icon } from "@/components/icon/Icon";
+import { cn } from '@/lib/utils';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { normalizePath } from '@/components/session/sidebar/utils';
-import { openFileInMainEditor } from '@/lib/openFileInMainEditor';
 import {
     type ChangedFileEntry,
     type GitChangedFile,
     extractGitChangedFiles,
-    getGitChangeKind,
     isGitFile,
-    toAbsoluteChangedFilePath,
 } from './changedFiles';
 import { ChangedFilesList } from './ChangedFilesList';
 import { changedFilesPopoverClassName, changedFilesPopoverStyle } from './changedFilesPopover';
@@ -25,8 +22,9 @@ import { useI18n } from '@/lib/i18n';
 export const PendingChangesBar: React.FC = React.memo(() => {
     const { t } = useI18n();
     const [isExpanded, setIsExpanded] = React.useState(false);
+    const popoverRef = React.useRef<HTMLDivElement>(null);
     const [revertingPaths, setRevertingPaths] = React.useState<Set<string>>(() => new Set());
-    const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
+    const currentDirectory = useEffectiveDirectory() ?? null;
     const runtime = React.useContext(RuntimeAPIContext);
     const isGitRepo = useIsGitRepo(currentDirectory);
     const gitStatus = useGitStore((s) =>
@@ -35,6 +33,20 @@ export const PendingChangesBar: React.FC = React.memo(() => {
     const ensureStatus = useGitStore((s) => s.ensureStatus);
     const fetchStatus = useGitStore((s) => s.fetchStatus);
     const mobileActions = useMobileAppActions();
+
+    // Close popover when clicking outside
+    React.useEffect(() => {
+        if (!isExpanded) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+                setIsExpanded(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [isExpanded]);
 
     // Seed git store for currentDirectory so the bar can render independently of
     // DiffView/GitView/right-sidebar mounting. ensureStatus has a 5s staleness
@@ -57,42 +69,30 @@ export const PendingChangesBar: React.FC = React.memo(() => {
     }, [currentDirectory, runtime?.git, fetchStatus]);
 
     const gitChangedFiles = React.useMemo<GitChangedFile[]>(() => {
-        if (isGitRepo !== true || !gitStatus || gitStatus.isClean) return [];
+        if (!currentDirectory || isGitRepo !== true || !gitStatus || gitStatus.isClean) return [];
         return extractGitChangedFiles(gitStatus.files, gitStatus.diffStats, currentDirectory);
     }, [isGitRepo, gitStatus, currentDirectory]);
 
-    const changeSummary = React.useMemo(() => {
-        let created = 0;
-        let deleted = 0;
-        let modified = 0;
-        let totalAdded = 0;
-        let totalRemoved = 0;
-
+    const { totalAdded, totalRemoved } = React.useMemo(() => {
+        let added = 0;
+        let removed = 0;
         for (const file of gitChangedFiles) {
-            totalAdded += file.insertions;
-            totalRemoved += file.deletions;
-
-            const kind = getGitChangeKind(file);
-            if (kind === 'created') {
-                created += 1;
-            } else if (kind === 'deleted') {
-                deleted += 1;
-            } else {
-                modified += 1;
-            }
+            added += file.insertions;
+            removed += file.deletions;
         }
-
-        return { created, deleted, modified, totalAdded, totalRemoved };
+        return { totalAdded: added, totalRemoved: removed };
     }, [gitChangedFiles]);
+
+    if (!currentDirectory || isGitRepo !== true) return null;
+    if (gitChangedFiles.length === 0) return null;
 
     const handleOpenFile = (file: ChangedFileEntry) => {
         if (!currentDirectory) return;
         if (!isGitFile(file)) return;
 
-        if (getGitChangeKind(file) === 'deleted') {
-            handleViewDiff(file);
-            return;
-        }
+        setIsExpanded(false);
+
+        const absolutePath = file.path;
 
         // Dedicated mobile root: open the per-file diff inside the mobile Changes surface.
         if (mobileActions) {
@@ -100,20 +100,23 @@ export const PendingChangesBar: React.FC = React.memo(() => {
                 diffPath: file.relativePath,
                 staged: file.hasStagedChanges && !file.hasWorkingChanges,
             });
-            setIsExpanded(false);
             return;
         }
 
         const editor = runtime?.editor;
         if (editor) {
-            const absolutePath = toAbsoluteChangedFilePath(file, currentDirectory);
             void editor.openFile(absolutePath);
             return;
         }
 
-        const absolutePath = toAbsoluteChangedFilePath(file, currentDirectory);
-        openFileInMainEditor(currentDirectory, absolutePath);
-        setIsExpanded(false);
+        const store = useUIStore.getState();
+        const openStagedDiff = file.hasStagedChanges && !file.hasWorkingChanges;
+        if (!store.isMobile) {
+            store.openContextDiff(currentDirectory, file.relativePath, openStagedDiff);
+            return;
+        }
+        store.navigateToDiff(file.relativePath, openStagedDiff);
+        store.setRightSidebarOpen(false);
     };
 
     const handleViewDiff = (file: ChangedFileEntry) => {
@@ -154,75 +157,58 @@ export const PendingChangesBar: React.FC = React.memo(() => {
         }
     };
 
-    if (isGitRepo !== true) return null;
-    if (gitChangedFiles.length === 0) return null;
-
-    const summarySegments = [
-        changeSummary.modified > 0
-            ? t('chat.pendingChanges.summary.modified', { count: changeSummary.modified })
-            : null,
-        changeSummary.created > 0
-            ? t('chat.pendingChanges.summary.created', { count: changeSummary.created })
-            : null,
-        changeSummary.deleted > 0
-            ? t('chat.pendingChanges.summary.deleted', { count: changeSummary.deleted })
-            : null,
-    ].filter(Boolean);
-
-    const hasLineStats = changeSummary.totalAdded > 0 || changeSummary.totalRemoved > 0;
+    const fileCount = gitChangedFiles.length;
+    const labelHead = fileCount === 1
+        ? t('chat.pendingChanges.fileCountSingle', { count: fileCount })
+        : t('chat.pendingChanges.fileCountPlural', { count: fileCount });
 
     return (
-        <Popover.Root open={isExpanded} onOpenChange={setIsExpanded}>
-            <Popover.Trigger
-                render={
-                    <button
-                        type="button"
-                        className="flex min-w-0 max-w-full items-center gap-1 text-left text-muted-foreground"
-                    >
-                        <RiFileEditLine className="h-3.5 w-3.5 flex-shrink-0 text-[var(--status-warning)]" />
-                        <span className="min-w-0 inline-flex items-center gap-1 typography-ui-label text-foreground">
-                            {summarySegments.map((segment, index) => (
-                                <span key={segment} className="shrink-0">
-                                    {index > 0 ? <span className="text-muted-foreground"> · </span> : null}
-                                    {segment}
-                                </span>
-                            ))}
-                        </span>
-                        <span className="status-row__changed-label min-w-0 typography-ui-label text-foreground truncate">
-                            {t('chat.pendingChanges.changedInWorkspace')}
-                        </span>
-                        {hasLineStats ? (
-                            <span className="text-[0.75rem] tabular-nums inline-flex items-baseline gap-1 flex-shrink-0">
-                                <span style={{ color: 'var(--status-success)' }}>+{changeSummary.totalAdded}</span>
-                                <span style={{ color: 'var(--status-error)' }}>-{changeSummary.totalRemoved}</span>
-                            </span>
-                        ) : null}
-                        {isExpanded ? (
-                            <RiArrowUpSLine className="h-3.5 w-3.5 flex-shrink-0" />
-                        ) : (
-                            <RiArrowDownSLine className="h-3.5 w-3.5 flex-shrink-0" />
-                        )}
-                    </button>
-                }
-            />
-            <Popover.Portal>
-                <Popover.Positioner side="top" align="start" sideOffset={4} collisionPadding={8}>
-                    <Popover.Popup
-                        style={changedFilesPopoverStyle}
-                        className={`${changedFilesPopoverClassName} transition-all duration-150 ease-out data-[starting-style]:opacity-0 data-[starting-style]:scale-95 data-[ending-style]:opacity-0 data-[ending-style]:scale-95`}
-                    >
-                        <ChangedFilesList
-                            files={gitChangedFiles}
-                            currentDirectory={currentDirectory}
-                            onOpenFile={handleOpenFile}
-                            onViewDiff={handleViewDiff}
-                            onRevertFile={handleRevertFile}
-                            revertingPaths={revertingPaths}
-                        />
-                    </Popover.Popup>
-                </Popover.Positioner>
-            </Popover.Portal>
-        </Popover.Root>
+        <div className="relative" ref={popoverRef}>
+            <button
+                type="button"
+                className="flex min-w-0 max-w-full items-center gap-1 text-left text-muted-foreground"
+                onClick={() => setIsExpanded((value) => !value)}
+                aria-expanded={isExpanded}
+            >
+                <Icon name="file-edit" className="h-3.5 w-3.5 flex-shrink-0 text-[var(--status-warning)]" />
+                <span className="min-w-0 typography-ui-label text-foreground flex-shrink-0">{labelHead}</span>
+                <span className="status-row__changed-label min-w-0 typography-ui-label text-foreground truncate">
+                    {t('chat.pendingChanges.changedInWorkspace')}
+                </span>
+                <span className="text-[0.75rem] tabular-nums inline-flex items-baseline gap-1 flex-shrink-0">
+                    {totalAdded > 0 ? <span style={{ color: 'var(--status-success)' }}>+{totalAdded}</span> : null}
+                    {totalRemoved > 0 ? <span style={{ color: 'var(--status-error)' }}>-{totalRemoved}</span> : null}
+                </span>
+                {isExpanded ? (
+                    <Icon name="arrow-up-s" className="h-3.5 w-3.5 flex-shrink-0" />
+                ) : (
+                    <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0" />
+                )}
+            </button>
+            {isExpanded && (
+                <div
+                    style={{
+                        ...changedFilesPopoverStyle,
+                        maxWidth: 'min(28rem, calc(100cqw - 4ch))',
+                    }}
+                    className={cn(
+                        changedFilesPopoverClassName,
+                        "absolute left-0 bottom-full mb-1 z-50",
+                        "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2",
+                        "duration-150"
+                    )}
+                >
+                    <ChangedFilesList
+                        files={gitChangedFiles}
+                        currentDirectory={currentDirectory}
+                        onOpenFile={handleOpenFile}
+                        onViewDiff={handleViewDiff}
+                        onRevertFile={handleRevertFile}
+                        revertingPaths={revertingPaths}
+                    />
+                </div>
+            )}
+        </div>
     );
 });
 

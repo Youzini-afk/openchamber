@@ -921,6 +921,37 @@ const focusForegroundWindow = () => {
 // click events to silently stop firing after ~1 min.
 // See https://blog.bloomca.me/2025/02/22/electron-mac-notifications
 const activeNotifications = new Set();
+const nativeNotificationClaims = new Map();
+const NATIVE_NOTIFICATION_DEDUPE_TTL_MS = 5000;
+
+const getNativeNotificationClaimKey = (payload) => {
+  const tag = typeof payload?.tag === 'string' ? payload.tag.trim() : '';
+  if (tag) return tag;
+  return [payload?.sessionId, payload?.kind, payload?.title, payload?.body]
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim())
+    .join('|');
+};
+
+const claimNativeNotification = (payload) => {
+  const key = getNativeNotificationClaimKey(payload);
+  if (!key) return true;
+
+  const now = Date.now();
+  for (const [claimKey, claimedAt] of nativeNotificationClaims) {
+    if (now - claimedAt > NATIVE_NOTIFICATION_DEDUPE_TTL_MS) {
+      nativeNotificationClaims.delete(claimKey);
+    }
+  }
+
+  const claimedAt = nativeNotificationClaims.get(key) ?? 0;
+  if (now - claimedAt < NATIVE_NOTIFICATION_DEDUPE_TTL_MS) {
+    return false;
+  }
+
+  nativeNotificationClaims.set(key, now);
+  return true;
+};
 
 const maybeShowNativeNotification = (rawInput) => {
   const payload = normalizeNotificationInput(rawInput);
@@ -931,6 +962,10 @@ const maybeShowNativeNotification = (rawInput) => {
   }
 
   if (!Notification.isSupported()) {
+    return;
+  }
+
+  if (!claimNativeNotification(payload)) {
     return;
   }
 
@@ -1834,6 +1869,12 @@ const reloadMenuTargetWindow = () => {
   const target = getMenuTargetWindow();
   if (!target || target.isDestroyed()) return;
   target.webContents.reload();
+};
+
+const openDevToolsForMenuTarget = () => {
+  const target = getMenuTargetWindow();
+  if (!target || target.isDestroyed()) return;
+  target.webContents.toggleDevTools();
 };
 
 const relaunchFromMenu = () => {
@@ -3942,6 +3983,7 @@ const buildMacMenu = () => {
       submenu: [
         { label: 'Keyboard Shortcuts', accelerator: 'Cmd+.', click: () => dispatchAction('help-dialog') },
         { label: 'Show Diagnostics', accelerator: 'Cmd+Shift+L', click: () => dispatchAction('download-logs') },
+        { label: 'Toggle Developer Tools', accelerator: 'Cmd+Alt+I', click: () => openDevToolsForMenuTarget() },
         { type: 'separator' },
         { label: 'Clear Cache', click: () => void handleInvoke(null, 'desktop_clear_cache') },
         { type: 'separator' },
@@ -4009,7 +4051,7 @@ const buildAutoHiddenMenu = () => {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
-        ...(isDev ? [{ role: 'toggleDevTools' }] : []),
+        { label: 'Toggle Developer Tools', accelerator: 'Ctrl+Alt+I', click: () => openDevToolsForMenuTarget() },
         { type: 'separator' },
         { label: 'Toggle Right Sidebar', accelerator: 'Ctrl+B', click: () => dispatchAction('toggle-right-sidebar') },
         { label: 'Open Git Sidebar', accelerator: 'Ctrl+Shift+G', click: () => dispatchAction('open-right-sidebar-git') },

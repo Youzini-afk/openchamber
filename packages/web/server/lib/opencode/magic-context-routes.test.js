@@ -106,4 +106,28 @@ describe('magic-context config routes', () => {
 
     expect(response.body.error).toContain('modified outside OpenChamber');
   });
+
+  it('resolves and validates the directory before saving or refreshing OpenCode', async () => {
+    const app = express();
+    app.use(express.json());
+    const saveMagicContextConfig = vi.fn();
+    const refreshOpenCodeAfterConfigChange = vi.fn();
+
+    registerMagicContextRoutes(app, {
+      clientReloadDelayMs: 1,
+      readMagicContextConfig: vi.fn(() => createConfigPayload()),
+      saveMagicContextConfig,
+      refreshOpenCodeAfterConfigChange,
+      resolveOptionalProjectDirectory: vi.fn(async () => ({ directory: null, error: 'Invalid workspace directory' })),
+    });
+
+    const response = await request(app)
+      .patch('/api/magic-context/config?directory=%2Fbad')
+      .send({ expectedMtimeMs: 1, config: {} })
+      .expect(400);
+
+    expect(response.body.error).toBe('Invalid workspace directory');
+    expect(saveMagicContextConfig).not.toHaveBeenCalled();
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
 });

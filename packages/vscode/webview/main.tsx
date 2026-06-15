@@ -180,64 +180,23 @@ const waitForUiMount = (timeoutMs = 8000): Promise<boolean> => {
 };
 
 let uiMounted = false;
-let bootstrapProvidersReady = false;
-let bootstrapAgentsReady = false;
-let bootstrapFailed = false;
-
-const recordBootstrapFetch = (pathname: string, ok: boolean) => {
-  if (!pathname.startsWith('/api/')) return;
-
-  // Don't mark as failed while still connecting — early 503s are expected
-  const isConnected = window.__OPENCHAMBER_CONNECTION__?.status === 'connected';
-
-  if (pathname.startsWith('/api/config/providers')) {
-    if (ok) {
-      bootstrapProvidersReady = true;
-      // Reset failed flag — a successful retry supersedes earlier 503s
-      if (bootstrapAgentsReady || !isConnected) bootstrapFailed = false;
-    } else if (isConnected) {
-      bootstrapFailed = true;
-    }
-    return;
-  }
-
-  if (pathname === '/api/agent' || pathname.startsWith('/api/agent?')) {
-    if (ok) {
-      bootstrapAgentsReady = true;
-      if (bootstrapProvidersReady || !isConnected) bootstrapFailed = false;
-    } else if (isConnected) {
-      bootstrapFailed = true;
-    }
-  }
-};
 
 const maybeHideLoadingOverlay = () => {
   const connectionStatus = window.__OPENCHAMBER_CONNECTION__?.status ?? 'connecting';
-  const panelType = window.__VSCODE_CONFIG__?.panelType || 'chat';
 
   if (!uiMounted) {
     return;
   }
 
   if (connectionStatus === 'connected') {
-    if (panelType !== 'chat') {
-      fadeOutLoadingScreen();
-      return;
-    }
-
-    if (bootstrapFailed) {
-      setLoadingStatusText(bootstrapMessages.initialDataLoadFailed, 'error');
-      fadeOutLoadingScreen();
-      return;
-    }
-
-    if (bootstrapProvidersReady && bootstrapAgentsReady) {
-      fadeOutLoadingScreen();
-      return;
-    }
-
-    // Still loading providers/agents — stay silent (the animated logo signals work).
-    setLoadingStatusText('');
+    // The UI hydrates pickers and the sidebar from cache and refreshes
+    // providers/agents in the background, so once it's mounted and OpenCode is
+    // connected there's real interactive content underneath the splash. Don't
+    // keep the overlay up waiting on the live provider/agent fetches — on a cold
+    // start those are the slowest tail, and gating on them makes the splash
+    // linger long after the app is usable. Per-widget loaders convey any
+    // remaining background work.
+    fadeOutLoadingScreen();
     return;
   }
 
@@ -1554,7 +1513,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (targetUrl && isLocalRuntimePath(normalizedPathname)) {
     const localResponse = await handleLocalApiRequest(input, targetUrl, init, method);
     if (localResponse) {
-      recordBootstrapFetch(targetUrl.pathname, localResponse.ok);
       maybeHideLoadingOverlay();
       return localResponse;
     }
@@ -1642,7 +1600,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const signal = (input instanceof Request ? input.signal : init?.signal) as AbortSignal | undefined;
       const proxied = await proxySessionMessageRequest({ path: suffixPath, headers, bodyText, signal });
       const response = buildProxiedResponse(proxied);
-      recordBootstrapFetch(targetUrl.pathname, response.ok);
       maybeHideLoadingOverlay();
       return response;
     }
@@ -1651,7 +1608,6 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const signal = (input instanceof Request ? input.signal : init?.signal) as AbortSignal | undefined;
     const proxied = await proxyApiRequest({ method, path: suffixPath, headers, bodyBase64, signal });
     const response = buildProxiedResponse(proxied);
-    recordBootstrapFetch(targetUrl.pathname, response.ok);
     maybeHideLoadingOverlay();
     return response;
   }

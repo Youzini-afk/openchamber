@@ -254,12 +254,16 @@ export async function handleFsBridgeMessage(
     }
 
     case 'api:fs:read': {
-      const target = (payload as { path: string })?.path;
+      const { path: target, directory } = (payload as { path: string; directory?: string }) || {};
       if (!target) {
         return { id, type, success: false, error: 'Path is required' };
       }
 
-      const resolution = await deps.resolveFileReadPath(target);
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+      const baseDirectory = directory ? deps.resolveUserPath(directory, workspaceRoot) : workspaceRoot;
+      const resolvedTarget = deps.resolveUserPath(target, baseDirectory);
+
+      const resolution = await deps.resolveFileReadPath(resolvedTarget);
       if (!resolution.ok) {
         return { id, type, success: false, error: resolution.error };
       }
@@ -274,12 +278,16 @@ export async function handleFsBridgeMessage(
     }
 
     case 'api:fs:stat': {
-      const target = (payload as { path: string })?.path;
+      const { path: target, directory } = (payload as { path: string; directory?: string }) || {};
       if (!target) {
         return { id, type, success: false, error: 'Path is required' };
       }
 
-      const resolution = await deps.resolveFileReadPath(target);
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+      const baseDirectory = directory ? deps.resolveUserPath(directory, workspaceRoot) : workspaceRoot;
+      const resolvedTarget = deps.resolveUserPath(target, baseDirectory);
+
+      const resolution = await deps.resolveFileReadPath(resolvedTarget);
       if (!resolution.ok) {
         return { id, type, success: false, error: resolution.error };
       }

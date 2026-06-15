@@ -1,5 +1,12 @@
 import * as fs from 'fs';
-import { getFsMimeType, normalizeFsPath, resolveFileReadPath, type FsReadPathResolution } from './bridge-fs-helpers-runtime';
+import {
+  getFsMimeType,
+  getFsAccessRoot,
+  normalizeFsPath,
+  resolveFileReadPath,
+  resolveUserPath,
+  type FsReadPathResolution,
+} from './bridge-fs-helpers-runtime';
 
 type ApiProxyResponsePayload = {
   status: number;
@@ -47,7 +54,22 @@ const normalizeFsProxyPath = (pathname: string): '/api/fs/stat' | '/api/fs/read'
   return null;
 };
 
-export const tryHandleLocalFsProxy = async (method: string, requestPath: string): Promise<ApiProxyResponsePayload | null> => {
+const getHeaderValue = (headers: Record<string, string> | undefined, name: string): string | undefined => {
+  if (!headers) return undefined;
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower && typeof value === 'string') {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+export const tryHandleLocalFsProxy = async (
+  method: string,
+  requestPath: string,
+  requestHeaders?: Record<string, string>,
+): Promise<ApiProxyResponsePayload | null> => {
   let parsed: URL;
   try {
     parsed = new URL(requestPath, 'https://openchamber.local');
@@ -65,8 +87,22 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
   }
 
   const targetPath = parsed.searchParams.get('path') || '';
-  const resolution: FsReadPathResolution = await resolveFileReadPath(targetPath);
+  const optional = parsed.searchParams.get('optional') === 'true';
+  const directory = getHeaderValue(requestHeaders, 'x-opencode-directory') || parsed.searchParams.get('directory') || undefined;
+  const baseDirectory = directory ? resolveUserPath(directory, getFsAccessRoot()) : getFsAccessRoot();
+  const resolvedTargetPath = resolveUserPath(targetPath, baseDirectory);
+  const resolution: FsReadPathResolution = await resolveFileReadPath(resolvedTargetPath);
   if (!resolution.ok) {
+    if (fsProxyPath === '/api/fs/stat' && optional && resolution.status === 404) {
+      return {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store',
+        },
+        bodyBase64: base64EncodeUtf8(JSON.stringify({ path: targetPath, exists: false })),
+      };
+    }
     return buildProxyJsonError(resolution.status, resolution.error);
   }
 
@@ -116,6 +152,16 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err?.code === 'ENOENT') {
+      if (fsProxyPath === '/api/fs/stat' && optional) {
+        return {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+          },
+          bodyBase64: base64EncodeUtf8(JSON.stringify({ path: targetPath, exists: false })),
+        };
+      }
       return buildProxyJsonError(404, 'File not found');
     }
     if (fsProxyPath === '/api/fs/stat') {

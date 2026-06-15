@@ -49,6 +49,11 @@ export const registerMagicContextRoutes = (app, dependencies = {}) => {
 
   app.patch('/api/magic-context/config', async (req, res) => {
     try {
+      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
+      if (error) {
+        return res.status(400).json({ error });
+      }
+
       const body = req.body ?? {};
       saveMagicContextConfig({
         expectedMtimeMs: body.expectedMtimeMs ?? null,
@@ -57,11 +62,6 @@ export const registerMagicContextRoutes = (app, dependencies = {}) => {
 
       if (typeof refreshOpenCodeAfterConfigChange === 'function') {
         await refreshOpenCodeAfterConfigChange('magic-context config updated');
-      }
-
-      const { directory, error } = await resolveDirectory(req, resolveOptionalProjectDirectory);
-      if (error) {
-        return res.status(400).json({ error });
       }
 
       return res.json({

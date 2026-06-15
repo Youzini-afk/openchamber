@@ -1,6 +1,5 @@
 
 import React from 'react';
-import type { AnimationPlaybackControls } from 'motion';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { RiArrowDownSLine, RiArrowRightSLine, RiExternalLinkLine } from '@remixicon/react';
 import { PatchDiff } from '@pierre/diffs/react';
@@ -51,7 +50,7 @@ import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
 import { getDiffPatchEntries, getPatchText } from './toolDiffUtils';
 
-const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-4 sm:!leading-6 tracking-normal';
+const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
 const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 
@@ -202,29 +201,59 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     return <>{formatDuration(start, end, now)}</>;
 };
 
-const EXPANDED_CONTENT_TRANSITION_MS = 0;
+const deferredToolBodyMounts: Array<{ active: boolean; fn: () => void }> = [];
+let deferredToolBodyFrame: number | undefined;
 
-const useAnimatedExpandedContent = (isExpanded: boolean) => {
-    const [shouldRender, setShouldRender] = React.useState(isExpanded);
+const flushDeferredToolBodyMounts = () => {
+    while (deferredToolBodyMounts.length > 0) {
+        const item = deferredToolBodyMounts.pop();
+        if (!item) {
+            break;
+        }
+        if (item.active) {
+            item.fn();
+            deferredToolBodyFrame = deferredToolBodyMounts.length > 0
+                ? window.requestAnimationFrame(flushDeferredToolBodyMounts)
+                : undefined;
+            return;
+        }
+    }
+
+    deferredToolBodyFrame = undefined;
+};
+
+const scheduleDeferredToolBodyMount = (fn: () => void) => {
+    if (typeof window === 'undefined') {
+        fn();
+        return () => undefined;
+    }
+
+    const item = { active: true, fn };
+    deferredToolBodyMounts.push(item);
+
+    if (deferredToolBodyFrame === undefined) {
+        deferredToolBodyFrame = window.requestAnimationFrame(() => {
+            deferredToolBodyFrame = window.requestAnimationFrame(flushDeferredToolBodyMounts);
+        });
+    }
+
+    return () => {
+        item.active = false;
+    };
+};
+
+const useDeferredExpandedContent = (isExpanded: boolean) => {
+    const [shouldRender, setShouldRender] = React.useState(false);
 
     React.useEffect(() => {
-        if (typeof window === 'undefined') {
-            setShouldRender(isExpanded);
-            return;
-        }
-
-        if (isExpanded) {
-            setShouldRender(true);
-            return;
-        }
-
-        const timer = window.setTimeout(() => {
+        if (!isExpanded) {
             setShouldRender(false);
-        }, EXPANDED_CONTENT_TRANSITION_MS);
+            return;
+        }
 
-        return () => {
-            window.clearTimeout(timer);
-        };
+        return scheduleDeferredToolBodyMount(() => {
+            setShouldRender(true);
+        });
     }, [isExpanded]);
 
     return shouldRender;
@@ -1390,7 +1419,7 @@ const TOOL_DIFF_METRICS = {
     lineHeight: 24,
     diffHeaderHeight: 44,
     hunkSeparatorHeight: 24,
-    fileGap: 0,
+    spacing: 0,
 };
 
 const TOOL_COLLAPSED_CUSTOM_STYLE: React.CSSProperties = {
@@ -1575,6 +1604,7 @@ interface ToolExpandedContentProps {
     state: ToolStateUnion;
     syntaxTheme: { [key: string]: React.CSSProperties };
     currentDirectory: string;
+    isExpanded: boolean;
     onShowPopup?: (content: ToolPopupContent) => void;
 }
 
@@ -1583,6 +1613,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
     state,
     syntaxTheme,
     currentDirectory,
+    isExpanded,
     onShowPopup,
 }) => {
     const { t } = useI18n();
@@ -1875,7 +1906,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                     </blockquote>
                                 ),
                                 {
-                                    maxHeightClass: 'max-h-60',
+                                    maxHeightClass: isWriteLikeTool && writeLikeInputPatch && isExpanded ? 'max-h-[50vh]' : 'max-h-60',
                                     className: part.tool === 'bash' ? 'tool-input-surface p-0 rounded-none' : 'tool-input-surface',
                                 }
                             )}
@@ -1923,7 +1954,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     onToggle,
     syntaxTheme,
     isMobile,
-    alwaysShowActions = isMobile,
     onContentChange,
     onShowPopup,
     animateTailText = true,
@@ -1983,8 +2013,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const onContentChangeRef = React.useRef(onContentChange);
     onContentChangeRef.current = onContentChange;
     const expandedContentRef = React.useRef<HTMLDivElement>(null);
-    const expandedContentAnimationRef = React.useRef<AnimationPlaybackControls | null>(null);
-    const expandedContentMountedRef = React.useRef(false);
 
     React.useLayoutEffect(() => {
         if (isTaskTool) {
@@ -1996,9 +2024,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return;
         }
 
-        expandedContentMountedRef.current = true;
-        expandedContentAnimationRef.current?.stop();
-        expandedContentAnimationRef.current = null;
         element.style.height = isExpanded ? 'auto' : '0px';
         element.style.overflow = isExpanded ? 'visible' : 'hidden';
 
@@ -2006,13 +2031,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             onContentChangeRef.current?.('structural');
         }
     }, [isExpanded, isTaskTool, shouldNotifyStructuralChange]);
-
-    React.useEffect(() => {
-        return () => {
-            expandedContentAnimationRef.current?.stop();
-            expandedContentAnimationRef.current = null;
-        };
-    }, []);
 
     const stateWithData = state as ToolStateWithMetadata;
     const metadata = stateWithData.metadata;
@@ -2667,7 +2685,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const iconStyle = !isTaskTool && isError ? TOOL_ERROR_ICON_STYLE : TOOL_NORMAL_ICON_STYLE;
     const titleStyle = !isTaskTool && isError ? TOOL_ERROR_TITLE_STYLE : TOOL_NORMAL_TITLE_STYLE;
-    const shouldRenderExpandedContent = useAnimatedExpandedContent(isExpanded);
+    const shouldRenderTaskSummary = useDeferredExpandedContent(isTaskTool && (taskSummaryEntries.length > 0 || isActive || shouldTreatAsFinalized || !!taskSessionId));
+    const shouldRenderExpandedContent = useDeferredExpandedContent(!isTaskTool && isExpanded);
 
     if (!shouldTreatAsFinalized && !isActive && !isTaskTool) {
         return null;
@@ -2697,7 +2716,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             className={cn(
                                 'absolute inset-0 transition-opacity',
                                 isExpanded && 'opacity-0',
-                                !isExpanded && (alwaysShowActions ? 'opacity-0' : 'group-hover/tool:opacity-0')
+                                !isExpanded && 'group-hover/tool:opacity-0'
                             )}
                             style={iconStyle}
                         >
@@ -2708,7 +2727,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                             className={cn(
                                 'absolute inset-0 transition-opacity flex items-center justify-center',
                                 isExpanded && 'opacity-100',
-                                !isExpanded && (alwaysShowActions ? 'opacity-100' : 'opacity-0 group-hover/tool:opacity-100')
+                                !isExpanded && 'opacity-0 group-hover/tool:opacity-100'
                             )}
                         >
                             {isExpanded ? <RiArrowDownSLine className="h-3.5 w-3.5" /> : <RiArrowRightSLine className="h-3.5 w-3.5" />}
@@ -2800,7 +2819,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             </div>
 
             {}
-            {isTaskTool && (taskSummaryEntries.length > 0 || isActive || shouldTreatAsFinalized || taskSessionId) ? (
+            {shouldRenderTaskSummary ? (
                 <TaskToolSummary
                     entries={taskSummaryEntries}
                     isExpanded={isExpanded}
@@ -2827,10 +2846,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     {shouldRenderExpandedContent ? (
                         <div
                             className="relative ml-2 pl-3"
-                            style={{
-                                opacity: isExpanded ? 1 : 0,
-                                transform: isExpanded ? 'translateY(0)' : 'translateY(-4px)',
-                            }}
                         >
                             <span
                                 aria-hidden="true"
@@ -2842,6 +2857,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 state={state}
                                 syntaxTheme={syntaxTheme}
                                 currentDirectory={currentDirectory}
+                                isExpanded={isExpanded}
                                 onShowPopup={onShowPopup}
                             />
                         </div>

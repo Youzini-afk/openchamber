@@ -211,6 +211,8 @@ describe('OpenCode lifecycle', () => {
 
   it('launches explicitly configured WSL OpenCode on Windows', async () => {
     const originalPlatform = process.platform;
+    const originalOpenChamberNormalizer = process.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER;
+    delete process.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER;
     Object.defineProperty(process, 'platform', { value: 'win32' });
     try {
       delete process.env.OPENCODE_BINARY;
@@ -253,9 +255,18 @@ describe('OpenCode lifecycle', () => {
       expect(args).toEqual(['-d', 'Ubuntu', '--exec', '/usr/local/bin/opencode', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
       expect(buildWslExecArgs).toHaveBeenCalledWith(['/usr/local/bin/opencode', 'serve', '--hostname', '127.0.0.1', '--port', '45678'], 'Ubuntu');
 
+      const [, , options] = spawnMock.mock.calls[0];
+      expect(options.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER).toBeUndefined();
+      expect(options.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
+
       await server.close();
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
+      if (typeof originalOpenChamberNormalizer === 'string') {
+        process.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER = originalOpenChamberNormalizer;
+      } else {
+        delete process.env.OPENCHAMBER_OPENAI_STREAM_NORMALIZER;
+      }
     }
   });
 

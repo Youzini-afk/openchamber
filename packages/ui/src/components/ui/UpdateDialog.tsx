@@ -370,7 +370,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                       }
                     }}
                   >
-                    <SimpleMarkdownRenderer content={changelog.content} disableLinkSafety={true} />
+                    <SimpleMarkdownRenderer content={changelog.content} disableLinkSafety={true} enableFileReferences={false} />
                   </div>
                 ) : (
                   <div className="divide-y divide-[var(--surface-subtle)]">
@@ -396,7 +396,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                             }
                           }}
                         >
-                          <SimpleMarkdownRenderer content={section.content} disableLinkSafety={true} />
+                          <SimpleMarkdownRenderer content={section.content} disableLinkSafety={true} enableFileReferences={false} />
                         </div>
                       </div>
                     ))}

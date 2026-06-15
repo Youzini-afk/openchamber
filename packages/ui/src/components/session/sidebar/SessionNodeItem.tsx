@@ -51,7 +51,6 @@ type Props = {
   groupDirectory?: string | null;
   projectId?: string | null;
   archivedBucket?: boolean;
-  directoryStatus: Map<string, 'unknown' | 'exists' | 'missing'>;
   currentSessionId: string | null;
   pinnedSessionIds: Set<string>;
   expandedParents: Set<string>;
@@ -65,7 +64,7 @@ type Props = {
   handleSaveEdit: () => void;
   handleCancelEdit: () => void;
   toggleParent: (expansionKey: string) => void;
-  handleSessionSelect: (sessionId: string, sessionDirectory: string | null, isMissingDirectory: boolean, projectId?: string | null) => void;
+  handleSessionSelect: (sessionId: string, sessionDirectory: string | null, projectId?: string | null) => void;
   handleSessionDoubleClick: (sessionId: string, sessionTitle: string) => void;
   togglePinnedSession: (sessionId: string) => void;
   handleShareSession: (session: Session) => void;
@@ -202,7 +201,6 @@ const areEqual = (prev: Props, next: Props): boolean => {
   const nextDirectory = normalizePath((nextSession as Session & { directory?: string | null }).directory ?? null)
     ?? normalizePath(next.groupDirectory ?? null);
   if (prevDirectory !== nextDirectory) return false;
-  if ((prevDirectory ? prev.directoryStatus.get(prevDirectory) : null) !== (nextDirectory ? next.directoryStatus.get(nextDirectory) : null)) return false;
 
   if ((prev.secondaryMeta?.projectLabel ?? null) !== (next.secondaryMeta?.projectLabel ?? null)) return false;
   if ((prev.secondaryMeta?.branchLabel ?? null) !== (next.secondaryMeta?.branchLabel ?? null)) return false;
@@ -222,7 +220,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     groupDirectory,
     projectId,
     archivedBucket = false,
-    directoryStatus,
     currentSessionId,
     pinnedSessionIds,
     expandedParents,
@@ -264,10 +261,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const displayMode = useSessionDisplayStore((state) => state.displayMode);
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
-  // VS Code keeps the expanded "default" layout regardless of the stored mode:
-  // multi-workspace lists rely on inline project/branch, and hover tooltips
-  // across the whole list would be impractical there.
-  const isMinimalMode = displayMode === 'minimal' && !isVSCode;
+  // VS Code always uses the minimal (single-line) layout: sessions are grouped
+  // under workspace project headers, so the second metadata row (project/branch)
+  // is redundant. The display-mode toggle is hidden there, so force it on.
+  const isMinimalMode = displayMode === 'minimal' || isVSCode;
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
   const runtimeApis = React.useContext(RuntimeAPIContext);
   const revealOnHoverClass = isVSCode
@@ -280,7 +277,15 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const showQuickArchiveAction = !archivedBucket && !mobileVariant;
   const revealPaddingClass = isMinimalMode
     ? (isVSCode
-        ? 'group-hover:pr-2'
+        // VS Code minimal rows reveal up to three actions on hover
+        // (open-in-editor + quick-archive + menu, each h-4). The date sits in the
+        // row flow, so the title must shrink enough to clear the actions or they
+        // overlap the timestamp. Open-in-editor is always present in VS Code.
+        ? (showQuickArchiveAction && showOpenInEditorAction
+            ? 'group-hover:pr-18'
+            : showQuickArchiveAction || showOpenInEditorAction
+              ? 'group-hover:pr-14'
+              : 'group-hover:pr-8')
         : 'group-hover:pr-2 group-focus-within:pr-2')
     : (isVSCode
         ? (showQuickArchiveAction && showOpenInEditorAction
@@ -306,7 +311,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionDirectory =
     normalizePath((session as Session & { directory?: string | null }).directory ?? null)
     ?? normalizePath(groupDirectory ?? null);
-  const directoryStore = useDirectoryStore(sessionDirectory ?? undefined);
+  // Archived rows are historical and never need live state, yet they point at
+  // dozens of (often deleted) worktrees — bootstrapping each from the sidebar
+  // triggers a pointless session-list fetch + 6×2s empty-retry storm on startup.
+  // Skip bootstrap for archived rows; the store ref is only read on-demand via
+  // getState() in the export handlers (never subscribed). Active rows keep
+  // bootstrapping so live cross-directory session/status still aggregates.
+  const directoryStore = useDirectoryStore(sessionDirectory ?? undefined, { bootstrap: !archivedBucket });
   const sync = useSync();
 
   const selectionModeEnabled = useSessionMultiSelectStore((state) => state.enabled);
@@ -337,8 +348,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   );
   const sessionStatus = useGlobalSessionStatus(session.id);
   const sessionPermissions = useSessionPermissions(session.id, sessionDirectory ?? undefined);
-  const directoryState = sessionDirectory ? directoryStatus.get(sessionDirectory) : null;
-  const isMissingDirectory = directoryState === 'missing';
   const isActive = currentSessionId === session.id;
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const hasChildren = node.children.length > 0;
@@ -704,7 +713,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       toggleRowSelected(session.id, sessionDirectory ?? null, collectNodeDescendantIds(node));
       return;
     }
-    handleSessionSelect(session.id, sessionDirectory, isMissingDirectory, projectId);
+    handleSessionSelect(session.id, sessionDirectory, projectId);
   };
 
   const handleRowMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -941,7 +950,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   // stays put.
                   '-ml-3',
                   depth > 0 ? 'pl-[32px]' : 'pl-[18px]',
-                  isMissingDirectory ? 'opacity-75' : '',
                   // Active (currently open) session gets a subtle primary tint;
                   // multi-select highlight takes precedence when both apply.
                   isActive && !isRowSelected && 'bg-primary/10',
@@ -958,18 +966,17 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-	                    disabled={isMissingDirectory}
-	                    onPointerDown={handleRowPointerDown}
-	                    onPointerUp={handleRowPointerEnd}
-	                    onPointerCancel={handleRowPointerEnd}
-	                    onMouseDown={handleRowMouseDown}
-	                    onClick={(event) => handleRowSelect(event)}
+ 	                    onPointerDown={handleRowPointerDown}
+ 	                    onPointerUp={handleRowPointerEnd}
+ 	                    onPointerCancel={handleRowPointerEnd}
+ 	                    onMouseDown={handleRowMouseDown}
+ 	                    onClick={(event) => handleRowSelect(event)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       handleSessionDoubleClick(session.id, sessionTitle);
                     }}
                     className={cn(
-	                      'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none disabled:cursor-not-allowed transition-[padding]',
+	                      'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none transition-[padding]',
 	                      isTouchPressed && 'bg-interactive-hover/70',
                       alwaysShowActions
                         ? (isVSCode ? revealPaddingClass : alwaysActionPaddingClass)
@@ -1000,6 +1007,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                     </div>
                   </button>
                 </TooltipTrigger>
+                {/* VS Code already shows project context via workspace headers, so
+                    the per-row metadata tooltip is redundant noise there. */}
+                {!isVSCode ? (
                 <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left">
                   <div className="flex flex-col gap-1 text-left text-xs">
                     <div className={cn('flex items-center gap-3 text-left text-muted-foreground', secondaryMeta?.projectLabel ? 'justify-between' : 'justify-start')}>
@@ -1015,23 +1025,23 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                     ) : null}
                   </div>
                 </TooltipContent>
+                ) : null}
               </Tooltip>
             ) : (
               <button
                 type="button"
-	                disabled={isMissingDirectory}
-	                onPointerDown={handleRowPointerDown}
-	                onPointerUp={handleRowPointerEnd}
-	                onPointerCancel={handleRowPointerEnd}
-	                onMouseDown={handleRowMouseDown}
-	                onClick={(event) => handleRowSelect(event)}
+ 	                onPointerDown={handleRowPointerDown}
+ 	                onPointerUp={handleRowPointerEnd}
+ 	                onPointerCancel={handleRowPointerEnd}
+ 	                onMouseDown={handleRowMouseDown}
+ 	                onClick={(event) => handleRowSelect(event)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   handleSessionDoubleClick(session.id, sessionTitle);
                 }}
                 className={cn(
-	                  'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none disabled:cursor-not-allowed transition-[padding]',
-	                  isTouchPressed && 'bg-interactive-hover/70',
+  	                  'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none transition-[padding]',
+  	                  isTouchPressed && 'bg-interactive-hover/70',
                   alwaysShowActions
                     ? (isVSCode ? revealPaddingClass : alwaysActionPaddingClass)
                     : revealPaddingClass

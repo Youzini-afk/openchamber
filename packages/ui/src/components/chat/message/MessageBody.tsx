@@ -2036,6 +2036,7 @@ const AssistantMessageBody = React.memo(({
                                             content={errorMessage ?? ''}
                                             onShowPopup={onShowPopup}
                                             className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
+                                            enableFileReferences={false}
                                         />
                                     </div>
                                 </div>

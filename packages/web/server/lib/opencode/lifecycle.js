@@ -474,13 +474,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         OPENCODE_SERVER_PASSWORD: openCodePassword,
       };
 
+      // The OpenAI stream normalizer plugin is written to a Windows temp path.
+      // WSL-managed OpenCode cannot resolve that Windows path, so skip the
+      // injection on the WSL launch path to avoid a broken plugin reference.
+      const envForManagedProcess = state.useWslForOpencode
+        ? managedEnv
+        : withOpenAIStreamNormalizerEnv(managedEnv);
+
       const serverInstance = await createManagedOpenCodeServerProcess({
         hostname: env.ENV_CONFIGURED_OPENCODE_HOSTNAME,
         port: spawnPort,
         timeout: 30000,
         cwd: state.openCodeWorkingDirectory,
         shellEnvKeysCount: Object.keys(shellEnv).length,
-        env: state.useWslForOpencode ? managedEnv : withOpenAIStreamNormalizerEnv(managedEnv),
+        env: envForManagedProcess,
       });
 
       if (!serverInstance || !serverInstance.url) {

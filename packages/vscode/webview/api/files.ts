@@ -1,6 +1,7 @@
 import type {
   CommandExecResult,
   DirectoryListResult,
+  FileReadOptions,
   FileSearchQuery,
   FileSearchResult,
   FilesAPI,
@@ -71,9 +72,15 @@ export const createVSCodeFilesAPI = (): FilesAPI => ({
     };
   },
 
-  async statFile(path: string): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number }> {
+  async statFile(
+    path: string,
+    options?: FileReadOptions,
+  ): Promise<{ path: string; isFile: boolean; size: number; mtimeMs?: number }> {
     const target = normalizePath(path);
-    const data = await sendBridgeMessage<{ path?: string; isFile?: boolean; size?: number; mtimeMs?: number }>('api:fs:stat', { path: target });
+    const data = await sendBridgeMessage<{ path?: string; isFile?: boolean; size?: number; mtimeMs?: number }>('api:fs:stat', {
+      path: target,
+      directory: options?.directory,
+    });
     return {
       path: typeof data?.path === 'string' ? normalizePath(data.path) : target,
       isFile: Boolean(data?.isFile),
@@ -96,9 +103,12 @@ export const createVSCodeFilesAPI = (): FilesAPI => ({
     };
   },
 
-  async readFile(path: string): Promise<{ content: string; path: string }> {
+  async readFile(path: string, options?: FileReadOptions): Promise<{ content: string; path: string }> {
     const target = normalizePath(path);
-    const data = await sendBridgeMessage<{ content: string; path: string }>('api:fs:read', { path: target });
+    const data = await sendBridgeMessage<{ content: string; path: string }>('api:fs:read', {
+      path: target,
+      directory: options?.directory,
+    });
     return {
       content: typeof data?.content === 'string' ? data.content : '',
       path: typeof data?.path === 'string' ? normalizePath(data.path) : target,
