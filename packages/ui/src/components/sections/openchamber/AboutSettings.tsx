@@ -5,10 +5,13 @@ import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo } from '@/lib/device';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
-import { Icon } from "@/components/icon/Icon";
+import { Switch } from '@/components/ui/switch';
+import { Icon } from '@/components/icon/Icon';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { useI18n } from '@/lib/i18n';
+import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { useConfigStore } from '@/stores/useConfigStore';
 
 const GITHUB_URL = 'https://github.com/openchamber/openchamber';
 const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
@@ -26,6 +29,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const [showChecking, setShowChecking] = React.useState(false);
   const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
+  const settingsAutoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
+  const setSettingsAutoUpdateChecksEnabled = useConfigStore((state) => state.setSettingsAutoUpdateChecksEnabled);
   const updateStore = useUpdateStore(useShallow((s) => ({
     info: s.info,
     checking: s.checking,
@@ -120,6 +125,13 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
   const isChecking = updateStore.checking || showChecking;
 
+  const handleAutoUpdateChecksChange = React.useCallback((enabled: boolean) => {
+    setSettingsAutoUpdateChecksEnabled(enabled);
+    void updateDesktopSettings({ autoUpdateChecksEnabled: enabled }).catch((error) => {
+      console.warn('Failed to save update notification setting:', error);
+    });
+  }, [setSettingsAutoUpdateChecksEnabled]);
+
   if (isMobile) {
     return (
       <div className="w-full space-y-6 pb-2">
@@ -166,6 +178,22 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             {updateStore.error}
           </p>
         )}
+
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-[var(--surface-subtle)] px-3 py-3 text-left">
+          <div className="min-w-0 space-y-1">
+            <div className="typography-ui-label text-foreground">
+              {t('settings.openchamber.about.field.autoUpdateChecks')}
+            </div>
+            <div className="typography-meta text-muted-foreground">
+              {t('settings.openchamber.about.field.autoUpdateChecksHint')}
+            </div>
+          </div>
+          <Switch
+            checked={settingsAutoUpdateChecksEnabled}
+            onCheckedChange={handleAutoUpdateChecksChange}
+            aria-label={t('settings.openchamber.about.field.autoUpdateChecksAria')}
+          />
+        </div>
 
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex items-center justify-center gap-5">
@@ -278,6 +306,22 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
           </div>
         )}
+
+        <div className="flex items-center justify-between gap-6 px-4 py-3 border-b border-[var(--surface-subtle)]">
+          <div className="min-w-0 space-y-1">
+            <div className="typography-ui-label text-foreground">
+              {t('settings.openchamber.about.field.autoUpdateChecks')}
+            </div>
+            <div className="typography-meta text-muted-foreground">
+              {t('settings.openchamber.about.field.autoUpdateChecksHint')}
+            </div>
+          </div>
+          <Switch
+            checked={settingsAutoUpdateChecksEnabled}
+            onCheckedChange={handleAutoUpdateChecksChange}
+            aria-label={t('settings.openchamber.about.field.autoUpdateChecksAria')}
+          />
+        </div>
 
         <div className="flex items-center gap-4 px-4 py-4">
           <a

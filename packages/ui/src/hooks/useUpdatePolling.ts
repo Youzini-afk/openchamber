@@ -26,7 +26,7 @@ export function useUpdatePolling() {
     const scheduleNext = (delayMs: number) => {
       if (disposed) return;
       timer = window.setTimeout(async () => {
-        const suggestedSec = await checkForUpdatesRef.current();
+        const suggestedSec = await checkForUpdatesRef.current({ automatic: true });
         const nextDelay = typeof suggestedSec === 'number' && Number.isFinite(suggestedSec)
           ? clampIntervalMs(suggestedSec)
           : defaultIntervalMs;

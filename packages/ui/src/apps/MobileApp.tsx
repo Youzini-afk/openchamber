@@ -814,6 +814,7 @@ const MobileShell: React.FC = () => {
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const updateAvailable = useUpdateStore((state) => state.available);
   const updateRuntimeType = useUpdateStore((state) => state.runtimeType);
+  const settingsAutoUpdateChecksEnabled = useConfigStore((state) => state.settingsAutoUpdateChecksEnabled);
   const mcpServers = useMcpConfigStore((state) => state.mcpServers);
   const setMcpDraft = useMcpConfigStore((state) => state.setMcpDraft);
   const setSelectedMcp = useMcpConfigStore((state) => state.setSelectedMcp);
@@ -846,7 +847,7 @@ const MobileShell: React.FC = () => {
     setPendingChangesDiff(null);
   }, []);
 
-  const showUpdateItem = updateAvailable && (updateRuntimeType === 'desktop' || updateRuntimeType === 'web');
+  const showUpdateItem = settingsAutoUpdateChecksEnabled && updateAvailable && (updateRuntimeType === 'desktop' || updateRuntimeType === 'web');
 
   const openMcpCreateSettings = React.useCallback(() => {
     const baseName = 'new-mcp-server';
