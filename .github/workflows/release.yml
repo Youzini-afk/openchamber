@@ -294,6 +294,26 @@ jobs:
         shell: bash
         run: node ./scripts/package.mjs --win --${{ matrix.arch }} --publish=never
 
+      - name: Verify Windows artifacts
+        working-directory: packages/electron
+        shell: pwsh
+        run: |
+          $requiredPatterns = @('*.exe', '*.blockmap', 'latest.yml')
+          foreach ($pattern in $requiredPatterns) {
+            $files = @(Get-ChildItem -Path dist -File -Filter $pattern)
+            if ($files.Count -eq 0) {
+              Write-Error "Missing Windows artifact matching dist/$pattern"
+              exit 1
+            }
+            foreach ($file in $files) {
+              if ($file.Length -eq 0) {
+                Write-Error "Artifact is zero bytes: $($file.FullName)"
+                exit 1
+              }
+            }
+          }
+          Write-Output "Verified non-empty Windows installer, blockmap, and update manifest artifacts"
+
       - name: Upload installer to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:

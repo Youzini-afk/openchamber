@@ -21,7 +21,7 @@
     "Electron runtime dependencies installed via bun install",
     "Bun available for sidecar compilation",
     "macOS: Xcode + build tools for notarized packaging",
-    "Windows: NSIS installed for installer creation"
+    "Windows: electron-builder/NSIS packaging on a Windows runner; code signing is optional when signing env vars are absent"
   ],
   "scripts": {
     "dev": "node ./scripts/electron-dev.mjs",
@@ -31,6 +31,7 @@
     "generate:macos-icon": "node ./scripts/generate-macos-icon-assets.cjs",
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
     "package": "bun run build:web-assets && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
+    "package:win:x64": "bun run build:web-assets && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs --win --x64 --publish=never",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
     "type-check": "node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""

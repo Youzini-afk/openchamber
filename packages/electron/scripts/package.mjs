@@ -4,7 +4,15 @@ import path from 'node:path';
 
 const env = { ...process.env };
 
-if (process.platform === 'win32' && !env.CSC_LINK && !env.WINDOWS_CSC_LINK) {
+if (process.platform === 'win32' && env.WINDOWS_CSC_LINK && !env.WIN_CSC_LINK) {
+  env.WIN_CSC_LINK = env.WINDOWS_CSC_LINK;
+}
+
+if (process.platform === 'win32' && env.WINDOWS_CSC_KEY_PASSWORD && !env.WIN_CSC_KEY_PASSWORD) {
+  env.WIN_CSC_KEY_PASSWORD = env.WINDOWS_CSC_KEY_PASSWORD;
+}
+
+if (process.platform === 'win32' && !env.CSC_LINK && !env.WIN_CSC_LINK) {
   env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
   console.log('[electron] Windows code signing disabled; building unsigned installer.');
 }

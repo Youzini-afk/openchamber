@@ -66,11 +66,34 @@ Build output goes to `packages/electron/dist`.
 
 macOS builds produce `dmg` and `zip` artifacts. Windows builds produce an NSIS installer.
 
+For a local or CI Windows x64 NSIS build, run from the repo root:
+
+```bash
+bun run electron:build:win
+```
+
+This is equivalent to running `bun run --cwd packages/electron package:win:x64` and produces `packages/electron/dist/*.exe`, `*.blockmap`, and `latest.yml`.
+
 ## Platform Notes
 
 macOS packaging needs Xcode/build tools for notarized builds and icon asset compilation.
 
-Windows packaging needs NSIS support through `electron-builder`. If no Windows signing env is set, `package.mjs` disables code signing and builds an unsigned installer.
+Windows packaging uses `electron-builder` with the NSIS target. For reliable native module rebuilds and NSIS installer creation, run Windows builds on a Windows runner or host. If no Windows signing environment is present, `package.mjs` intentionally disables code signing and produces an unsigned installer.
+
+### Code Signing
+
+Windows code signing is optional. If signing credentials are present, `package.mjs` uses the standard `electron-builder` signing environment variables:
+
+- `CSC_LINK` / `CSC_KEY_PASSWORD`
+- `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`
+
+For compatibility with earlier OpenChamber automation, `package.mjs` also maps `WINDOWS_CSC_LINK` / `WINDOWS_CSC_KEY_PASSWORD` to the standard `WIN_CSC_*` names when the standard variables are not set.
+
+When these variables are absent, the build falls back to an unsigned NSIS installer.
+
+### Smoke Builds
+
+The `release-desktop-smoke.yml` workflow can build Windows artifacts on demand. Enable the `build_windows` input to produce installer artifacts for testing without creating a release.
 
 The package supports macOS and Windows desktop features. Some native discovery helpers are platform-specific. For example, app icon fetching and app filtering currently only work on macOS, while opening files in installed apps works on macOS and Windows.
 
