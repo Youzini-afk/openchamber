@@ -8,8 +8,22 @@ interface BridgeRequest {
   payload?: Record<string, unknown>;
 }
 
-export const createInjectedBridge = ({ platform, appVersion }: { platform: string; appVersion: string }): string => `
+export const createInjectedBridge = ({
+  platform,
+  appVersion,
+  apiBaseUrl,
+  clientToken,
+}: {
+  platform: string;
+  appVersion: string;
+  apiBaseUrl?: string;
+  clientToken?: string;
+}): string => `
 (function () {
+  var apiBaseUrl = ${JSON.stringify(apiBaseUrl || '')};
+  var clientToken = ${JSON.stringify(clientToken || '')};
+  if (apiBaseUrl) window.__OPENCHAMBER_API_BASE_URL__ = apiBaseUrl;
+  if (clientToken) window.__OPENCHAMBER_CLIENT_TOKEN__ = clientToken;
   if (window.__OPENCHAMBER_MOBILE_APP__) return true;
   window.__OPENCHAMBER_MOBILE_APP__ = {
     platform: ${JSON.stringify(platform)},

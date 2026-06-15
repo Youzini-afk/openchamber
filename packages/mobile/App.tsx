@@ -9,7 +9,7 @@ import { WebShellScreen } from './src/screens/WebShellScreen';
 import { ensurePushRegistered } from './src/notifications/push';
 import { getUrlFromNotificationData, parseOpenChamberLink, routeWebViewToPath } from './src/notifications/routing';
 import { clearMobileConfig, loadMobileConfig, saveMobileConfig } from './src/storage/config';
-import type { AppState, StoredMobileConfig } from './src/types';
+import { isDeviceMobileConfig, type AppState, type StoredMobileConfig } from './src/types';
 
 export default function App() {
   const [appState, setAppState] = React.useState<AppState>({ status: 'loading' });
@@ -53,7 +53,7 @@ export default function App() {
   }, [handleUrl]);
 
   React.useEffect(() => {
-    if (appState.status !== 'web') return;
+    if (appState.status !== 'web' || !isDeviceMobileConfig(appState.config)) return;
     void ensurePushRegistered(appState.config).catch((error) => {
       console.warn('Failed to register push token:', error);
     });

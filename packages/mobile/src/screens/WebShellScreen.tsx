@@ -1,11 +1,11 @@
 import React from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
-import { createMobileSession } from '../api/mobileClient';
+import { createDirectMobileWebUrl, createMobileSession } from '../api/mobileClient';
 import { t } from '../i18n';
 import { getAppVersion, getDevicePlatform } from '../notifications/push';
 import { createBridgeResponseScript, createInjectedBridge, handleBridgeMessage } from '../webview/bridge';
-import type { StoredMobileConfig } from '../types';
+import { isClientTokenMobileConfig, isDeviceMobileConfig, type StoredMobileConfig } from '../types';
 
 interface WebShellScreenProps {
   config: StoredMobileConfig;
@@ -34,6 +34,20 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
     let cancelled = false;
     setLoadingSession(true);
     setError(null);
+    if (isClientTokenMobileConfig(config)) {
+      setWebUrl(createDirectMobileWebUrl(config.serverUrl));
+      setLoadingSession(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!isDeviceMobileConfig(config)) {
+      setError(t('web.error.missingSessionUrl'));
+      setLoadingSession(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     void createMobileSession(config)
       .then((url) => {
         if (!cancelled) setWebUrl(url);
@@ -62,7 +76,9 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
   const injectedJavaScriptBeforeContentLoaded = React.useMemo(() => createInjectedBridge({
     platform: getDevicePlatform(),
     appVersion: getAppVersion(),
-  }), []);
+    apiBaseUrl: config.serverUrl,
+    clientToken: isClientTokenMobileConfig(config) ? config.clientToken : undefined,
+  }), [config]);
 
   const onMessage = React.useCallback((event: WebViewMessageEvent) => {
     void handleBridgeMessage(event).then((response) => {

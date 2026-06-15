@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { registerPushToken as registerPushTokenWithServer } from '../api/mobileClient';
-import type { StoredMobileConfig } from '../types';
+import type { DeviceMobileConfig } from '../types';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -31,7 +31,7 @@ export const getDevicePlatform = (): 'ios' | 'android' | 'unknown' => {
   return 'unknown';
 };
 
-export const ensurePushRegistered = async (config: StoredMobileConfig): Promise<string | null> => {
+export const ensurePushRegistered = async (config: DeviceMobileConfig): Promise<string | null> => {
   if (!Device.isDevice) {
     return null;
   }

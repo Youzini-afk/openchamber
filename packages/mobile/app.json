@@ -3,7 +3,7 @@
     "name": "OpenChamber",
     "slug": "openchamber-mobile",
     "scheme": "openchamber",
-    "version": "1.10.2",
+    "version": "1.13.0",
     "orientation": "default",
     "icon": "./icon.png",
     "userInterfaceStyle": "automatic",

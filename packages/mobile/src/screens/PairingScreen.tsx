@@ -1,7 +1,7 @@
 import React from 'react';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { completePairing, normalizeServerUrl, parsePairingPayload } from '../api/mobileClient';
+import { completePairing, createClientTokenConfig, normalizeServerUrl, parseConnectionPayload } from '../api/mobileClient';
 import { t } from '../i18n';
 import { getAppVersion, getDeviceName, getDevicePlatform } from '../notifications/push';
 import type { StoredMobileConfig } from '../types';
@@ -14,36 +14,51 @@ interface PairingScreenProps {
 export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, onPaired }) => {
   const { width } = useWindowDimensions();
   const [serverUrl, setServerUrl] = React.useState(initialServerUrl ?? '');
-  const [payloadText, setPayloadText] = React.useState('');
+  const [connectionKey, setConnectionKey] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = React.useState(false);
   const [scanned, setScanned] = React.useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
-  const pair = React.useCallback(async () => {
+  const connect = React.useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
-      const payload = parsePairingPayload(payloadText);
+      const payload = parseConnectionPayload(connectionKey);
       const resolvedServerUrl = normalizeServerUrl(payload.serverUrl || serverUrl);
       if (!resolvedServerUrl) {
         throw new Error(t('pairing.error.serverUrlRequired'));
       }
-      const config = await completePairing({
-        serverUrl: resolvedServerUrl,
-        pairingToken: payload.pairingToken,
-        deviceName: getDeviceName(),
-        platform: getDevicePlatform(),
-        appVersion: getAppVersion(),
-      });
-      onPaired(config);
-    } catch (pairError) {
-      setError(pairError instanceof Error ? pairError.message : t('pairing.error.failed'));
+
+      if (payload.clientToken) {
+        onPaired(createClientTokenConfig({ serverUrl: resolvedServerUrl, clientToken: payload.clientToken }));
+        return;
+      }
+
+      if (payload.pairingToken) {
+        const config = await completePairing({
+          serverUrl: resolvedServerUrl,
+          pairingToken: payload.pairingToken,
+          deviceName: getDeviceName(),
+          platform: getDevicePlatform(),
+          appVersion: getAppVersion(),
+        });
+        onPaired(config);
+        return;
+      }
+
+      if (!connectionKey.trim()) {
+        throw new Error(t('pairing.error.connectionKeyRequired'));
+      }
+
+      onPaired(createClientTokenConfig({ serverUrl: resolvedServerUrl, clientToken: connectionKey }));
+    } catch (connectError) {
+      setError(connectError instanceof Error ? connectError.message : t('pairing.error.failed'));
     } finally {
       setBusy(false);
     }
-  }, [onPaired, payloadText, serverUrl]);
+  }, [connectionKey, onPaired, serverUrl]);
 
   const openScanner = React.useCallback(async () => {
     setError(null);
@@ -62,11 +77,14 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
     if (scanned) return;
     setScanned(true);
     setScannerOpen(false);
-    setPayloadText(result.data);
+    setConnectionKey(result.data);
     try {
-      const payload = parsePairingPayload(result.data);
+      const payload = parseConnectionPayload(result.data);
       if (payload.serverUrl) {
         setServerUrl(payload.serverUrl);
+      }
+      if (payload.clientToken) {
+        setConnectionKey(payload.clientToken);
       }
     } catch {
       // Keep scanned text visible so the user can inspect or edit it.
@@ -122,22 +140,21 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
           style={styles.input}
         />
 
-        <Text style={styles.label}>{t('pairing.label.payload')}</Text>
+        <Text style={styles.label}>{t('pairing.label.connectionKey')}</Text>
         <TextInput
           autoCapitalize="none"
           autoCorrect={false}
-          multiline
-          value={payloadText}
-          onChangeText={setPayloadText}
-          placeholder='{"serverUrl":"https://...","pairingToken":"pair_..."}'
+          value={connectionKey}
+          onChangeText={setConnectionKey}
+          placeholder="oc_client_... / openchamber://connect?..."
           placeholderTextColor="#777"
-          style={[styles.input, styles.payloadInput]}
+          style={styles.input}
         />
 
         {error && <Text style={styles.error}>{error}</Text>}
 
-        <Pressable disabled={busy} onPress={() => void pair()} style={[styles.button, busy && styles.buttonDisabled]}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t('pairing.action.pairDevice')}</Text>}
+        <Pressable disabled={busy} onPress={() => void connect()} style={[styles.button, busy && styles.buttonDisabled]}>
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t('pairing.action.connect')}</Text>}
         </Pressable>
       </View>
     </View>
@@ -185,10 +202,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
-  },
-  payloadInput: {
-    minHeight: 112,
-    textAlignVertical: 'top',
   },
   error: {
     color: '#ff6b6b',

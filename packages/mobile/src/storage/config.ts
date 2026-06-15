@@ -8,16 +8,26 @@ export const loadMobileConfig = async (): Promise<StoredMobileConfig | null> => 
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<StoredMobileConfig>;
-    if (
-      typeof parsed.serverUrl === 'string' &&
-      typeof parsed.deviceId === 'string' &&
-      typeof parsed.deviceToken === 'string'
-    ) {
+    const serverUrl = typeof parsed.serverUrl === 'string' ? parsed.serverUrl.trim() : '';
+    const lastWebUrl = typeof parsed.lastWebUrl === 'string' ? parsed.lastWebUrl : undefined;
+    if (!serverUrl) {
+      return null;
+    }
+    if (typeof parsed.clientToken === 'string' && parsed.clientToken.trim()) {
       return {
-        serverUrl: parsed.serverUrl,
+        authMode: 'clientToken',
+        serverUrl,
+        clientToken: parsed.clientToken.trim(),
+        lastWebUrl,
+      };
+    }
+    if (typeof parsed.deviceId === 'string' && typeof parsed.deviceToken === 'string') {
+      return {
+        authMode: 'device',
+        serverUrl,
         deviceId: parsed.deviceId,
         deviceToken: parsed.deviceToken,
-        lastWebUrl: typeof parsed.lastWebUrl === 'string' ? parsed.lastWebUrl : undefined,
+        lastWebUrl,
       };
     }
   } catch {

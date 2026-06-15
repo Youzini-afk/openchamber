@@ -1,9 +1,11 @@
 import type {
+  ClientTokenMobileConfig,
+  ConnectionPayload,
+  DeviceMobileConfig,
   MobileSessionResponse,
   PairCompleteResponse,
   PairingPayload,
   PushRegistrationResponse,
-  StoredMobileConfig,
 } from '../types';
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
@@ -17,6 +19,81 @@ export const normalizeServerUrl = (value: string): string => {
   return trimTrailingSlash(`https://${trimmed}`);
 };
 
+const normalizeClientToken = (value: string): string => value.trim().replace(/^Bearer\s+/i, '').trim();
+
+const emptyConnectionPayload = (): ConnectionPayload => ({
+  serverUrl: null,
+  clientToken: null,
+  pairingToken: null,
+  label: null,
+});
+
+const readStringField = (record: Record<string, unknown>, keys: string[]): string => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+};
+
+const parseConnectionUrl = (raw: string): ConnectionPayload | null => {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  const params = url.searchParams;
+  const clientToken = normalizeClientToken(
+    params.get('token') || params.get('clientToken') || params.get('client_token') || params.get('key') || '',
+  );
+  const pairingToken = params.get('pairingToken') || params.get('pairing_token') || '';
+  const explicitServerUrl = params.get('server') || params.get('serverUrl') || params.get('url') || params.get('apiUrl') || '';
+  const serverUrl = explicitServerUrl
+    ? normalizeServerUrl(explicitServerUrl)
+    : ((url.protocol === 'http:' || url.protocol === 'https:') && (clientToken || pairingToken)
+      ? normalizeServerUrl(url.origin)
+      : null);
+
+  if (!serverUrl && !clientToken && !pairingToken) {
+    return null;
+  }
+
+  return {
+    serverUrl,
+    clientToken: clientToken || null,
+    pairingToken: pairingToken.trim() || null,
+    label: params.get('label')?.trim() || null,
+  };
+};
+
+const parseConnectionJson = (raw: string): ConnectionPayload | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const serverUrl = readStringField(record, ['serverUrl', 'server', 'url', 'apiUrl']);
+  const clientToken = normalizeClientToken(readStringField(record, ['clientToken', 'client_token', 'token', 'key']));
+  const pairingToken = readStringField(record, ['pairingToken', 'pairing_token']);
+
+  return {
+    serverUrl: serverUrl ? normalizeServerUrl(serverUrl) : null,
+    clientToken: clientToken || null,
+    pairingToken: pairingToken || null,
+    label: readStringField(record, ['label', 'name']) || null,
+  };
+};
+
 const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -26,19 +103,50 @@ const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   return data as T;
 };
 
-export const parsePairingPayload = (raw: string): PairingPayload => {
+export const parseConnectionPayload = (raw: string): ConnectionPayload => {
   const trimmed = raw.trim();
   if (!trimmed) {
-    throw new Error('Pairing payload is empty');
+    return emptyConnectionPayload();
   }
-  const parsed = JSON.parse(trimmed) as Partial<PairingPayload>;
-  if (typeof parsed.pairingToken !== 'string' || parsed.pairingToken.trim().length === 0) {
+
+  return parseConnectionUrl(trimmed) || parseConnectionJson(trimmed) || emptyConnectionPayload();
+};
+
+export const parsePairingPayload = (raw: string): PairingPayload => {
+  const parsed = parseConnectionPayload(raw);
+  if (!parsed.pairingToken) {
     throw new Error('Pairing token is missing');
   }
   return {
-    serverUrl: typeof parsed.serverUrl === 'string' ? normalizeServerUrl(parsed.serverUrl) : null,
-    pairingToken: parsed.pairingToken.trim(),
+    serverUrl: parsed.serverUrl,
+    pairingToken: parsed.pairingToken,
   };
+};
+
+export const createClientTokenConfig = ({
+  serverUrl,
+  clientToken,
+}: {
+  serverUrl: string;
+  clientToken: string;
+}): ClientTokenMobileConfig => {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl);
+  const normalizedClientToken = normalizeClientToken(clientToken);
+  if (!normalizedServerUrl) {
+    throw new Error('Server URL is required');
+  }
+  if (!normalizedClientToken) {
+    throw new Error('Connection key is required');
+  }
+  return {
+    authMode: 'clientToken',
+    serverUrl: normalizedServerUrl,
+    clientToken: normalizedClientToken,
+  };
+};
+
+export const createDirectMobileWebUrl = (serverUrl: string): string => {
+  return new URL('mobile.html', `${normalizeServerUrl(serverUrl)}/`).toString();
 };
 
 export const completePairing = async ({
@@ -53,7 +161,7 @@ export const completePairing = async ({
   deviceName: string;
   platform: string;
   appVersion: string;
-}): Promise<StoredMobileConfig> => {
+}): Promise<DeviceMobileConfig> => {
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
   const response = await fetch(`${normalizedServerUrl}/api/mobile/pair/complete`, {
     method: 'POST',
@@ -65,13 +173,14 @@ export const completePairing = async ({
   });
   const result = await parseJsonResponse<PairCompleteResponse>(response);
   return {
+    authMode: 'device',
     serverUrl: normalizedServerUrl,
     deviceId: result.deviceId,
     deviceToken: result.deviceToken,
   };
 };
 
-export const createMobileSession = async (config: StoredMobileConfig): Promise<string> => {
+export const createMobileSession = async (config: DeviceMobileConfig): Promise<string> => {
   const response = await fetch(`${config.serverUrl}/api/mobile/session`, {
     method: 'POST',
     headers: {
@@ -94,7 +203,7 @@ export const registerPushToken = async ({
   pushToken,
   appVersion,
 }: {
-  config: StoredMobileConfig;
+  config: DeviceMobileConfig;
   pushToken: string;
   appVersion: string;
 }): Promise<PushRegistrationResponse> => {
