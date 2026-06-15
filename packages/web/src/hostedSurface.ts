@@ -31,6 +31,8 @@ export const detectHostedSurface = ({
   if (override === 'desktop') return 'desktop';
 
   const width = Math.min(innerWidth || 0, screenWidth || innerWidth || 0);
-  const likelyPhone = width > 0 && width <= 760 && (maxTouchPoints > 0 || isCoarsePointer);
-  return likelyPhone && mobileLayoutPreference === 'new' ? 'mobile' : 'desktop';
+  const hasTouchInput = maxTouchPoints > 0 || isCoarsePointer;
+  const likelyPhone = width > 0 && width <= 760 && hasTouchInput;
+  const likelyTablet = width > 760 && width <= 1366 && isCoarsePointer;
+  return (likelyPhone || likelyTablet) && mobileLayoutPreference === 'new' ? 'mobile' : 'desktop';
 };

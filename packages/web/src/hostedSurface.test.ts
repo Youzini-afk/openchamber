@@ -31,4 +31,26 @@ describe('detectHostedSurface', () => {
       search: '',
     })).toBe('mobile');
   });
+
+  test('uses the mobile surface for coarse-pointer tablets', () => {
+    expect(detectHostedSurface({
+      search: '',
+      innerWidth: 1024,
+      screenWidth: 1024,
+      maxTouchPoints: 5,
+      isCoarsePointer: true,
+      mobileLayoutPreference: 'new',
+    })).toBe('mobile');
+  });
+
+  test('keeps fine-pointer touch laptops on the desktop surface', () => {
+    expect(detectHostedSurface({
+      search: '',
+      innerWidth: 1024,
+      screenWidth: 1024,
+      maxTouchPoints: 10,
+      isCoarsePointer: false,
+      mobileLayoutPreference: 'new',
+    })).toBe('desktop');
+  });
 });

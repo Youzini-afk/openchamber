@@ -44,6 +44,28 @@
   scroll-margin-bottom: calc(var(--oc-mobile-keyboard-height, 0px) + var(--oc-safe-area-bottom-visual, 0px) + 96px);
 }
 
+:root.runtime-mobile-app[data-oc-mobile-layout-kind="tablet"] {
+  --oc-header-height: 60px;
+}
+
+:root.runtime-mobile-app[data-oc-mobile-layout-tier="tablet-landscape"] {
+  --oc-header-height: 56px;
+}
+
+.oc-mobile-shell[data-mobile-layout-kind="tablet"] {
+  --oc-tablet-rail-width: 64px;
+}
+
+.oc-mobile-shell[data-mobile-layout-kind="tablet"] .mobile-tablet-rail {
+  width: var(--oc-tablet-rail-width);
+  padding-top: calc(var(--oc-safe-area-top, 0px) + 0.5rem);
+  padding-bottom: calc(var(--oc-safe-area-bottom-visual, 0px) + 0.5rem);
+}
+
+.oc-mobile-shell[data-mobile-layout-kind="tablet"] .mobile-tablet-rail svg {
+  flex-shrink: 0;
+}
+
 :root.runtime-mobile-app [data-page-scroll-lock="true"],
 :root.runtime-mobile-app .overflow-hidden {
   overscroll-behavior: none;

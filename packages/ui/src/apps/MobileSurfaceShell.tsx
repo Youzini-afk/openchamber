@@ -18,6 +18,9 @@ const ENTER_OFFSET_PX = 48;
 // against the very top of the app.
 const TOP_GAP_PX = 8;
 
+export type MobileSurfaceVariant = 'sheet' | 'side';
+export type MobileSurfaceSide = 'left' | 'right';
+
 const ensureSurfaceRoot = (): HTMLElement | null => {
   if (typeof document === 'undefined') return null;
   let root = document.getElementById(SURFACE_ROOT_ID);
@@ -41,6 +44,10 @@ export type MobileSurfaceShellProps = {
   disableSwipeDismiss?: boolean;
   /** If true, render only the drag handle and let the child render its own header. */
   headerless?: boolean;
+  /** Bottom sheet on phones, side panel on larger touch layouts. */
+  variant?: MobileSurfaceVariant;
+  side?: MobileSurfaceSide;
+  sideWidth?: string;
   ariaLabel?: string;
   children: React.ReactNode;
 };
@@ -54,6 +61,9 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
   onBack,
   disableSwipeDismiss = false,
   headerless = false,
+  variant = 'sheet',
+  side = 'right',
+  sideWidth = 'min(680px, calc(100vw - 4.5rem))',
   ariaLabel,
   children,
 }) => {
@@ -147,8 +157,11 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
     };
   }, [onClose, open]);
 
+  const isSidePanel = variant === 'side';
+  const swipeDismissDisabled = disableSwipeDismiss || isSidePanel;
+
   const handleDragStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (disableSwipeDismiss) return;
+    if (swipeDismissDisabled) return;
     dragStartYRef.current = event.touches[0]?.clientY ?? null;
     isDraggingRef.current = true;
   };
@@ -199,16 +212,27 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
   // When settled, use `none` (not translateY(0)) so the sheet isn't kept on a
   // compositing layer — that layer is clipped to the safe-area viewport on iOS,
   // leaving a scrim gap below it over the home-indicator inset.
-  const visualTransform = !entered
-    ? `translateY(${ENTER_OFFSET_PX}px)`
-    : dragOffset > 0
-      ? `translateY(${dragOffset}px)`
-      : 'none';
+  const visualTransform = (() => {
+    if (!entered) {
+      return isSidePanel
+        ? `translateX(${side === 'left' ? -ENTER_OFFSET_PX : ENTER_OFFSET_PX}px)`
+        : `translateY(${ENTER_OFFSET_PX}px)`;
+    }
+    if (!isSidePanel && dragOffset > 0) {
+      return `translateY(${dragOffset}px)`;
+    }
+    return 'none';
+  })();
 
   return createPortal(
     <div
       className={cn(
-        'fixed inset-0 z-50 flex flex-col bg-[rgb(0_0_0_/_0.45)]',
+        'fixed inset-0 z-50 flex bg-[rgb(0_0_0_/_0.45)]',
+        isSidePanel
+          ? side === 'left'
+            ? 'items-stretch justify-start'
+            : 'items-stretch justify-end'
+          : 'flex-col',
         // The opacity transition keeps the scrim on its own compositing layer,
         // which iOS Safari clips to the viewport — without it, a static scrim
         // bleeds the dim into the bottom toolbar overscroll zone. Quick fade so
@@ -224,7 +248,12 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
       {/* Sheet is a normal flex child — mirroring MobileOverlayPanel. */}
       <section
         ref={surfaceRef}
-        className="mt-auto flex min-h-0 w-full flex-col overflow-hidden rounded-t-[20px] border-t border-border/40 bg-background text-foreground"
+        className={cn(
+          'flex min-h-0 flex-col overflow-hidden bg-background text-foreground',
+          isSidePanel
+            ? 'mx-2 rounded-2xl border border-border/40 shadow-[0_18px_60px_rgb(0_0_0_/_0.28)]'
+            : 'mt-auto w-full rounded-t-[20px] border-t border-border/40',
+        )}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onTransitionEnd={(event) => {
@@ -236,7 +265,15 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
         style={{
           // Sized to leave the top safe area (plus a small gap) uncovered so the
           // scrim dims it and the sheet sits a few px below the very top.
-          height: `calc(100% - var(--oc-safe-area-top, 0px) - ${TOP_GAP_PX}px)`,
+          height: isSidePanel
+            ? `calc(100% - var(--oc-safe-area-top, 0px) - var(--oc-safe-area-bottom-visual, 0px) - ${TOP_GAP_PX * 2}px)`
+            : `calc(100% - var(--oc-safe-area-top, 0px) - ${TOP_GAP_PX}px)`,
+          marginTop: isSidePanel ? `calc(var(--oc-safe-area-top, 0px) + ${TOP_GAP_PX}px)` : undefined,
+          marginBottom: isSidePanel ? `calc(var(--oc-safe-area-bottom-visual, 0px) + ${TOP_GAP_PX}px)` : undefined,
+          width: isSidePanel ? sideWidth : undefined,
+          maxWidth: isSidePanel
+            ? 'calc(100vw - var(--oc-safe-area-left, 0px) - var(--oc-safe-area-right, 0px) - 1rem)'
+            : undefined,
           transform: visualTransform,
           transition: isDraggingRef.current
             ? 'none'
@@ -250,9 +287,11 @@ export const MobileSurfaceShell: React.FC<MobileSurfaceShellProps> = ({
           onTouchEnd={handleDragEnd}
           onTouchCancel={handleDragEnd}
         >
-          <div className="flex items-center justify-center pt-2 pb-1">
-            <span className="h-1 w-10 rounded-full bg-[var(--surface-muted)]" aria-hidden />
-          </div>
+          {!isSidePanel ? (
+            <div className="flex items-center justify-center pt-2 pb-1">
+              <span className="h-1 w-10 rounded-full bg-[var(--surface-muted)]" aria-hidden />
+            </div>
+          ) : null}
           {!headerless ? (
             <header className="flex h-[var(--oc-header-height,56px)] items-center gap-2 px-3">
               {leading}

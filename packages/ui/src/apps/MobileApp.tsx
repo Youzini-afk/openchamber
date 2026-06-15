@@ -30,6 +30,8 @@ import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_
 import { getDisplayModelName } from '@/lib/quota/model-families';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { sessionEvents } from '@/lib/sessionEvents';
+import { useMobileAppViewport } from '@/lib/mobileAppRuntime';
+import { useMobileLayoutInfo, useMobileLayoutRootAttributes } from '@/lib/mobileLayoutTier';
 import { cn } from '@/lib/utils';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -648,7 +650,8 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
 const MobileHeader: React.FC<{
   onOpenSessions: () => void;
   onOpenMenu: () => void;
-}> = ({ onOpenSessions, onOpenMenu }) => {
+  showSessionsButton?: boolean;
+}> = ({ onOpenSessions, onOpenMenu, showSessionsButton = true }) => {
   const { t } = useI18n();
   const [metadataOpen, setMetadataOpen] = React.useState(false);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -701,15 +704,17 @@ const MobileHeader: React.FC<{
         style={{ paddingTop: 'var(--oc-safe-area-top, 0px)' }}
       >
         <div className="flex h-[var(--oc-header-height,56px)] w-full items-center gap-1 px-2">
-          <button
-            type="button"
-            className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label={t('mobile.sessions.openSheetAria')}
-            onClick={handleOpenSessions}
-            style={{ touchAction: 'manipulation' }}
-          >
-            <Icon name="menu" className="size-5" />
-          </button>
+          {showSessionsButton ? (
+            <button
+              type="button"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label={t('mobile.sessions.openSheetAria')}
+              onClick={handleOpenSessions}
+              style={{ touchAction: 'manipulation' }}
+            >
+              <Icon name="menu" className="size-5" />
+            </button>
+          ) : null}
 
           <MobileSessionMetadataButton
             open={metadataOpen}
@@ -737,8 +742,63 @@ const MobileHeader: React.FC<{
   );
 };
 
+const MobileTabletRail: React.FC<{
+  items: OverflowItem[];
+  onOpenSessions: () => void;
+}> = ({ items, onOpenSessions }) => {
+  const { t } = useI18n();
+
+  const renderButton = ({
+    key,
+    label,
+    icon,
+    iconNode,
+    badge,
+    onSelect,
+  }: OverflowItem) => (
+    <button
+      key={key}
+      type="button"
+      className="relative flex size-11 items-center justify-center rounded-2xl text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      aria-label={label}
+      title={label}
+      onClick={onSelect}
+      style={{ touchAction: 'manipulation' }}
+    >
+      {iconNode ?? (icon ? <Icon name={icon} className="size-5" /> : null)}
+      {badge && badge > 0 ? (
+        <span className="absolute right-2 top-2 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
+    </button>
+  );
+
+  return (
+    <aside
+      className="mobile-tablet-rail flex shrink-0 flex-col items-center gap-2 border-r border-border/35 bg-background/95 px-2 py-2 text-foreground supports-[backdrop-filter]:bg-background/80"
+      aria-label={t('mobile.nav.aria')}
+    >
+      <button
+        type="button"
+        className="relative flex size-11 items-center justify-center rounded-2xl text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        aria-label={t('mobile.sessions.openSheetAria')}
+        title={t('mobile.sessions.sheet.title')}
+        onClick={onOpenSessions}
+        style={{ touchAction: 'manipulation' }}
+      >
+        <Icon name="stack" className="size-5" />
+      </button>
+      <div className="my-1 h-px w-8 bg-border/50" />
+      {items.map(renderButton)}
+    </aside>
+  );
+};
+
 const MobileShell: React.FC = () => {
   const { t } = useI18n();
+  const mobileLayout = useMobileLayoutInfo();
+  useMobileLayoutRootAttributes(mobileLayout, true);
   const [sessionsSheetOpen, setSessionsSheetOpen] = React.useState(false);
   const [filesOpen, setFilesOpen] = React.useState(false);
   const [changesOpen, setChangesOpen] = React.useState(false);
@@ -761,6 +821,10 @@ const MobileShell: React.FC = () => {
   const loadMcpConfigs = useMcpConfigStore((state) => state.loadMcpConfigs);
   const gitStatus = useGitStatus(normalizePath(currentDirectory) || null);
   const dirtyChangeCount = gitStatus?.files?.length ?? 0;
+  const surfaceVariant = mobileLayout.prefersSidePanels ? 'side' : 'sheet';
+  const sidePanelWidth = mobileLayout.isTabletLandscape
+    ? 'min(760px, calc(100vw - 5.5rem))'
+    : 'min(640px, calc(100vw - 4.5rem))';
 
   const mobileActions = React.useMemo<MobileAppActions>(
     () => ({
@@ -873,18 +937,33 @@ const MobileShell: React.FC = () => {
   return (
     <DedicatedMobileAppProvider actions={mobileActions}>
       <div
-        className="main-content-safe-area flex h-[100dvh] flex-col bg-background text-foreground"
+        className={cn(
+          'main-content-safe-area oc-mobile-shell flex h-[100dvh] bg-background text-foreground',
+          mobileLayout.isTablet ? 'flex-row' : 'flex-col',
+        )}
         data-page-scroll-lock="true"
+        data-mobile-layout-tier={mobileLayout.tier}
+        data-mobile-layout-kind={mobileLayout.kind}
       >
-        <MobileHeader
-          onOpenSessions={() => setSessionsSheetOpen(true)}
-          onOpenMenu={() => setOverflowOpen(true)}
-        />
-        <main className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
-          <ErrorBoundary>
-            <ChatView />
-          </ErrorBoundary>
-        </main>
+        {mobileLayout.isTablet ? (
+          <MobileTabletRail
+            items={overflowItems}
+            onOpenSessions={() => setSessionsSheetOpen(true)}
+          />
+        ) : null}
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileHeader
+            onOpenSessions={() => setSessionsSheetOpen(true)}
+            onOpenMenu={() => setOverflowOpen(true)}
+            showSessionsButton={!mobileLayout.isTablet}
+          />
+          <main className="relative min-h-0 flex-1 overflow-hidden" data-page-scroll-lock="true">
+            <ErrorBoundary>
+              <ChatView />
+            </ErrorBoundary>
+          </main>
+        </div>
 
         <MobileOverflowMenu
           open={overflowOpen}
@@ -893,7 +972,13 @@ const MobileShell: React.FC = () => {
         />
 
         {sessionsSheetOpen ? (
-          <MobileSessionsSheet open={sessionsSheetOpen} onOpenChange={setSessionsSheetOpen} />
+          <MobileSessionsSheet
+            open={sessionsSheetOpen}
+            onOpenChange={setSessionsSheetOpen}
+            surfaceVariant={surfaceVariant}
+            surfaceSide="left"
+            sideWidth={sidePanelWidth}
+          />
         ) : null}
 
         {/* Mounted only while open (like the sessions sheet) so each surface
@@ -906,6 +991,9 @@ const MobileShell: React.FC = () => {
             onClose={() => setFilesOpen(false)}
             ariaLabel={t('mobile.menu.files')}
             headerless
+            variant={surfaceVariant}
+            side="right"
+            sideWidth={sidePanelWidth}
           >
             <ErrorBoundary>
               <MobileFilesSurface onClose={() => setFilesOpen(false)} />
@@ -919,6 +1007,9 @@ const MobileShell: React.FC = () => {
             onClose={closeChanges}
             ariaLabel={t('mobile.menu.changes')}
             headerless
+            variant={surfaceVariant}
+            side="right"
+            sideWidth={sidePanelWidth}
           >
             <ErrorBoundary>
               <MobileChangesSurface
@@ -935,7 +1026,7 @@ const MobileShell: React.FC = () => {
             open
             onClose={() => setMcpOpen(false)}
             title={t('mcpDropdown.title')}
-            className="h-[72vh]"
+            className={cn(mobileLayout.isTablet ? 'h-[min(620px,calc(100dvh-2rem))]' : 'h-[72vh]')}
             contentMaxHeightClassName="max-h-full"
             renderHeader={(closeButton) => (
               <div className="shrink-0">
@@ -992,10 +1083,13 @@ const MobileShell: React.FC = () => {
             onClose={() => setSettingsOpen(false)}
             ariaLabel={t('mobile.menu.settings')}
             headerless
+            variant={surfaceVariant}
+            side="right"
+            sideWidth={mobileLayout.isTabletLandscape ? sidePanelWidth : undefined}
           >
             <ErrorBoundary>
               <SettingsView
-                forceMobile
+                forceMobile={!mobileLayout.isTabletLandscape}
                 isWindowed
                 initialMobileStage={settingsInitialMobileStage}
                 visiblePageSlugs={[...MOBILE_SETTINGS_PAGES]}
@@ -1011,6 +1105,9 @@ const MobileShell: React.FC = () => {
             onClose={() => setUpdateOpen(false)}
             ariaLabel={t('mobile.menu.update')}
             title={t('mobile.menu.update')}
+            variant={surfaceVariant}
+            side="right"
+            sideWidth={sidePanelWidth}
           >
             <ErrorBoundary>
               <div className="h-full overflow-auto px-5 py-4">
@@ -1039,6 +1136,8 @@ export function MobileApp({ apis }: MobileAppProps) {
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const projects = useProjectsStore((state) => state.projects);
+
+  useMobileAppViewport(true);
 
   React.useEffect(() => {
     registerRuntimeAPIs(apis);

@@ -55,11 +55,14 @@ import { useAllLiveSessions } from '@/sync/sync-context';
 import type { WorktreeMetadata } from '@/types/worktree';
 
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
-import { MobileSurfaceShell } from './MobileSurfaceShell';
+import { MobileSurfaceShell, type MobileSurfaceSide, type MobileSurfaceVariant } from './MobileSurfaceShell';
 
 type MobileSessionsSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  surfaceVariant?: MobileSurfaceVariant;
+  surfaceSide?: MobileSurfaceSide;
+  sideWidth?: string;
 };
 
 type ProjectMeta = {
@@ -497,7 +500,13 @@ const SortableProjectRow: React.FC<{
   );
 };
 
-export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, onOpenChange }) => {
+export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
+  open,
+  onOpenChange,
+  surfaceVariant = 'sheet',
+  surfaceSide = 'left',
+  sideWidth,
+}) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
   const liveSessions = useAllLiveSessions();
@@ -1001,6 +1010,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
       ariaLabel={t('mobile.sessions.sheet.title')}
       title={t('mobile.sessions.sheet.title')}
       trailing={trailingActions}
+      variant={surfaceVariant}
+      side={surfaceSide}
+      sideWidth={sideWidth}
     >
       <div className="flex h-full flex-col">
         <div className={cn('shrink-0 px-4 pb-2 pt-1', editingOrder && 'hidden')}>

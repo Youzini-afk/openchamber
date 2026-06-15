@@ -1,6 +1,6 @@
 import React from 'react';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { completePairing, normalizeServerUrl, parsePairingPayload } from '../api/mobileClient';
 import { t } from '../i18n';
 import { getAppVersion, getDeviceName, getDevicePlatform } from '../notifications/push';
@@ -12,6 +12,7 @@ interface PairingScreenProps {
 }
 
 export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, onPaired }) => {
+  const { width } = useWindowDimensions();
   const [serverUrl, setServerUrl] = React.useState(initialServerUrl ?? '');
   const [payloadText, setPayloadText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -81,7 +82,15 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
         />
-        <View style={styles.scannerOverlay}>
+        <View
+          style={[
+            styles.scannerOverlay,
+            width >= 700 && {
+              left: Math.max(24, (width - 520) / 2),
+              right: Math.max(24, (width - 520) / 2),
+            },
+          ]}
+        >
           <Text style={styles.scannerTitle}>{t('pairing.scanner.title')}</Text>
           <Pressable style={styles.secondaryButton} onPress={() => setScannerOpen(false)}>
             <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
@@ -93,42 +102,44 @@ export const PairingScreen: React.FC<PairingScreenProps> = ({ initialServerUrl, 
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{t('pairing.title')}</Text>
-      <Text style={styles.subtitle}>{t('pairing.subtitle')}</Text>
+      <View style={[styles.panel, width >= 700 && styles.panelWide]}>
+        <Text style={styles.title}>{t('pairing.title')}</Text>
+        <Text style={styles.subtitle}>{t('pairing.subtitle')}</Text>
 
-      <Pressable disabled={busy} onPress={() => void openScanner()} style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>{t('pairing.action.scanQrCode')}</Text>
-      </Pressable>
+        <Pressable disabled={busy} onPress={() => void openScanner()} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>{t('pairing.action.scanQrCode')}</Text>
+        </Pressable>
 
-      <Text style={styles.label}>{t('pairing.label.serverUrl')}</Text>
-      <TextInput
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        value={serverUrl}
-        onChangeText={setServerUrl}
-        placeholder="https://openchamber.example.com"
-        placeholderTextColor="#777"
-        style={styles.input}
-      />
+        <Text style={styles.label}>{t('pairing.label.serverUrl')}</Text>
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          value={serverUrl}
+          onChangeText={setServerUrl}
+          placeholder="https://openchamber.example.com"
+          placeholderTextColor="#777"
+          style={styles.input}
+        />
 
-      <Text style={styles.label}>{t('pairing.label.payload')}</Text>
-      <TextInput
-        autoCapitalize="none"
-        autoCorrect={false}
-        multiline
-        value={payloadText}
-        onChangeText={setPayloadText}
-        placeholder='{"serverUrl":"https://...","pairingToken":"pair_..."}'
-        placeholderTextColor="#777"
-        style={[styles.input, styles.payloadInput]}
-      />
+        <Text style={styles.label}>{t('pairing.label.payload')}</Text>
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+          value={payloadText}
+          onChangeText={setPayloadText}
+          placeholder='{"serverUrl":"https://...","pairingToken":"pair_..."}'
+          placeholderTextColor="#777"
+          style={[styles.input, styles.payloadInput]}
+        />
 
-      {error && <Text style={styles.error}>{error}</Text>}
+        {error && <Text style={styles.error}>{error}</Text>}
 
-      <Pressable disabled={busy} onPress={() => void pair()} style={[styles.button, busy && styles.buttonDisabled]}>
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t('pairing.action.pairDevice')}</Text>}
-      </Pressable>
+        <Pressable disabled={busy} onPress={() => void pair()} style={[styles.button, busy && styles.buttonDisabled]}>
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t('pairing.action.pairDevice')}</Text>}
+        </Pressable>
+      </View>
     </View>
   );
 };
@@ -137,8 +148,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 24,
     backgroundColor: '#111111',
+  },
+  panel: {
+    width: '100%',
+  },
+  panelWide: {
+    maxWidth: 520,
   },
   title: {
     color: '#ffffff',
