@@ -17,6 +17,7 @@ mock.module('@/sync/session-ui-store', () => ({
         return Promise.resolve();
       },
       sessionAbortFlags: new Map(),
+      availableWorktreesByProject: new Map(),
     }),
   },
 }));

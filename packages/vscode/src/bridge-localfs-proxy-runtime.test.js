@@ -1,5 +1,7 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import fs from 'node:fs';
+
+const realFsPromises = fs.promises;
 
 const defaultRealpath = mock(async (inputPath) => inputPath);
 const defaultStat = mock(async () => {
@@ -46,6 +48,17 @@ const resetMocks = () => {
     throw error;
   });
 };
+
+const restoreRealFsMocks = () => {
+  defaultRealpath.mockReset();
+  defaultRealpath.mockImplementation((inputPath) => realFsPromises.realpath(inputPath));
+  defaultStat.mockReset();
+  defaultStat.mockImplementation((inputPath) => realFsPromises.stat(inputPath));
+};
+
+afterEach(() => {
+  restoreRealFsMocks();
+});
 
 const fileStats = () => ({
   isFile: () => true,

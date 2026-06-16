@@ -192,7 +192,7 @@ interface AgentsStore {
   loadAgents: (options?: { force?: boolean }) => Promise<boolean>;
   createAgent: (config: AgentConfig) => Promise<boolean>;
   updateAgent: (name: string, config: Partial<AgentConfig>) => Promise<boolean>;
-  deleteAgent: (name: string) => Promise<boolean>;
+  deleteAgent: (name: string, scope?: AgentScope) => Promise<boolean>;
   getAgentByName: (name: string) => Agent | undefined;
   // Returns only visible agents (excludes hidden internal agents)
   getVisibleAgents: () => Agent[];
@@ -469,7 +469,7 @@ export const useAgentsStore = create<AgentsStore>()(
           }
         },
 
-        deleteAgent: async (name: string) => {
+        deleteAgent: async (name: string, scope?: AgentScope) => {
           startConfigUpdate("Deleting agent configuration…");
           let requiresReload = false;
           try {
@@ -479,7 +479,11 @@ export const useAgentsStore = create<AgentsStore>()(
 
             const response = await runtimeFetch(`/api/config/agents/${encodeURIComponent(name)}${queryParams}`, {
               method: 'DELETE',
-              headers: configDirectory ? { 'x-opencode-directory': configDirectory } : undefined,
+              headers: {
+                'Content-Type': 'application/json',
+                ...(configDirectory ? { 'x-opencode-directory': configDirectory } : {}),
+              },
+              body: JSON.stringify({ scope }),
             });
 
             const payload = await response.json().catch(() => null);
@@ -510,8 +514,9 @@ export const useAgentsStore = create<AgentsStore>()(
               set({ selectedAgentName: null });
             }
             return loaded;
-          } catch {
-            return false;
+          } catch (error) {
+            console.error('Failed to delete agent:', error);
+            throw error;
           } finally {
             if (!requiresReload) {
               finishConfigUpdate();

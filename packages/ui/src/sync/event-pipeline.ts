@@ -399,7 +399,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
         clearTimeout(timer)
         timer = undefined
       }
-      if (typeof globalThis.window !== "undefined") {
+      if (typeof globalThis.window !== "undefined" && typeof globalThis.window.removeEventListener === "function") {
         globalThis.window.removeEventListener("online", onInterrupt)
       }
       if (typeof document !== "undefined") {
@@ -418,7 +418,7 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     }
 
     let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(onInterrupt, ms)
-    if (typeof globalThis.window !== "undefined") {
+    if (typeof globalThis.window !== "undefined" && typeof globalThis.window.addEventListener === "function") {
       globalThis.window.addEventListener("online", onInterrupt, { once: true })
     }
     if (typeof document !== "undefined") {

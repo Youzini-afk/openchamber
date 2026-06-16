@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { createEventPipeline } from '../event-pipeline';
 import { installGlobalStub, restoreGlobalStubs } from './global-stub-helpers';
+import { clearRuntimeUrlAuthToken, setRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 
 function installDomStubs() {
+  setRuntimeUrlAuthToken('test-url-token', Date.now() + 60_000);
+
   installGlobalStub('document', {
     visibilityState: 'visible',
     addEventListener() {},
@@ -52,6 +55,7 @@ class FakeWebSocket {
 }
 
 afterEach(() => {
+  clearRuntimeUrlAuthToken();
   restoreGlobalStubs();
   FakeWebSocket.instances = [];
 });

@@ -31,6 +31,7 @@ import {
   hasEditableProviderConfigSource,
 } from './customProviderForm';
 import type { CustomProviderEditableFormState } from './customProviderForm';
+import { shouldLoadAvailableProviders } from './providerAvailability';
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
   notation: 'compact',
@@ -202,6 +203,8 @@ export const ProvidersPage: React.FC = () => {
     createCustomProviderFormStateFromConfig({})
   );
 
+  const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
+
   React.useEffect(() => {
     if (selectedProviderId === ADD_PROVIDER_ID) {
       setAddProviderMode('known');
@@ -220,6 +223,10 @@ export const ProvidersPage: React.FC = () => {
   }, [providers, selectedProviderId, setSelectedProvider]);
 
   React.useEffect(() => {
+    if (!isAddMode) {
+      return;
+    }
+
     let isMounted = true;
 
     const loadAuthMethods = async () => {
@@ -247,9 +254,13 @@ export const ProvidersPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [t]);
+  }, [isAddMode, t]);
 
   React.useEffect(() => {
+    if (!shouldLoadAvailableProviders(isAddMode)) {
+      return;
+    }
+
     let isMounted = true;
 
     const loadAvailableProviders = async () => {
@@ -278,7 +289,7 @@ export const ProvidersPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [t]);
+  }, [isAddMode, t]);
 
   const connectedProviderIds = React.useMemo(
     () => new Set(providers.map((provider) => provider.id)),
@@ -585,8 +596,6 @@ export const ProvidersPage: React.FC = () => {
       toast.error(t('settings.providers.page.toast.customProviderLoadFailed'));
     }
   };
-
-  const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
 
   if (!isAddMode && providers.length === 0) {
     return (

@@ -37,6 +37,7 @@ mock.module('@/sync/session-ui-store', () => ({
       setWorktreeMetadata: (sessionId: string, metadata: { path: string }) => {
         worktreeMetadataCalls.push({ sessionId, path: metadata.path });
       },
+      availableWorktreesByProject: new Map(),
     }),
   },
 }));

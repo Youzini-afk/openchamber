@@ -331,6 +331,7 @@ type UiNotificationPayload = {
   sessionId?: unknown
   directory?: unknown
   requireHidden?: unknown
+  desktopNotificationDelivered?: unknown
   desktopStdoutActive?: unknown
 }
 
@@ -351,7 +352,7 @@ const handleUiNotificationEvent = (payload: Event, fallbackDirectory: string): b
   }
 
   const notification = properties as UiNotificationPayload
-  if (notification.desktopStdoutActive === true && getRuntimeKey() === "local") {
+  if ((notification.desktopNotificationDelivered === true || notification.desktopStdoutActive === true) && getRuntimeKey() === "local") {
     return true
   }
 
@@ -1669,7 +1670,6 @@ export function SyncProvider(props: {
             global: {
               config: globalState.config,
               projects: globalState.projects,
-              providers: globalState.providers,
             },
             loadSessions: (dir) => retry(async () => {
               const rootSessions = (await listGlobalSessionPages(props.sdk, {
