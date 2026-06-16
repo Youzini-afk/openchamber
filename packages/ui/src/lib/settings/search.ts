@@ -554,7 +554,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     id: 'providers.connect',
     page: 'providers',
     titleKey: 'settings.providers.page.connect.title',
-    keywords: ['add provider', 'connect provider', 'credentials'],
+    keywords: ['add provider', 'connect provider', 'custom provider', 'openai compatible', 'base url', 'credentials'],
   },
   {
     id: 'providers.auth',

@@ -23,6 +23,14 @@ import type { ModelMetadata } from '@/types';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { opencodeClient } from '@/lib/opencode/client';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { CustomProviderEditor } from './CustomProviderEditor';
+import {
+  createCustomProviderFormStateFromConfig,
+  hasEditableProviderConfigSource,
+} from './customProviderForm';
+import type { CustomProviderEditableFormState } from './customProviderForm';
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
   notation: 'compact',
@@ -73,6 +81,23 @@ interface ProviderSources {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const getCurrentDirectory = (): string | null => {
+  const dir = opencodeClient.getDirectory();
+  if (typeof dir === 'string' && dir.trim().length > 0) {
+    return dir.trim();
+  }
+  return null;
+};
+
+const getProviderSourceCacheKey = (providerId: string, directory: string | null): string =>
+  `${providerId}\u0000${directory || ''}`;
+
+const isEditableCustomProviderConfig = (config: unknown): boolean => {
+  if (!isRecord(config)) return false;
+  const baseURL = typeof config.baseURL === 'string' ? config.baseURL.trim() : '';
+  return baseURL.length > 0 && (Array.isArray(config.models) || isRecord(config.models));
+};
 
 const normalizeAuthType = (method: AuthMethod) => {
   const raw = typeof method.type === 'string' ? method.type : '';
@@ -152,6 +177,8 @@ export const ProvidersPage: React.FC = () => {
   const toggleHiddenModel = useUIStore((state) => state.toggleHiddenModel);
   const hideAllModels = useUIStore((state) => state.hideAllModels);
   const showAllModels = useUIStore((state) => state.showAllModels);
+  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
+  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
 
   const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -169,6 +196,22 @@ export const ProvidersPage: React.FC = () => {
   const [providerDropdownOpen, setProviderDropdownOpen] = React.useState(false);
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
+  const [addProviderMode, setAddProviderMode] = React.useState<'known' | 'custom'>('known');
+  const [editingCustomProvider, setEditingCustomProvider] = React.useState(false);
+  const [customProviderEditState, setCustomProviderEditState] = React.useState<CustomProviderEditableFormState>(() =>
+    createCustomProviderFormStateFromConfig({})
+  );
+
+  React.useEffect(() => {
+    if (selectedProviderId === ADD_PROVIDER_ID) {
+      setAddProviderMode('known');
+      setEditingCustomProvider(false);
+    }
+  }, [selectedProviderId]);
+
+  React.useEffect(() => {
+    setEditingCustomProvider(false);
+  }, [selectedProviderId]);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -282,11 +325,24 @@ export const ProvidersPage: React.FC = () => {
 
     const loadSources = async () => {
       try {
+        // Re-read the dynamic OpenCode directory whenever the active project
+        // changes so project-scoped custom providers expose the correct edit
+        // state in Settings.
         // OpenChamber-only metadata endpoint: the SDK exposes provider data but
         // not local auth/source-file provenance used by this settings UI.
+        const directory = getCurrentDirectory() || currentDirectory || null;
+        const sourceCacheKey = getProviderSourceCacheKey(selectedProviderId, directory);
+        setProviderSources((prev) => {
+          const next = { ...prev };
+          for (const key of Object.keys(next)) {
+            if (key.startsWith(`${selectedProviderId}\u0000`)) delete next[key];
+          }
+          return next;
+        });
         const response = await runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
           method: 'GET',
           headers: { Accept: 'application/json' },
+          ...(directory ? { query: { directory } } : {}),
         });
 
         const payload = await response.json().catch(() => null);
@@ -298,7 +354,7 @@ export const ProvidersPage: React.FC = () => {
         if (!cancelled && sources) {
           setProviderSources((prev) => ({
             ...prev,
-            [selectedProviderId]: sources,
+            [sourceCacheKey]: sources,
           }));
         }
       } catch (error) {
@@ -313,10 +369,13 @@ export const ProvidersPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedProviderId, t]);
+  }, [activeProjectId, currentDirectory, selectedProviderId, t]);
 
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
-  const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
+  const selectedProviderDirectory = getCurrentDirectory() || currentDirectory || null;
+  const selectedSources = selectedProviderId
+    ? providerSources[getProviderSourceCacheKey(selectedProviderId, selectedProviderDirectory)]
+    : undefined;
 
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
@@ -482,6 +541,51 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
+  const handleCustomProviderSaved = (providerId: string) => {
+    if (isAddMode) {
+      setSelectedProvider(providerId);
+    } else {
+      setEditingCustomProvider(false);
+      setSelectedProvider(providerId);
+    }
+  };
+
+  const handleEditCustomProvider = async () => {
+    if (!selectedProviderId) {
+      return;
+    }
+
+    try {
+      const directory = getCurrentDirectory();
+      const response = await runtimeFetch(
+        `/api/provider/${encodeURIComponent(selectedProviderId)}/config`,
+        {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          ...(directory ? { query: { directory } } : {}),
+        }
+      );
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        toast.error(payload?.error || t('settings.providers.page.toast.customProviderLoadFailed'));
+        return;
+      }
+
+      const config = payload?.config;
+      if (!isEditableCustomProviderConfig(config)) {
+        toast.error(t('settings.providers.page.toast.customProviderConfigUnavailable'));
+        return;
+      }
+
+      setCustomProviderEditState(createCustomProviderFormStateFromConfig(config));
+      setEditingCustomProvider(true);
+    } catch (error) {
+      console.error('Failed to load custom provider config:', error);
+      toast.error(t('settings.providers.page.toast.customProviderLoadFailed'));
+    }
+  };
+
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
 
   if (!isAddMode && providers.length === 0) {
@@ -504,6 +608,38 @@ export const ProvidersPage: React.FC = () => {
             <h1 className="typography-ui-header font-semibold text-foreground">{t('settings.providers.page.connect.title')}</h1>
           </div>
 
+          <div className="mb-6">
+            <div className="flex flex-wrap items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                className={cn(
+                  '!font-normal',
+                  addProviderMode === 'known'
+                    ? 'border-[var(--primary-base)] text-[var(--primary-base)] bg-[var(--primary-base)]/10'
+                    : 'text-foreground'
+                )}
+                onClick={() => setAddProviderMode('known')}
+              >
+                {t('settings.providers.page.connect.knownProvider')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                className={cn(
+                  '!font-normal',
+                  addProviderMode === 'custom'
+                    ? 'border-[var(--primary-base)] text-[var(--primary-base)] bg-[var(--primary-base)]/10'
+                    : 'text-foreground'
+                )}
+                onClick={() => setAddProviderMode('custom')}
+              >
+                {t('settings.providers.page.connect.customProvider')}
+              </Button>
+            </div>
+          </div>
+
+          {addProviderMode === 'known' ? (<>
           <div className="mb-8">
             <div className="mb-1 px-1">
               <h2 className="typography-ui-header font-medium text-foreground">{t('settings.providers.page.connect.selectProviderTitle')}</h2>
@@ -740,6 +876,13 @@ export const ProvidersPage: React.FC = () => {
               )}
             </div>
           )}
+        </>) : (
+          <CustomProviderEditor
+            mode="create"
+            onSaved={handleCustomProviderSaved}
+            onCancel={() => setAddProviderMode('known')}
+          />
+        )}
         </div>
       </ScrollableOverlay>
     );
@@ -774,18 +917,48 @@ export const ProvidersPage: React.FC = () => {
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4 flex items-center gap-3">
-          <ProviderLogo providerId={selectedProvider.id} className="h-5 w-5 shrink-0" />
-          <div className="min-w-0">
-            <h2 className="typography-ui-header font-semibold text-foreground truncate">
-              {selectedProvider.name || selectedProvider.id}
-            </h2>
-            <p className="typography-meta text-muted-foreground truncate">
-              <span className="font-mono">{selectedProvider.id}</span>
-            </p>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <ProviderLogo providerId={selectedProvider.id} className="h-5 w-5 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="typography-ui-header font-semibold text-foreground truncate">
+                {selectedProvider.name || selectedProvider.id}
+              </h2>
+              <p className="typography-meta text-muted-foreground truncate">
+                <span className="font-mono">{selectedProvider.id}</span>
+              </p>
+            </div>
           </div>
+          {selectedSources && hasEditableProviderConfigSource(selectedSources) && (
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal shrink-0"
+              onClick={handleEditCustomProvider}
+            >
+              {t('settings.providers.page.actions.editProvider')}
+            </Button>
+          )}
         </div>
 
+        {editingCustomProvider ? (
+          <div data-settings-item="providers.custom-edit" className="mb-8">
+            <div className="mb-1 px-1">
+              <h3 className="typography-ui-header font-medium text-foreground">
+                {t('settings.providers.page.custom.editTitle')}
+              </h3>
+            </div>
+            <section className="px-2 pb-2 pt-0">
+              <CustomProviderEditor
+                mode="edit"
+                initialState={customProviderEditState}
+                onSaved={handleCustomProviderSaved}
+                onCancel={() => setEditingCustomProvider(false)}
+              />
+            </section>
+          </div>
+        ) : (
+          <>
         {/* Authentication */}
         <div data-settings-item="providers.auth" className="mb-8">
           <div className="mb-1 px-1 flex items-center justify-between gap-2">
@@ -969,6 +1142,8 @@ export const ProvidersPage: React.FC = () => {
             </div>
           </section>
         </div>
+          </>
+        )}
 
         {/* Models */}
         <div data-settings-item="providers.models" className="mb-8">
