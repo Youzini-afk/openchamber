@@ -60,6 +60,8 @@ const CHAT_SCROLL_STYLE = {
     overflowAnchor: 'none',
     overscrollBehavior: 'contain',
     overscrollBehaviorY: 'contain',
+    touchAction: 'pan-y',
+    WebkitOverflowScrolling: 'touch',
 } as const;
 const CHAT_NAVIGATION_IGNORED_TARGET_SELECTOR = [
     'a[href]',

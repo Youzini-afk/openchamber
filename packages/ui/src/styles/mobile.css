@@ -208,7 +208,7 @@
   }
 
   /* Fix mobile scroll containers */
-  :root.mobile-pointer:not(.desktop-runtime) .overflow-hidden {
+  :root.mobile-pointer:not(.desktop-runtime):not(.runtime-mobile-app) .overflow-hidden {
     overflow-x: hidden !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
@@ -217,6 +217,14 @@
   :root.mobile-pointer:not(.desktop-runtime) [data-page-scroll-lock="true"] {
     overflow: hidden !important;
     overscroll-behavior: none;
+  }
+
+  :root.runtime-mobile-app .chat-scroll {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   /* Keep markdown code blocks horizontally scrollable on mobile. */
@@ -358,9 +366,9 @@
     }
 
     /* Prevent content overlap in iOS */
-    :root.device-mobile:not(.desktop-runtime) .flex-1.overflow-hidden,
-    :root.device-tablet:not(.desktop-runtime) .flex-1.overflow-hidden,
-    :root.mobile-pointer:not(.desktop-runtime) .flex-1.overflow-hidden {
+    :root.device-mobile:not(.desktop-runtime):not(.runtime-mobile-app) .flex-1.overflow-hidden,
+    :root.device-tablet:not(.desktop-runtime):not(.runtime-mobile-app) .flex-1.overflow-hidden,
+    :root.mobile-pointer:not(.desktop-runtime):not(.runtime-mobile-app) .flex-1.overflow-hidden {
       position: relative;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
