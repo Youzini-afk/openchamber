@@ -362,4 +362,32 @@ describe('custom provider form helpers', () => {
       },
     ]);
   });
+
+  test('preserves existing model capabilities when fetched metadata omits them', () => {
+    expect(mergeCustomProviderModelRows([
+      {
+        id: 'same-model',
+        name: 'Old Same',
+        context: '1000',
+        output: '2000',
+        attachment: true,
+        tool_call: true,
+        reasoning: true,
+        reasoningEffort: 'high',
+      },
+    ], [
+      { id: 'same-model', name: 'New Same' },
+    ])).toEqual([
+      {
+        id: 'same-model',
+        name: 'New Same',
+        context: '1000',
+        output: '2000',
+        attachment: true,
+        tool_call: true,
+        reasoning: true,
+        reasoningEffort: 'high',
+      },
+    ]);
+  });
 });

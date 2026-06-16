@@ -18,6 +18,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   mergeCustomProviderModelRows,
   normalizeCustomProviderModelRows,
   resolveCustomProviderApiKey,
@@ -25,6 +33,7 @@ import {
 import type {
   CustomProviderApiTypeValue,
   CustomProviderEditableFormState,
+  CustomProviderModelRowInput,
 } from './customProviderForm';
 
 interface CustomProviderEditorProps {
@@ -44,6 +53,13 @@ const API_TYPES: CustomProviderApiTypeValue[] = [
 const SCOPES: Array<'user' | 'project' | 'custom'> = ['user', 'project', 'custom'];
 
 const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+const MODEL_IMPORT_SORT_OPTIONS = [
+  { value: 'id-asc', labelKey: 'settings.providers.page.modelImport.sort.idAsc' },
+  { value: 'id-desc', labelKey: 'settings.providers.page.modelImport.sort.idDesc' },
+  { value: 'fetched-order', labelKey: 'settings.providers.page.modelImport.sort.fetchedOrder' },
+] as const;
+type ModelImportSortValue = typeof MODEL_IMPORT_SORT_OPTIONS[number]['value'];
 
 const shouldIgnoreToggleRowClick = (target: EventTarget | null): boolean => (
   target instanceof HTMLElement && Boolean(target.closest('[data-checkbox-control="true"]'))
@@ -94,6 +110,11 @@ export const CustomProviderEditor: React.FC<CustomProviderEditorProps> = ({
   );
   const [saving, setSaving] = React.useState(false);
   const [fetchingModels, setFetchingModels] = React.useState(false);
+  const [modelImportDialogOpen, setModelImportDialogOpen] = React.useState(false);
+  const [fetchedModels, setFetchedModels] = React.useState<CustomProviderModelRowInput[]>([]);
+  const [modelImportSearch, setModelImportSearch] = React.useState('');
+  const [modelImportSort, setModelImportSort] = React.useState<ModelImportSortValue>('id-asc');
+  const [modelImportSelectedIds, setModelImportSelectedIds] = React.useState<Set<string>>(new Set());
   const apiKeyFieldRef = React.useRef<HTMLDivElement | null>(null);
   const originalEditScopeRef = React.useRef<CustomProviderEditableFormState['scope'] | null>(
     mode === 'edit' && initialState ? initialState.scope : null,
@@ -196,18 +217,167 @@ export const CustomProviderEditor: React.FC<CustomProviderEditorProps> = ({
         return;
       }
 
-      setState((prev) => ({
-        ...prev,
-        models: mergeCustomProviderModelRows(prev.models, fetched),
-      }));
-
-      toast.success(t('settings.providers.page.toast.customProviderModelsFetched', { count: fetched.length }));
+      setFetchedModels(fetched);
+      setModelImportSearch('');
+      setModelImportSort('id-asc');
+      setModelImportSelectedIds(() => {
+        const next = new Set<string>();
+        for (const model of fetched) {
+          const id = String(model.id ?? '').trim();
+          if (id && !existingModelIds.has(id)) {
+            next.add(id);
+          }
+        }
+        return next;
+      });
+      setModelImportDialogOpen(true);
     } catch (error) {
       console.error('Failed to fetch custom provider models:', error);
       toast.error(t('settings.providers.page.toast.customProviderFetchFailed'));
     } finally {
       setFetchingModels(false);
     }
+  };
+
+  const existingModelIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of state.models) {
+      const id = row.id.trim();
+      if (id) {
+        ids.add(id);
+      }
+    }
+    return ids;
+  }, [state.models]);
+
+  const modelImportSummary = React.useMemo(() => {
+    const total = fetchedModels.length;
+    let newCount = 0;
+    for (const model of fetchedModels) {
+      const id = String(model.id ?? '').trim();
+      if (id && !existingModelIds.has(id)) {
+        newCount += 1;
+      }
+    }
+    return {
+      total,
+      newCount,
+      existingCount: total - newCount,
+    };
+  }, [fetchedModels, existingModelIds]);
+
+  const displayFetchedModels = React.useMemo(() => {
+    const query = modelImportSearch.trim().toLowerCase();
+    let rows = fetchedModels.map((model, index) => ({ model, index }));
+
+    if (query) {
+      rows = rows.filter(({ model }) => {
+        const id = String(model.id ?? '').trim().toLowerCase();
+        const name = String(model.name ?? '').trim().toLowerCase();
+        return id.includes(query) || name.includes(query);
+      });
+    }
+
+    switch (modelImportSort) {
+      case 'id-asc':
+        rows.sort((a, b) => {
+          const idA = String(a.model.id ?? '').trim().toLowerCase();
+          const idB = String(b.model.id ?? '').trim().toLowerCase();
+          return idA.localeCompare(idB);
+        });
+        break;
+      case 'id-desc':
+        rows.sort((a, b) => {
+          const idA = String(a.model.id ?? '').trim().toLowerCase();
+          const idB = String(b.model.id ?? '').trim().toLowerCase();
+          return idB.localeCompare(idA);
+        });
+        break;
+      default:
+        break;
+    }
+
+    return rows;
+  }, [fetchedModels, modelImportSearch, modelImportSort]);
+
+  const toggleModelImportSelection = (id: string) => {
+    setModelImportSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAllVisibleFetchedModels = () => {
+    setModelImportSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const { model } of displayFetchedModels) {
+        const id = String(model.id ?? '').trim();
+        if (id) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const clearVisibleFetchedModels = () => {
+    setModelImportSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const { model } of displayFetchedModels) {
+        const id = String(model.id ?? '').trim();
+        if (id) {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const selectNewVisibleFetchedModels = () => {
+    setModelImportSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const { model } of displayFetchedModels) {
+        const id = String(model.id ?? '').trim();
+        if (id && !existingModelIds.has(id)) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const applyModelImport = () => {
+    const selectedModels = fetchedModels.filter((model) => {
+      const id = String(model.id ?? '').trim();
+      return id && modelImportSelectedIds.has(id);
+    });
+
+    if (selectedModels.length === 0) {
+      setModelImportDialogOpen(false);
+      return;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      models: mergeCustomProviderModelRows(prev.models, selectedModels),
+    }));
+
+    toast.success(
+      t('settings.providers.page.toast.customProviderModelsImported', { count: selectedModels.length }),
+    );
+    setModelImportDialogOpen(false);
+    setFetchedModels([]);
+    setModelImportSelectedIds(new Set());
+  };
+
+  const renderModelImportSortLabel = (value: ModelImportSortValue) => {
+    const option = MODEL_IMPORT_SORT_OPTIONS.find((opt) => opt.value === value);
+    return option ? tUnsafe(option.labelKey) : '';
   };
 
   const validate = (): boolean => {
@@ -619,6 +789,153 @@ export const CustomProviderEditor: React.FC<CustomProviderEditorProps> = ({
           {saving ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.saveProvider')}
         </Button>
       </div>
+
+      <Dialog open={modelImportDialogOpen} onOpenChange={setModelImportDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t('settings.providers.page.modelImport.title')}</DialogTitle>
+            <DialogDescription>
+              {t('settings.providers.page.modelImport.description')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="typography-small text-muted-foreground">
+                {t('settings.providers.page.modelImport.summary', {
+                  total: modelImportSummary.total,
+                  newCount: modelImportSummary.newCount,
+                  existingCount: modelImportSummary.existingCount,
+                })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Select value={modelImportSort} onValueChange={(value) => setModelImportSort(value as ModelImportSortValue)}>
+                  <SelectTrigger className="h-7 w-[160px]">
+                    <SelectValue>{renderModelImportSortLabel(modelImportSort)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_IMPORT_SORT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {tUnsafe(option.labelKey)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Input
+              value={modelImportSearch}
+              onChange={(event) => setModelImportSearch(event.target.value)}
+              placeholder={t('settings.providers.page.modelImport.field.searchPlaceholder')}
+              aria-label={t('settings.providers.page.modelImport.field.searchAria')}
+              className="h-7"
+            />
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                className="!font-normal"
+                onClick={selectAllVisibleFetchedModels}
+              >
+                {t('settings.providers.page.modelImport.actions.selectAll')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                className="!font-normal"
+                onClick={selectNewVisibleFetchedModels}
+              >
+                {t('settings.providers.page.modelImport.actions.selectNew')}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                className="!font-normal"
+                onClick={clearVisibleFetchedModels}
+              >
+                {t('settings.providers.page.modelImport.actions.clear')}
+              </Button>
+            </div>
+
+            <div className="max-h-[320px] overflow-y-auto rounded-lg border border-[var(--surface-subtle)] p-1">
+              {displayFetchedModels.length === 0 ? (
+                <div className="px-3 py-4 text-center typography-ui-label text-muted-foreground">
+                  {t('settings.providers.page.modelImport.empty.noMatches')}
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {displayFetchedModels.map(({ model, index }) => {
+                    const id = String(model.id ?? '').trim();
+                    const name = String(model.name ?? '').trim();
+                    const isExisting = existingModelIds.has(id);
+                    const isSelected = id ? modelImportSelectedIds.has(id) : false;
+
+                    return (
+                      <div
+                        key={`${index}-${id}`}
+                        role="button"
+                        tabIndex={0}
+                        className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--interactive-hover)]"
+                        onClick={() => id && toggleModelImportSelection(id)}
+                        onKeyDown={(event) => {
+                          if ((event.key === 'Enter' || event.key === ' ') && id) {
+                            event.preventDefault();
+                            toggleModelImportSelection(id);
+                          }
+                        }}
+                      >
+                        <span data-checkbox-control="true" onClick={(event) => event.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onChange={() => id && toggleModelImportSelection(id)}
+                            ariaLabel={id}
+                          />
+                        </span>
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="typography-ui-label truncate">{id}</span>
+                          {name && name !== id && (
+                            <span className="typography-small text-muted-foreground truncate">{name}</span>
+                          )}
+                        </div>
+                        {isExisting ? (
+                          <span className="typography-micro rounded bg-[var(--surface-subtle)] px-1.5 py-0.5 text-muted-foreground">
+                            {t('settings.providers.page.modelImport.badge.existing')}
+                          </span>
+                        ) : (
+                          <span className="typography-micro rounded bg-[var(--surface-subtle)] px-1.5 py-0.5 text-muted-foreground">
+                            {t('settings.providers.page.modelImport.badge.new')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={() => setModelImportDialogOpen(false)}
+            >
+              {t('settings.providers.page.actions.cancel')}
+            </Button>
+            <Button
+              size="xs"
+              className="!font-normal"
+              onClick={applyModelImport}
+              disabled={modelImportSelectedIds.size === 0}
+            >
+              {t('settings.providers.page.modelImport.actions.apply', { count: modelImportSelectedIds.size })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
