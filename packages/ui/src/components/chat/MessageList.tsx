@@ -21,22 +21,17 @@ import { getReviewTransferDirection, type ReviewTransferDirection } from '@/lib/
 import { getOriginalSessionID, getReviewSessionID } from '@/lib/sessionReviewMetadata';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
+const MESSAGE_LIST_DYNAMIC_TAIL_COUNT = 12;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
 const MESSAGE_LIST_BUFFER_SIZE = 900;
 const TIMELINE_CACHE_LIMIT = 16;
-
-const estimateHistoryEntryHeight = (entry: RenderEntry | undefined): number => {
-    if (!entry) {
-        return 160;
-    }
-
-    if (entry.kind === 'turn') {
-        return 180 + Math.min(entry.turn.assistantMessages.length, 4) * 100;
-    }
-
-    return 140;
-};
+// Dynamic chat rows can grow after the first paint (markdown/Shiki workers,
+// tool output reveal, task summaries). Restoring stale virtual heights during
+// those sequence changes is worse than remeasuring, because it briefly lets
+// virtual rows overlap later normal-flow rows. Keep the cache writer in place
+// for a future content-revisioned cache, but do not restore by key alone.
+const RESTORE_TIMELINE_CACHE = false;
 
 const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => {
     if (a === b) return true;
@@ -48,6 +43,7 @@ const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undef
 const timelineCache = new Map<string, { keys: readonly string[]; cache: CacheSnapshot }>();
 
 const readTimelineCache = (sessionKey: string, keys: readonly string[]): CacheSnapshot | undefined => {
+    if (!RESTORE_TIMELINE_CACHE) return undefined;
     const entry = timelineCache.get(sessionKey);
     if (!entry) return undefined;
     if (sameKeys(entry.keys, keys)) return entry.cache;
@@ -60,6 +56,7 @@ const writeTimelineCache = (
     keys: readonly string[],
     handle: VirtualizerHandle | null | undefined,
 ): void => {
+    if (!RESTORE_TIMELINE_CACHE) return;
     if (!handle || keys.length === 0) return;
     timelineCache.delete(sessionKey);
     timelineCache.set(sessionKey, { keys: keys.slice(), cache: handle.cache });
@@ -1002,17 +999,19 @@ type StaticHistoryListProps = {
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
     stickyUserHeader: boolean;
+    sessionIsWorking: boolean;
     defaultActivityExpanded: boolean;
     turnUiStates: Map<string, TurnUiState>;
     onToggleTurnGroup: (turnId: string) => void;
     chatRenderMode: 'sorted' | 'live';
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
+    activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
 };
 
-const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, scrollRef, virtualizerRef, virtualizerKey, virtualCache, shift, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingPhase, reviewTransferDirection }: StaticHistoryListProps) => {
+const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, scrollRef, virtualizerRef, virtualizerKey, virtualCache, shift, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, sessionIsWorking, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingMessageId, activeStreamingPhase, reviewTransferDirection }: StaticHistoryListProps) => {
     const renderEntry = React.useCallback((entry: RenderEntry) => {
         return (
             <MessageListEntry
@@ -1022,19 +1021,19 @@ const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, s
                 getAnimationHandlers={getAnimationHandlers}
                 scrollToBottom={scrollToBottom}
                 stickyUserHeader={stickyUserHeader}
-                sessionIsWorking={false}
+                sessionIsWorking={sessionIsWorking}
                 defaultActivityExpanded={defaultActivityExpanded}
                 turnUiStates={turnUiStates}
                 onToggleTurnGroup={onToggleTurnGroup}
                 chatRenderMode={chatRenderMode}
                 shouldAnimateUserMessage={shouldAnimateUserMessage}
                 onUserAnimationConsumed={onUserAnimationConsumed}
-                activeStreamingMessageId={null}
+                activeStreamingMessageId={activeStreamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
                 reviewTransferDirection={reviewTransferDirection}
             />
         );
-    }, [activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, reviewTransferDirection, scrollToBottom, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
+    }, [activeStreamingMessageId, activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, reviewTransferDirection, scrollToBottom, sessionIsWorking, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
 
     if (!shouldVirtualize) {
         return (
@@ -1057,7 +1056,6 @@ const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, s
             ref={virtualizerRef}
             data={entries}
             cache={virtualCache}
-            itemSize={virtualCache ? undefined : estimateHistoryEntryHeight(undefined)}
             bufferSize={MESSAGE_LIST_BUFFER_SIZE}
             shift={shift}
             scrollRef={scrollRef}
@@ -1339,9 +1337,29 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         streamPerfCount('ui.message_list.render.streaming');
     }
 
-    const historyEntries = staticRenderEntries;
-    const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const allEntries = React.useMemo(() => {
+        return trailingStreamingEntry ? [...staticRenderEntries, trailingStreamingEntry] : staticRenderEntries;
+    }, [staticRenderEntries, trailingStreamingEntry]);
+
+    // During staged reveal/revert transitions the entry sequence is intentionally
+    // unstable for a short window. Keep that whole sequence in normal layout so
+    // React/ResizeObserver can settle actual heights before we reintroduce
+    // absolute-positioned virtual rows.
+    const shouldSplitDynamicTail = !disableStaging && allEntries.length > MESSAGE_LIST_DYNAMIC_TAIL_COUNT + MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const historyEntries = React.useMemo(() => {
+        if (!shouldSplitDynamicTail) return allEntries;
+        return allEntries.slice(0, -MESSAGE_LIST_DYNAMIC_TAIL_COUNT);
+    }, [allEntries, shouldSplitDynamicTail]);
+    const dynamicTailEntries = React.useMemo(() => {
+        if (!shouldSplitDynamicTail) return [] as RenderEntry[];
+        return allEntries.slice(-MESSAGE_LIST_DYNAMIC_TAIL_COUNT);
+    }, [allEntries, shouldSplitDynamicTail]);
+    const shouldVirtualizeHistory = shouldSplitDynamicTail && historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const historyEntryKeys = React.useMemo(() => historyEntries.map((entry) => entry.key), [historyEntries]);
+    const historyVirtualizerKey = React.useMemo(
+        () => `${sessionKey}:${historyEntryKeys.join('\u001f')}`,
+        [historyEntryKeys, sessionKey],
+    );
     const virtualCache = React.useMemo(
         () => (shouldVirtualizeHistory ? readTimelineCache(sessionKey, historyEntryKeys) : undefined),
         [historyEntryKeys, sessionKey, shouldVirtualizeHistory],
@@ -1373,10 +1391,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             writeTimelineCache(virtualCacheSessionRef.current, virtualCacheKeysRef.current, virtualizerForCleanup);
         };
     }, []);
-
-    const allEntries = React.useMemo(() => {
-        return trailingStreamingEntry ? [...historyEntries, trailingStreamingEntry] : historyEntries;
-    }, [historyEntries, trailingStreamingEntry]);
 
     const stableHistoryContentChange = useStableEvent((reason?: ContentChangeReason) => {
         onMessageContentChange(reason);
@@ -1523,7 +1537,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     return true;
                 }
 
-                const targetIsTail = trailingStreamingEntry !== undefined && index >= historyEntries.length;
+                const targetIsTail = index >= historyEntries.length;
                 if (targetIsTail) {
                     return false;
                 }
@@ -1540,7 +1554,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
                 return scrollMessageElementIntoView(messageId, behavior)
                     || (
-                        trailingStreamingEntry !== undefined && index >= historyEntries.length
+                        index >= historyEntries.length
                             ? false
                             : scrollHistoryIndexIntoView(index, behavior)
                     );
@@ -1618,10 +1632,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             },
 
             scrollToBottom: () => {
-                if (shouldVirtualizeHistory && historyEntries.length > 0) {
-                    historyVirtualizerRef.current?.scrollToIndex(historyEntries.length - 1, { align: 'end' });
-                    return;
-                }
                 const container = resolveScrollContainer();
                 if (!container) return;
                 container.scrollTop = container.scrollHeight;
@@ -1640,7 +1650,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return () => {
             objectRef.current = null;
         };
-    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, shouldVirtualizeHistory, trailingStreamingEntry, turnIndexMap, ref]);
+    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, turnIndexMap, ref]);
 
     const disableFadeIn = false;
 
@@ -1654,25 +1664,28 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             contentRef={historyContentRef}
                             scrollRef={scrollRef}
                             virtualizerRef={setHistoryVirtualizer}
-                            virtualizerKey={sessionKey}
+                            virtualizerKey={historyVirtualizerKey}
                             virtualCache={virtualCache}
-                            shift={isLoadingOlder || disableStaging}
+                            shift={isLoadingOlder}
                             onMessageContentChange={stableHistoryContentChange}
                             getAnimationHandlers={stableGetAnimationHandlers}
                             scrollToBottom={stableScrollToBottom}
                             stickyUserHeader={stickyUserHeader}
+                            sessionIsWorking={sessionIsWorking}
                             defaultActivityExpanded={defaultActivityExpanded}
                             turnUiStates={turnUiStates}
                             onToggleTurnGroup={toggleTurnGroup}
                             chatRenderMode={chatRenderMode}
                             shouldAnimateUserMessage={shouldAnimateUserMessage}
                             onUserAnimationConsumed={onUserAnimationConsumed}
+                            activeStreamingMessageId={activeStreamingMessageId}
                             activeStreamingPhase={activeStreamingPhase}
                             reviewTransferDirection={reviewTransferDirection}
                         />
-                        {trailingStreamingEntry ? (
+                        {dynamicTailEntries.map((entry) => (
                             <StreamingTailContent
-                                entry={trailingStreamingEntry}
+                                key={entry.key}
+                                entry={entry}
                                 onMessageContentChange={stableTailContentChange}
                                 getAnimationHandlers={stableGetAnimationHandlers}
                                 scrollToBottom={stableScrollToBottom}
@@ -1688,7 +1701,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 activeStreamingPhase={activeStreamingPhase}
                                 reviewTransferDirection={reviewTransferDirection}
                             />
-                        ) : null}
+                        ))}
                     </div>
                 </FadeInDisabledProvider>
 
