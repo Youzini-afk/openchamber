@@ -399,6 +399,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                                     isAnimated={false}
                                     isStreaming={isStreaming}
                                     variant="reasoning"
+                                    onContentChange={onContentChange}
                                 />
                             </div>
                             {actions ? (

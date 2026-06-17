@@ -24,6 +24,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     messageId,
     streamPhase,
     chatRenderMode = 'live',
+    onContentChange,
     onShowPopup,
 }) => {
     // Use part directly from props — parent provides the latest version from the store.
@@ -56,6 +57,10 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
         isStreaming,
     });
 
+    const handleMarkdownContentChange = React.useCallback((reason?: ContentChangeReason) => {
+        onContentChange?.(reason, messageId);
+    }, [messageId, onContentChange]);
+
     streamPerfObserve('ui.assistant_text_part.display_len', displayTextContent.length);
 
     const time = partWithText.time;
@@ -87,6 +92,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
                 disableStreamAnimation={chatRenderMode === 'sorted'}
                 variant={part.type === 'reasoning' ? 'reasoning' : 'assistant'}
                 enableFileReferences={isFinalized}
+                onContentChange={handleMarkdownContentChange}
                 onShowPopup={onShowPopup}
             />
         </div>

@@ -767,7 +767,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         Boolean(currentSessionId)
         && !hasRenderableSessionSnapshot;
 
-    React.useEffect(() => {
+    React.useLayoutEffect(() => {
         if (!currentSessionId) return;
         if (lastScrolledSessionRef.current === currentSessionId) return;
 
@@ -779,14 +779,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
             return;
         }
 
-        const run = () => {
-            void restoreSnapshot();
-        };
-        if (typeof window === 'undefined') {
-            run();
-        } else {
-            window.requestAnimationFrame(run);
-        }
+        void restoreSnapshot();
     }, [currentSessionId, releaseAutoFollow, restoreSnapshot]);
 
     React.useEffect(() => {

@@ -28,6 +28,7 @@ import {
   type DecorateLabels,
   type MermaidRender,
 } from './markdown/decorate';
+import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -141,6 +142,7 @@ interface MarkdownRendererProps {
   variant?: MarkdownVariant;
   onShowPopup?: (content: ToolPopupContent) => void;
   enableFileReferences?: boolean;
+  onContentChange?: (reason?: ContentChangeReason) => void;
 }
 
 const MERMAID_BLOCK_SELECTOR = '[data-markdown="mermaid-block"]';
@@ -1005,6 +1007,7 @@ const useMorphdomMarkdown = ({
   cacheKey,
   syntaxVars,
   ctx,
+  onContentChange,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   text: string;
@@ -1012,7 +1015,11 @@ const useMorphdomMarkdown = ({
   cacheKey: string;
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
+  onContentChange?: (reason?: ContentChangeReason) => void;
 }) => {
+  const onContentChangeRef = React.useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
+
   React.useEffect(() => {
     ensureMarkdownShikiTheme();
   }, []);
@@ -1046,6 +1053,7 @@ const useMorphdomMarkdown = ({
     void renderMarkdownBlocks(text, streaming, cacheKey).then((blocks) => {
       if (!active) return;
       const existing = Array.from(target.children) as HTMLElement[];
+      let changed = false;
 
       // Reconcile per block: only re-morph blocks whose content changed, leaving
       // stable leading blocks untouched. Keeps per-stream-step DOM work bounded
@@ -1057,6 +1065,7 @@ const useMorphdomMarkdown = ({
           el.setAttribute('data-md-block', '');
           el.style.display = 'contents';
           target.appendChild(el);
+          changed = true;
         }
         if (el.getAttribute('data-md-id') === block.id) return;
 
@@ -1068,11 +1077,19 @@ const useMorphdomMarkdown = ({
           onBeforeElUpdated: (fromEl, toEl) => !fromEl.isEqualNode(toEl),
         });
         el.setAttribute('data-md-id', block.id);
+        changed = true;
       });
 
       // Remove any trailing block elements no longer present.
       for (let i = existing.length - 1; i >= blocks.length; i -= 1) {
-        existing[i]?.remove();
+        const extra = existing[i];
+        if (!extra) continue;
+        extra.remove();
+        changed = true;
+      }
+
+      if (changed) {
+        onContentChangeRef.current?.('structural');
       }
     });
 
@@ -1117,6 +1134,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   variant = 'assistant',
   onShowPopup,
   enableFileReferences = true,
+  onContentChange,
 }) => {
   const currentTheme = useCurrentMermaidTheme();
   const { editor, runtime } = useRuntimeAPIs();
@@ -1147,7 +1165,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const ctx = useDecorateContext(currentTheme, effectiveDirectory ? handlePreviewLoopback : undefined);
   const cacheKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 
-  useMorphdomMarkdown({ containerRef, text: pacedText, streaming: live, cacheKey, syntaxVars, ctx });
+  useMorphdomMarkdown({ containerRef, text: pacedText, streaming: live, cacheKey, syntaxVars, ctx, onContentChange });
 
   const markdownContent = (
     <div className={cn('break-words w-full min-w-0', className)} ref={containerRef}>
@@ -1176,6 +1194,7 @@ export const MarkdownRenderer = React.memo(MarkdownRendererImpl, (prev, next) =>
     && prev.className === next.className
     && prev.messageId === next.messageId
     && prev.onShowPopup === next.onShowPopup
+    && prev.onContentChange === next.onContentChange
     && prev.enableFileReferences === next.enableFileReferences
     && prev.part?.id === next.part?.id;
 });
@@ -1190,6 +1209,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   mermaidControls?: MermaidControlOptions;
   allowMermaidWheelZoom?: boolean;
   enableFileReferences?: boolean;
+  onContentChange?: (reason?: ContentChangeReason) => void;
 }> = ({
   content,
   className,
@@ -1199,6 +1219,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   onShowPopup,
   allowMermaidWheelZoom = false,
   enableFileReferences = true,
+  onContentChange,
 }) => {
   const { editor, runtime } = useRuntimeAPIs();
   const currentTheme = useCurrentMermaidTheme();
@@ -1236,6 +1257,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     cacheKey: `simple:${variant}`,
     syntaxVars,
     ctx,
+    onContentChange,
   });
 
   return (
@@ -1253,5 +1275,6 @@ export const SimpleMarkdownRenderer = React.memo(SimpleMarkdownRendererImpl, (pr
     && prev.stripFrontmatter === next.stripFrontmatter
     && prev.onShowPopup === next.onShowPopup
     && prev.allowMermaidWheelZoom === next.allowMermaidWheelZoom
+    && prev.onContentChange === next.onContentChange
     && prev.enableFileReferences === next.enableFileReferences;
 });

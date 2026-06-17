@@ -2186,13 +2186,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             inputMode
         );
 
-        if (typeof window === 'undefined') {
-            scrollToBottom?.();
-        } else {
-            window.requestAnimationFrame(() => {
-                scrollToBottom?.();
-            });
-        }
+        scrollToBottom?.();
 
         void sendPromise.then(() => {
             // Clear linked issue after successful message send
