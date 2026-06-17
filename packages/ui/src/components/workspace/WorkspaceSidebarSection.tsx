@@ -6,12 +6,10 @@ import {
   RiEditLine,
   RiFileAddLine,
   RiFileCopyLine,
-  RiFileLine,
   RiFileSearchLine,
   RiFileZipLine,
   RiFolderAddLine,
   RiFolderOpenLine,
-  RiFolderLine,
   RiGitBranchLine,
   RiCheckLine,
   RiMore2Line,
@@ -40,6 +38,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Icon } from '@/components/icon/Icon';
+import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import type { WorkspaceEntry } from '@/lib/api/types';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -172,6 +172,29 @@ const isTrashRelativePath = (path: string): boolean => (
 const isOpenableFileEntry = (entry: WorkspaceEntry): boolean => (
   entry.type === 'file' || entry.type === 'symlink'
 );
+
+const WorkspaceEntryIcon: React.FC<{
+  entry: WorkspaceEntry;
+  isDirectory: boolean;
+  isExpanded: boolean;
+  isArchive: boolean;
+  isTrashRoot: boolean;
+}> = ({ entry, isDirectory, isExpanded, isArchive, isTrashRoot }) => {
+  if (isTrashRoot) {
+    return <RiDeleteBinLine className="h-4 w-4 shrink-0 text-muted-foreground" />;
+  }
+  if (isDirectory) {
+    return isExpanded ? (
+      <Icon name="folder-open-fill" className="h-4 w-4 shrink-0 text-primary/60" />
+    ) : (
+      <Icon name="folder-3-fill" className="h-4 w-4 shrink-0 text-primary/60" />
+    );
+  }
+  if (isArchive) {
+    return <RiFileZipLine className="h-4 w-4 shrink-0 text-muted-foreground" />;
+  }
+  return <FileTypeIcon filePath={entry.path || entry.relativePath || entry.name} className="h-4 w-4" />;
+};
 
 const getInitialSortMode = (): WorkspaceSortMode => {
   if (typeof window === 'undefined') return DEFAULT_WORKSPACE_SORT_MODE;
@@ -506,15 +529,13 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
               void handleOpenWorkspaceFile(entry);
             }}
           >
-            {isTrashRoot ? (
-              <RiDeleteBinLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : isDirectory ? (
-              <RiFolderLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : isArchive ? (
-              <RiFileZipLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <RiFileLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
+            <WorkspaceEntryIcon
+              entry={entry}
+              isDirectory={isDirectory}
+              isExpanded={isExpanded}
+              isArchive={isArchive}
+              isTrashRoot={isTrashRoot}
+            />
             <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground">
               {entry.name}
             </span>
@@ -538,7 +559,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                       onClick={() => void handleOpenChat(entry)}
                     >
-                      <RiChatNewLine className="h-3.5 w-3.5" />
+                      <RiChatNewLine className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{t('workspace.sidebar.menu.openChat')}</TooltipContent>
@@ -550,7 +571,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                       onClick={() => openTerminal(entry.relativePath)}
                     >
-                      <RiTerminalLine className="h-3.5 w-3.5" />
+                      <RiTerminalLine className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{t('workspace.sidebar.menu.terminal')}</TooltipContent>
@@ -562,7 +583,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                       onClick={() => openRenameDialog(entry)}
                     >
-                      <RiEditLine className="h-3.5 w-3.5" />
+                      <RiEditLine className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{t('workspace.sidebar.menu.rename')}</TooltipContent>
@@ -577,7 +598,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                   aria-label={t('workspace.sidebar.menu.aria')}
                   onClick={() => setContextMenuPath(entry.relativePath)}
                 >
-                  <RiMore2Line className="h-3.5 w-3.5" />
+                  <RiMore2Line className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[190px]">
@@ -588,7 +609,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                       {t('workspace.sidebar.menu.openChat')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => void handleOpenFiles(entry)}>
-                      <RiFolderLine className="mr-1.5 h-4 w-4" />
+                      <Icon name="folder-3-fill" className="mr-1.5 h-4 w-4" />
                       {t('workspace.sidebar.menu.openFiles')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openGitPanel(entry.relativePath)}>
