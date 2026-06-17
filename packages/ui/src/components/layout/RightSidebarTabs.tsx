@@ -13,7 +13,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { formatDirectoryName, cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { SidebarFilesTree } from './SidebarFilesTree';
+import { WorkspaceSidebarSection } from '@/components/workspace/WorkspaceSidebarSection';
 
 type RightTab = 'git' | 'files' | 'context';
 
@@ -198,6 +198,12 @@ const RightSidebarGitPanel: React.FC<{ isActive: boolean }> = ({ isActive }) => 
   );
 };
 
+const WorkspaceFilesPanel: React.FC<{ isActive: boolean }> = ({ isActive }) => (
+  <div className="h-full min-h-0 overflow-auto bg-background px-3 py-2">
+    <WorkspaceSidebarSection isActive={isActive} />
+  </div>
+);
+
 export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
@@ -249,6 +255,7 @@ export const RightSidebarTabs: React.FC = () => {
     [tabItems, hiddenRightTab]
   );
   const isRightGitTabActive = isRightSidebarOpen && rightSidebarTab === 'git' && hiddenRightTab !== 'git';
+  const isRightFilesTabActive = isRightSidebarOpen && rightSidebarTab === 'files';
 
   const handleTabSelect = React.useCallback(
     (tabID: string) => {
@@ -277,7 +284,7 @@ export const RightSidebarTabs: React.FC = () => {
           <RightSidebarGitPanel isActive={isRightGitTabActive} />
         </div>
         <div className={cn('h-full', rightSidebarTab !== 'files' && 'hidden')}>
-          <SidebarFilesTree />
+          <WorkspaceFilesPanel isActive={isRightFilesTabActive} />
         </div>
         <div className={cn('h-full', rightSidebarTab !== 'context' && 'hidden')}>
           <ProjectContextPanel />

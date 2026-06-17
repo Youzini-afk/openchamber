@@ -62,6 +62,7 @@ import {
 type WorkspaceSidebarSectionProps = {
   mobileVariant?: boolean;
   setSessionSwitcherOpen?: (open: boolean) => void;
+  isActive?: boolean;
 };
 
 const TRASH_PATH = '.trash';
@@ -191,6 +192,7 @@ const WORKSPACE_SORT_LABEL_KEYS: Record<WorkspaceSortMode, I18nKey> = {
 export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = ({
   mobileVariant = false,
   setSessionSwitcherOpen,
+  isActive = true,
 }) => {
   const { t } = useI18n();
   const root = useWorkspaceStore((state) => state.root);
@@ -233,12 +235,15 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const canSwitchDesktopWorkspace = canChooseDesktopWorkspace();
 
   React.useEffect(() => {
+    if (!isActive) {
+      return;
+    }
     if (didInitialLoadRef.current) {
       return;
     }
     didInitialLoadRef.current = true;
     void useWorkspaceStore.getState().refreshWorkspace();
-  }, []);
+  }, [isActive]);
 
   const rootEntries = entriesByPath[''] ?? EMPTY_WORKSPACE_ENTRIES;
   const sortedRootEntries = React.useMemo(() => sortWorkspaceEntries(rootEntries, sortMode), [rootEntries, sortMode]);
