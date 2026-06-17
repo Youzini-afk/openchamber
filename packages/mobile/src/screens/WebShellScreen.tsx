@@ -125,6 +125,9 @@ export const WebShellScreen: React.FC<WebShellScreenProps> = ({ config, pendingP
       thirdPartyCookiesEnabled
       javaScriptEnabled
       domStorageEnabled
+      scrollEnabled
+      nestedScrollEnabled
+      overScrollMode="never"
       setSupportMultipleWindows={false}
       injectedJavaScriptBeforeContentLoaded={injectedJavaScriptBeforeContentLoaded}
       onMessage={onMessage}

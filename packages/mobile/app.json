@@ -38,11 +38,12 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow OpenChamber to scan pairing QR codes."
+          "cameraPermission": "Allow OpenChamber to scan connection QR codes."
         }
       ],
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-localization"
     ],
     "extra": {
       "eas": {

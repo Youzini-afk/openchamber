@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { getLocales } from 'expo-localization';
 
 type Locale = 'en' | 'zh-Hans';
 
@@ -69,12 +69,13 @@ const translations: Record<Locale, Record<TranslationKey, string>> = {
 };
 
 const getDeviceLocale = (): string | undefined => {
-  if (Platform.OS === 'ios') {
-    const settings = NativeModules.SettingsManager?.settings;
-    return settings?.AppleLocale ?? settings?.AppleLanguages?.[0];
+  try {
+    const locales = getLocales();
+    const primary = locales.find((locale) => locale.languageTag || locale.languageCode);
+    return primary?.languageTag ?? primary?.languageCode ?? undefined;
+  } catch {
+    return undefined;
   }
-
-  return NativeModules.I18nManager?.localeIdentifier;
 };
 
 const getLocale = (): Locale => {
