@@ -1365,6 +1365,20 @@ export type GitHubDeviceFlowComplete =
   | { connected: true; user: GitHubUserSummary; scope?: string }
   | { connected: false; status?: string; error?: string };
 
+export type GitHubTerminalAuthResult = {
+  success: boolean;
+  ghConfigPath: string;
+  helperPath: string;
+  gitCredentialHelperConfigured: boolean;
+  gitCredentialHelperError?: string;
+};
+
+export type GitHubGitAuthorResult = {
+  success: boolean;
+  userName: string;
+  userEmail: string;
+};
+
 export interface GitHubAPI {
   authStatus(): Promise<GitHubAuthStatus>;
   authStart(): Promise<GitHubDeviceFlowStart>;
@@ -1372,6 +1386,8 @@ export interface GitHubAPI {
   authDisconnect(): Promise<{ removed: boolean }>;
   authActivate(accountId: string): Promise<GitHubAuthStatus>;
   authSetGhCliDisabled(disabled: boolean): Promise<{ disabled: boolean }>;
+  authSyncTerminal(options?: { configureGit?: boolean }): Promise<GitHubTerminalAuthResult>;
+  authConfigureGitAuthor(): Promise<GitHubGitAuthorResult>;
   me?(): Promise<GitHubUserSummary>;
 
   prStatus(directory: string, branch: string, remote?: string, options?: { force?: boolean }): Promise<GitHubPullRequestStatus>;

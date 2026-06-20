@@ -17,7 +17,9 @@ import type {
   GitHubRepoUpstreamResult,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
+  GitHubGitAuthorResult,
   GitHubUserSummary,
+  GitHubTerminalAuthResult,
 } from '@openchamber/ui/lib/api/types';
 import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
 import type { RuntimeUrlResolver } from '@openchamber/ui/lib/runtime-url';
@@ -99,6 +101,32 @@ export const createWebGitHubAPI = ({ urls }: WebGitHubAPIOptions): GitHubAPI => 
       throw new Error(payload?.error || response.statusText || 'Failed to update gh CLI setting');
     }
     return { disabled: Boolean(payload.disabled) };
+  },
+
+  async authSyncTerminal(options?: { configureGit?: boolean }): Promise<GitHubTerminalAuthResult> {
+    const response = await runtimeFetch('/api/github/auth/terminal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ configureGit: options?.configureGit !== false }),
+    });
+    const payload = await jsonOrNull<GitHubTerminalAuthResult & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to configure GitHub terminal login');
+    }
+    return payload;
+  },
+
+  async authConfigureGitAuthor(): Promise<GitHubGitAuthorResult> {
+    const response = await runtimeFetch('/api/github/auth/git-author', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const payload = await jsonOrNull<GitHubGitAuthorResult & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to configure Git author');
+    }
+    return payload;
   },
 
   async me(): Promise<GitHubUserSummary> {

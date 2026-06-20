@@ -43,6 +43,8 @@ type TokenResponse = {
 const authFilePath = (context: vscode.ExtensionContext) =>
   path.join(context.globalStorageUri.fsPath, 'github-auth.json');
 
+export const getGitHubAuthFilePath = (context: vscode.ExtensionContext): string => authFilePath(context);
+
 const resolveAccountId = (auth: StoredAuth): string => {
   if (typeof auth.accountId === 'string' && auth.accountId.trim()) {
     return auth.accountId.trim();

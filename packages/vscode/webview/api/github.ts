@@ -16,7 +16,9 @@ import type {
   GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
+  GitHubGitAuthorResult,
   GitHubRepoUpstreamResult,
+  GitHubTerminalAuthResult,
   GitHubUserSummary,
 } from '@openchamber/ui/lib/api/types';
 
@@ -33,6 +35,10 @@ export const createVSCodeGitHubAPI = (): GitHubAPI => ({
   authSetGhCliDisabled: async () => {
     throw new Error('gh CLI fallback is not supported in VS Code');
   },
+  authSyncTerminal: async (options?: { configureGit?: boolean }) =>
+    sendBridgeMessage<GitHubTerminalAuthResult>('api:github/auth:terminal', { configureGit: options?.configureGit !== false }),
+  authConfigureGitAuthor: async () =>
+    sendBridgeMessage<GitHubGitAuthorResult>('api:github/auth:git-author'),
   me: async () => sendBridgeMessage<GitHubUserSummary>('api:github/me'),
 
   prStatus: async (directory: string, branch: string) =>

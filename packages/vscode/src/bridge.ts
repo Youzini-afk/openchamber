@@ -14,6 +14,7 @@ import {
   clearGitHubAuth,
   exchangeDeviceCode,
   fetchMe,
+  getGitHubAuthFilePath,
   readGitHubAuth,
   readGitHubAuthList,
   startDeviceFlow,
@@ -64,6 +65,10 @@ import {
   collectHeaders,
   base64EncodeUtf8,
 } from './bridge-localfs-proxy-runtime';
+// Reuse the web runtime's terminal auth helper so VS Code and web install the
+// same gh hosts.yml and git credential helper behavior.
+// @ts-expect-error The web package currently ships these helpers as JS modules.
+import { configureGitHubGitAuthor, installTerminalGitHubAuth } from '../../web/server/lib/github/terminal-auth.js';
 
 export interface BridgeRequest {
   id: string;
@@ -303,6 +308,48 @@ const handleGitHubBridgeMessage = async (
         await activateGitHubAuth(context, accountId);
       }
       return { id, type, success: true, data: await buildGitHubAuthStatus(context) };
+    }
+    case 'api:github/auth:terminal': {
+      const context = requireVSCodeContext(ctx);
+      const auth = await readGitHubAuth(context);
+      if (!auth?.accessToken) {
+        throw new Error('GitHub not connected');
+      }
+      const result = installTerminalGitHubAuth({
+        auth,
+        authFilePath: getGitHubAuthFilePath(context),
+        configureGit: data.configureGit !== false,
+      });
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          success: true,
+          ghConfigPath: result.ghConfigPath,
+          helperPath: result.helperPath,
+          gitCredentialHelperConfigured: Boolean(result.gitCredentialHelperConfigured),
+          gitCredentialHelperError: result.gitCredentialHelperError || '',
+        },
+      };
+    }
+    case 'api:github/auth:git-author': {
+      const context = requireVSCodeContext(ctx);
+      const auth = await readGitHubAuth(context);
+      if (!auth?.accessToken) {
+        throw new Error('GitHub not connected');
+      }
+      const result = configureGitHubGitAuthor({ auth });
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          success: true,
+          userName: result.userName,
+          userEmail: result.userEmail,
+        },
+      };
     }
     case 'api:github/me': {
       const { auth } = await requireGitHubAuth(ctx);
