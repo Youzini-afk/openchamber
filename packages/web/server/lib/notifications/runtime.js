@@ -13,14 +13,17 @@ export const createNotificationTriggerRuntime = (deps) => {
     sendMobilePushToAllDevices,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    fetchImpl = fetch,
   } = deps;
 
   const PUSH_READY_COOLDOWN_MS = 5000;
   const PUSH_QUESTION_DEBOUNCE_MS = 500;
   const PUSH_PERMISSION_DEBOUNCE_MS = 500;
+  const AUTO_ACCEPT_REPLY_TIMEOUT_MS = 5000;
   const pushQuestionDebounceTimers = new Map();
   const pushPermissionDebounceTimers = new Map();
   const notifiedPermissionRequests = new Set();
+  const autoAcceptedPermissionRequests = new Set();
   const lastReadyNotificationAt = new Map();
 
   const sessionParentIdCache = new Map();
@@ -95,7 +98,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (cached !== undefined) return cached;
 
     try {
-      const response = await fetch(buildOpenCodeUrl('/session', ''), {
+      const response = await fetchImpl(buildOpenCodeUrl('/session', ''), {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -141,6 +144,55 @@ export const createNotificationTriggerRuntime = (deps) => {
       current = parent;
     }
     return false;
+  };
+
+  const extractPermissionRequestId = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+    const props = payload.properties;
+    const requestId = props?.id ?? props?.requestID ?? props?.requestId;
+    return typeof requestId === 'string' && requestId.length > 0 ? requestId : null;
+  };
+
+  const buildOpenCodeRequestUrl = (path, directory) => {
+    const url = new URL(buildOpenCodeUrl(path, ''));
+    const trimmedDirectory = typeof directory === 'string' ? directory.trim() : '';
+    if (trimmedDirectory) {
+      url.searchParams.set('directory', trimmedDirectory);
+    }
+    return url.toString();
+  };
+
+  const autoReplyToPermission = async ({ sessionId, requestId, directory }) => {
+    if (!requestId) return false;
+
+    const requestKey = sessionId ? `${sessionId}:${requestId}` : requestId;
+    if (autoAcceptedPermissionRequests.has(requestKey)) {
+      return true;
+    }
+
+    autoAcceptedPermissionRequests.add(requestKey);
+    try {
+      const response = await fetchImpl(buildOpenCodeRequestUrl(`/permission/${encodeURIComponent(requestId)}/reply`, directory), {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          ...getOpenCodeAuthHeaders(),
+        },
+        body: JSON.stringify({ reply: 'once' }),
+        signal: AbortSignal.timeout(AUTO_ACCEPT_REPLY_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        throw new Error(`permission.reply failed (${response.status})`);
+      }
+
+      return true;
+    } catch (error) {
+      autoAcceptedPermissionRequests.delete(requestKey);
+      console.warn('[Notification] Permission auto-accept failed:', error?.message || error);
+      return false;
+    }
   };
 
   const extractSessionIdFromPayload = (payload) => {
@@ -463,6 +515,9 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (payload.type === 'permission.replied' && sessionId) {
       const requestId = payload.properties?.requestID ?? payload.properties?.requestId ?? payload.properties?.id;
       const requestKey = typeof requestId === 'string' ? `${sessionId}:${requestId}` : null;
+      if (requestKey) {
+        autoAcceptedPermissionRequests.delete(requestKey);
+      }
       const pendingNotification = pushPermissionDebounceTimers.get(sessionId);
       if (!pendingNotification) {
         return;
@@ -479,7 +534,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
 
     if (payload.type === 'permission.asked' && sessionId) {
-      const requestId = payload.properties?.id ?? payload.properties?.requestID ?? payload.properties?.requestId;
+      const requestId = extractPermissionRequestId(payload);
       const permission = payload.properties?.permission;
       const requestKey = typeof requestId === 'string' ? `${sessionId}:${requestId}` : null;
       if (requestKey && notifiedPermissionRequests.has(requestKey)) {
@@ -490,8 +545,15 @@ export const createNotificationTriggerRuntime = (deps) => {
       // ancestor). Skip the whole notification path — the client responds
       // directly and the user has opted out of approval prompts.
       if (await isSessionAutoAccepting(sessionId)) {
-        if (requestKey) notifiedPermissionRequests.add(requestKey);
-        return;
+        const replied = await autoReplyToPermission({
+          sessionId,
+          requestId,
+          directory: notificationDirectory,
+        });
+        if (replied) {
+          if (requestKey) notifiedPermissionRequests.add(requestKey);
+          return;
+        }
       }
 
       const existingTimer = pushPermissionDebounceTimers.get(sessionId);
@@ -503,8 +565,15 @@ export const createNotificationTriggerRuntime = (deps) => {
         pushPermissionDebounceTimers.delete(sessionId);
 
         if (await isSessionAutoAccepting(sessionId)) {
-          if (requestKey) notifiedPermissionRequests.add(requestKey);
-          return;
+          const replied = await autoReplyToPermission({
+            sessionId,
+            requestId,
+            directory: notificationDirectory,
+          });
+          if (replied) {
+            if (requestKey) notifiedPermissionRequests.add(requestKey);
+            return;
+          }
         }
 
         const settings = await readSettingsFromDisk();
