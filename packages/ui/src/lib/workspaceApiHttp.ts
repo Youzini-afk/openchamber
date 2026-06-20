@@ -68,6 +68,40 @@ const getJson = async <TResult>(path: string, params?: Record<string, string | n
   return response.json() as Promise<TResult>;
 };
 
+const decodeContentDispositionValue = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const getDownloadFilename = (response: Response, fallback: string): string => {
+  const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition') || '';
+  const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (encodedMatch?.[1]) {
+    return decodeContentDispositionValue(encodedMatch[1].trim().replace(/^"|"$/g, ''));
+  }
+
+  const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+  if (filenameMatch?.[1]) {
+    return filenameMatch[1].trim();
+  }
+
+  return fallback;
+};
+
+const saveBlob = (blob: Blob, filename: string): void => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+};
+
 export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
   getRoot(): Promise<WorkspaceRootInfo> {
     return getJson('/root');
@@ -188,13 +222,13 @@ export const createWorkspaceHttpAPI = (): WorkspaceAPI => ({
   },
 
   async download(path: string): Promise<void> {
-    const url = buildUrl('/download', { path: normalizeWorkspacePath(path) });
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = normalizeWorkspacePath(path).split('/').pop() || 'download';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const normalizedPath = normalizeWorkspacePath(path);
+    const response = await fetch(buildUrl('/download', { path: normalizedPath }), {
+      headers: { Accept: 'application/octet-stream, application/zip, */*' },
+    });
+    await ensureOk(response, 'Failed to download workspace entry');
+    const fallbackName = normalizedPath.split('/').pop() || 'download';
+    saveBlob(await response.blob(), getDownloadFilename(response, fallbackName));
   },
 
   previewArchive(path: string): Promise<WorkspaceArchivePreview> {
