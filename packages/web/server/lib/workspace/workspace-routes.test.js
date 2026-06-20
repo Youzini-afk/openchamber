@@ -98,6 +98,7 @@ describe('workspace routes', () => {
       limits: {
         maxReadBytes: 1024 * 1024,
         maxDownloadBytes: 12 * 1024 * 1024 * 1024,
+        maxDownloadFiles: 0,
         maxArchiveBytes: 1024 * 1024 * 1024,
         maxExtractBytes: 3 * 1024 * 1024 * 1024,
         maxExtractFiles: 30000,
@@ -342,6 +343,21 @@ describe('workspace routes', () => {
       .expect(413);
 
     expect(response.body.error).toMatch(/too large/i);
+  });
+
+  it('only applies folder download file-count limits when explicitly configured', async () => {
+    const app = await createApp({ OPENCHAMBER_WORKSPACE_MAX_DOWNLOAD_FILES: '2' });
+    fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'a.txt'), 'a');
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'b.txt'), 'b');
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'c.txt'), 'c');
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: 'demo' })
+      .expect(413);
+
+    expect(response.body.error).toMatch(/too many files/i);
   });
 
   it('previews and extracts zip archives into new folders with rename conflicts', async () => {

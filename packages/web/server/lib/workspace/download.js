@@ -43,7 +43,7 @@ const createDirectoryZip = async (resolved, stat, config, dependencies = {}) => 
   const zip = new AdmZip();
   const limits = {
     maxBytes: Number.isFinite(config.maxDownloadBytes) ? config.maxDownloadBytes : 12 * 1024 * 1024 * 1024,
-    maxFiles: Number.isFinite(config.maxExtractFiles) ? config.maxExtractFiles : 30000,
+    maxFiles: Number.isFinite(config.maxDownloadFiles) ? config.maxDownloadFiles : 0,
   };
   const totals = {
     files: 0,
@@ -74,7 +74,7 @@ const createDirectoryZip = async (resolved, stat, config, dependencies = {}) => 
 
       totals.files += 1;
       totals.bytes += childStat.size;
-      if (totals.files > limits.maxFiles) {
+      if (limits.maxFiles > 0 && totals.files > limits.maxFiles) {
         throw new WorkspacePayloadTooLargeError('Directory contains too many files to download');
       }
       if (totals.bytes > limits.maxBytes) {

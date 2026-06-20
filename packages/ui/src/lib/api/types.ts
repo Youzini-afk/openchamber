@@ -821,6 +821,7 @@ export interface WorkspaceRootInfo {
     maxReadBytes: number;
     maxUploadBytes: number;
     maxDownloadBytes?: number;
+    maxDownloadFiles?: number;
     maxArchiveBytes?: number;
     maxExtractBytes?: number;
     maxExtractFiles?: number;
