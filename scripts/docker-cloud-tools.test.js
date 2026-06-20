@@ -114,6 +114,13 @@ describe('cloud Docker toolbelt', () => {
     expect(dockerEntrypoint).toContain('ln -s "${OPENCHAMBER_VALIDATION_NODE_MODULES}/.bin/vitest"');
   });
 
+  it('pins the bundled OpenCode CLI version in the runtime base image', () => {
+    expect(runtimeBaseDockerfile).toContain('ARG OPENCODE_VERSION=1.17.8');
+    expect(runtimeBaseDockerfile).toContain('npm install -g "opencode-ai@${OPENCODE_VERSION}"');
+    expect(runtimeBaseDockerfile).toContain('opencode --version');
+    expect(runtimeBaseDockerfile).not.toContain('npm install -g opencode-ai pnpm');
+  });
+
   it('provides a daemonless Docker build-only wrapper without host socket access', () => {
     expect(runtimeBaseDockerfile).toContain('moby/buildkit@sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c');
     expect(runtimeBaseDockerfile).toContain('v0.26.2 rootless/daemonless');

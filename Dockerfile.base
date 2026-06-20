@@ -8,6 +8,7 @@ ARG GOPLS_VERSION=v0.21.1
 ARG NODE_VERSION=24.15.0
 ARG NODE_TYPES_VERSION=24.12.4
 ARG VITEST_VERSION=4.1.6
+ARG OPENCODE_VERSION=1.17.8
 
 ENV PATH=/usr/local/node/bin:/usr/local/go/bin:${PATH}
 
@@ -119,8 +120,8 @@ RUN mkdir -p /home/openchamber/.local /home/openchamber/.config /home/openchambe
   go install golang.org/x/tools/gopls@${GOPLS_VERSION} && \
   npm config set prefix /home/openchamber/.npm-global && mkdir -p /home/openchamber/.npm-global && \
   npm install --prefix /home/openchamber/.openchamber-validation --no-save @types/node@${NODE_TYPES_VERSION} vitest@${VITEST_VERSION} && \
-  npm install -g opencode-ai pnpm tsx typescript typescript-language-server yarn && \
-  rust-analyzer --version && rustfmt --version && gopls version && tsc --version && typescript-language-server --version && vitest --version && node -e "require.resolve('@types/node/package.json')" && pnpm --version && yarn --version && \
+  npm install -g "opencode-ai@${OPENCODE_VERSION}" pnpm tsx typescript typescript-language-server yarn && \
+  rust-analyzer --version && rustfmt --version && gopls version && opencode --version && tsc --version && typescript-language-server --version && vitest --version && node -e "require.resolve('@types/node/package.json')" && pnpm --version && yarn --version && \
   docker --version && buildctl --version
 
 # cloudflared 2026.3.0 - update digest explicitly when upgrading
