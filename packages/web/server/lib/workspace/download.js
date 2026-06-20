@@ -42,7 +42,7 @@ const createDirectoryZip = async (resolved, stat, config, dependencies = {}) => 
   const baseName = safeDownloadName(pathModule.basename(resolved.absolutePath) || 'workspace');
   const zip = new AdmZip();
   const limits = {
-    maxBytes: Number.isFinite(config.maxDownloadBytes) ? config.maxDownloadBytes : 1024 * 1024 * 1024,
+    maxBytes: Number.isFinite(config.maxDownloadBytes) ? config.maxDownloadBytes : 12 * 1024 * 1024 * 1024,
     maxFiles: Number.isFinite(config.maxExtractFiles) ? config.maxExtractFiles : 30000,
   };
   const totals = {
