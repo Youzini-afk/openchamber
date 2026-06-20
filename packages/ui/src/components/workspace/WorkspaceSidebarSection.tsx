@@ -3,6 +3,7 @@ import {
   RiAttachment2,
   RiChatNewLine,
   RiDeleteBinLine,
+  RiDownloadLine,
   RiEditLine,
   RiFileAddLine,
   RiFileCopyLine,
@@ -234,6 +235,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const createFile = useWorkspaceStore((state) => state.createFile);
   const renameEntry = useWorkspaceStore((state) => state.renameEntry);
   const deleteEntry = useWorkspaceStore((state) => state.deleteEntry);
+  const downloadFile = useWorkspaceStore((state) => state.downloadFile);
   const uploadFiles = useWorkspaceStore((state) => state.uploadFiles);
   const openProject = useWorkspaceStore((state) => state.openProject);
   const openTerminal = useWorkspaceStore((state) => state.openTerminal);
@@ -463,6 +465,17 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     }
   }, [t]);
 
+  const handleDownloadFile = React.useCallback(async (entry: WorkspaceEntry) => {
+    if (entry.type !== 'file') return;
+    setContextMenuPath(null);
+    try {
+      await downloadFile(entry.relativePath);
+    } catch (downloadError) {
+      const message = downloadError instanceof Error ? downloadError.message : '';
+      toast.error(message || t('workspace.sidebar.toast.downloadFailed'));
+    }
+  }, [downloadFile, t]);
+
   const handleAddToSession = React.useCallback((entry: WorkspaceEntry) => {
     if (isTrashRelativePath(entry.relativePath)) return;
     const path = entry.path || entry.relativePath;
@@ -672,6 +685,12 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                         </DropdownMenuItem>
                       ) : null
                     ) : null}
+                    {entry.type === 'file' ? (
+                      <DropdownMenuItem onClick={() => void handleDownloadFile(entry)}>
+                        <RiDownloadLine className="mr-1.5 h-4 w-4" />
+                        {t('workspace.sidebar.menu.download')}
+                      </DropdownMenuItem>
+                    ) : null}
                     {!isInsideTrash ? (
                       <DropdownMenuItem onClick={() => handleAddToSession(entry)}>
                         <RiAttachment2 className="mr-1.5 h-4 w-4" />
@@ -726,6 +745,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleCreateFolder,
     handleDelete,
     handleCopyPath,
+    handleDownloadFile,
     handleAddToSession,
     handleOpenChat,
     handleOpenFiles,
