@@ -42,6 +42,8 @@ const getRequestPath = (req) => {
   return candidate;
 };
 
+const DOWNLOAD_OPTIONS = { dotfiles: 'allow' };
+
 const toErrorStatus = (error) => {
   if (Number.isInteger(error?.statusCode)) return error.statusCode;
   if (error?.code === 'ENOENT') return 404;
@@ -303,9 +305,9 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
     try {
       const download = await resolveWorkspaceDownload(getRequestPath(req), context.config, context);
       if (download.type === 'file') {
-        return res.download(download.filePath, download.fileName);
+        return res.download(download.filePath, download.fileName, DOWNLOAD_OPTIONS);
       }
-      return res.download(download.archivePath, download.fileName, async (error) => {
+      return res.download(download.archivePath, download.fileName, DOWNLOAD_OPTIONS, async (error) => {
         await context.fsPromises.rm(download.tempDir, { recursive: true, force: true }).catch(() => {});
         if (error && !res.headersSent) {
           sendError(res, error);

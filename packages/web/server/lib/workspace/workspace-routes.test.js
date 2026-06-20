@@ -296,6 +296,41 @@ describe('workspace routes', () => {
     expect(zip.getEntry('demo/src/index.ts').getData().toString('utf8')).toBe('export {};');
   });
 
+  it('downloads dotfiles directly instead of treating them as not found', async () => {
+    const app = await createApp();
+    fs.mkdirSync(workspaceRoot, { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, '.env'), 'TOKEN=secret');
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: '.env' })
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200);
+
+    expect(response.headers['content-disposition']).toContain('.env');
+    expect(response.body.toString('utf8')).toBe('TOKEN=secret');
+  });
+
+  it('downloads dot-directories as zip archives instead of treating the temp zip as not found', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, '.config'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, '.config', 'settings.json'), '{}');
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: '.config' })
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200);
+
+    expect(response.headers['content-disposition']).toContain('.config.zip');
+
+    const zip = new AdmZip(response.body);
+    expect(zip.getEntry('.config/')).toBeTruthy();
+    expect(zip.getEntry('.config/settings.json').getData().toString('utf8')).toBe('{}');
+  });
+
   it('rejects folder downloads that exceed download limits', async () => {
     const app = await createApp({ OPENCHAMBER_WORKSPACE_MAX_DOWNLOAD_MB: '0.0001' });
     fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
