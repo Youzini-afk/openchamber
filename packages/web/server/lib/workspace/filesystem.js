@@ -100,6 +100,7 @@ export const getWorkspaceRootInfo = async (config, dependencies = {}) => {
     limits: {
       maxReadBytes: config.maxReadBytes,
       maxUploadBytes: config.maxUploadBytes,
+      maxDownloadBytes: config.maxDownloadBytes,
       maxArchiveBytes: config.maxArchiveBytes,
       maxExtractBytes: config.maxExtractBytes,
       maxExtractFiles: config.maxExtractFiles,

@@ -465,8 +465,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     }
   }, [t]);
 
-  const handleDownloadFile = React.useCallback(async (entry: WorkspaceEntry) => {
-    if (entry.type !== 'file') return;
+  const handleDownloadEntry = React.useCallback(async (entry: WorkspaceEntry) => {
+    if (entry.type !== 'file' && entry.type !== 'directory') return;
     setContextMenuPath(null);
     try {
       await downloadFile(entry.relativePath);
@@ -685,8 +685,8 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
                         </DropdownMenuItem>
                       ) : null
                     ) : null}
-                    {entry.type === 'file' ? (
-                      <DropdownMenuItem onClick={() => void handleDownloadFile(entry)}>
+                    {(entry.type === 'file' || entry.type === 'directory') ? (
+                      <DropdownMenuItem onClick={() => void handleDownloadEntry(entry)}>
                         <RiDownloadLine className="mr-1.5 h-4 w-4" />
                         {t('workspace.sidebar.menu.download')}
                       </DropdownMenuItem>
@@ -745,7 +745,7 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     handleCreateFolder,
     handleDelete,
     handleCopyPath,
-    handleDownloadFile,
+    handleDownloadEntry,
     handleAddToSession,
     handleOpenChat,
     handleOpenFiles,

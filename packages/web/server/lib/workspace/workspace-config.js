@@ -59,6 +59,7 @@ export const createWorkspaceConfig = (options = {}) => {
     trashEnabled: parseBoolean(env.OPENCHAMBER_WORKSPACE_TRASH, true),
     maxReadBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_READ_MB, 2),
     maxUploadBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_UPLOAD_MB, 1024),
+    maxDownloadBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_DOWNLOAD_MB, 1024),
     maxArchiveBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_ARCHIVE_MB, 1024),
     maxExtractBytes: parseMegabytes(env.OPENCHAMBER_WORKSPACE_MAX_EXTRACT_MB, 3072),
     maxExtractFiles: parseNonNegativeInteger(env.OPENCHAMBER_WORKSPACE_MAX_EXTRACT_FILES, 30000),

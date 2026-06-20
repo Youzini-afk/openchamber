@@ -66,6 +66,12 @@ async function createApp(env = {}) {
   return app;
 }
 
+const binaryParser = (res, callback) => {
+  const chunks = [];
+  res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+  res.on('end', () => callback(null, Buffer.concat(chunks)));
+};
+
 describe('workspace routes', () => {
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-workspace-routes-'));
@@ -91,6 +97,7 @@ describe('workspace routes', () => {
       relativeRoot: '',
       limits: {
         maxReadBytes: 1024 * 1024,
+        maxDownloadBytes: 1024 * 1024 * 1024,
         maxArchiveBytes: 1024 * 1024 * 1024,
         maxExtractBytes: 3 * 1024 * 1024 * 1024,
         maxExtractFiles: 30000,
@@ -248,6 +255,58 @@ describe('workspace routes', () => {
       }),
     ]);
     expect(fs.readFileSync(path.join(workspaceRoot, 'demo', 'Ã©.txt'))).toEqual(content);
+  });
+
+  it('downloads individual workspace files directly', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'note.txt'), 'hello download');
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: 'demo/note.txt' })
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200);
+
+    expect(response.headers['content-disposition']).toContain('note.txt');
+    expect(response.body.toString('utf8')).toBe('hello download');
+  });
+
+  it('downloads workspace folders as zip archives with a top-level directory', async () => {
+    const app = await createApp();
+    fs.mkdirSync(path.join(workspaceRoot, 'demo', 'src'), { recursive: true });
+    fs.mkdirSync(path.join(workspaceRoot, 'demo', 'empty'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'README.md'), 'hello');
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'src', 'index.ts'), 'export {};');
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: 'demo' })
+      .buffer(true)
+      .parse(binaryParser)
+      .expect(200);
+
+    expect(response.headers['content-disposition']).toContain('demo.zip');
+
+    const zip = new AdmZip(response.body);
+    expect(zip.getEntry('demo/')).toBeTruthy();
+    expect(zip.getEntry('demo/empty/')).toBeTruthy();
+    expect(zip.getEntry('demo/README.md').getData().toString('utf8')).toBe('hello');
+    expect(zip.getEntry('demo/src/index.ts').getData().toString('utf8')).toBe('export {};');
+  });
+
+  it('rejects folder downloads that exceed download limits', async () => {
+    const app = await createApp({ OPENCHAMBER_WORKSPACE_MAX_DOWNLOAD_MB: '0.0001' });
+    fs.mkdirSync(path.join(workspaceRoot, 'demo'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'demo', 'big.txt'), 'x'.repeat(1024));
+
+    const response = await request(app)
+      .get('/api/workspace/download')
+      .query({ path: 'demo' })
+      .expect(413);
+
+    expect(response.body.error).toMatch(/too large/i);
   });
 
   it('previews and extracts zip archives into new folders with rename conflicts', async () => {

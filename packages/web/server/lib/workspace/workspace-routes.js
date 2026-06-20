@@ -22,6 +22,7 @@ import {
   uploadWorkspaceMultipartFiles,
   writeWorkspaceFile,
 } from './filesystem.js';
+import { resolveWorkspaceDownload } from './download.js';
 import {
   getWorkspaceGitStatus,
   workspaceGitCheckout,
@@ -300,16 +301,16 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
 
   app.get('/api/workspace/download', async (req, res) => {
     try {
-      const resolved = await resolveWorkspacePath(getRequestPath(req), {
-        root: context.config.root,
-        fsPromises: context.fsPromises,
-        pathModule: context.pathModule,
-      });
-      const stat = await context.fsPromises.stat(resolved.absolutePath);
-      if (!stat.isFile()) {
-        return res.status(400).json({ error: 'Path is not a file' });
+      const download = await resolveWorkspaceDownload(getRequestPath(req), context.config, context);
+      if (download.type === 'file') {
+        return res.download(download.filePath, download.fileName);
       }
-      return res.download(resolved.absolutePath);
+      return res.download(download.archivePath, download.fileName, async (error) => {
+        await context.fsPromises.rm(download.tempDir, { recursive: true, force: true }).catch(() => {});
+        if (error && !res.headersSent) {
+          sendError(res, error);
+        }
+      });
     } catch (error) {
       return sendError(res, error);
     }

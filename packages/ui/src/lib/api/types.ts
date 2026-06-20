@@ -820,6 +820,7 @@ export interface WorkspaceRootInfo {
   limits: {
     maxReadBytes: number;
     maxUploadBytes: number;
+    maxDownloadBytes?: number;
     maxArchiveBytes?: number;
     maxExtractBytes?: number;
     maxExtractFiles?: number;
