@@ -22,7 +22,7 @@ import {
   uploadWorkspaceMultipartFiles,
   writeWorkspaceFile,
 } from './filesystem.js';
-import { resolveWorkspaceDownload } from './download.js';
+import { getWorkspaceDownloadInfo, resolveWorkspaceDownload } from './download.js';
 import {
   getWorkspaceGitStatus,
   workspaceGitCheckout,
@@ -301,18 +301,31 @@ export const registerWorkspaceRoutes = (app, dependencies = {}) => {
     }
   });
 
+  app.get('/api/workspace/download/check', async (req, res) => {
+    try {
+      res.json(await getWorkspaceDownloadInfo(getRequestPath(req), context.config, context));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
   app.get('/api/workspace/download', async (req, res) => {
     try {
       const download = await resolveWorkspaceDownload(getRequestPath(req), context.config, context);
       if (download.type === 'file') {
         return res.download(download.filePath, download.fileName, DOWNLOAD_OPTIONS);
       }
-      return res.download(download.archivePath, download.fileName, DOWNLOAD_OPTIONS, async (error) => {
-        await context.fsPromises.rm(download.tempDir, { recursive: true, force: true }).catch(() => {});
-        if (error && !res.headersSent) {
+
+      res.attachment(download.fileName);
+      res.type('zip');
+      download.stream.on('error', (error) => {
+        if (!res.headersSent) {
           sendError(res, error);
+          return;
         }
+        res.destroy(error);
       });
+      return download.stream.pipe(res);
     } catch (error) {
       return sendError(res, error);
     }

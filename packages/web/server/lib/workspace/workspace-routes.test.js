@@ -281,6 +281,13 @@ describe('workspace routes', () => {
     fs.writeFileSync(path.join(workspaceRoot, 'demo', 'README.md'), 'hello');
     fs.writeFileSync(path.join(workspaceRoot, 'demo', 'src', 'index.ts'), 'export {};');
 
+    const check = await request(app)
+      .get('/api/workspace/download/check')
+      .query({ path: 'demo' })
+      .expect(200);
+
+    expect(check.body).toEqual({ type: 'archive', fileName: 'demo.zip' });
+
     const response = await request(app)
       .get('/api/workspace/download')
       .query({ path: 'demo' })
