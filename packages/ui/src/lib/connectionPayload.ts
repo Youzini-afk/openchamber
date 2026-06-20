@@ -3,17 +3,20 @@ export type ClientConnectionPayload = {
   serverUrl: string;
   token: string;
   label?: string;
+  profile?: string;
 };
 
 export const buildClientConnectionPayload = (input: {
   serverUrl: string;
   token: string;
   label?: string | null;
+  profile?: string | null;
 }): ClientConnectionPayload => ({
   v: 1,
   serverUrl: input.serverUrl.trim().replace(/\/+$/, ''),
   token: input.token.trim(),
   ...(input.label?.trim() ? { label: input.label.trim() } : {}),
+  ...(input.profile?.trim() ? { profile: input.profile.trim() } : {}),
 });
 
 export const encodeClientConnectionPayload = (payload: ClientConnectionPayload): string => {
@@ -22,6 +25,7 @@ export const encodeClientConnectionPayload = (payload: ClientConnectionPayload):
   params.set('server', payload.serverUrl);
   params.set('token', payload.token);
   if (payload.label) params.set('label', payload.label);
+  if (payload.profile) params.set('profile', payload.profile);
   return `openchamber://connect?${params.toString()}`;
 };
 
@@ -38,6 +42,7 @@ export const parseClientConnectionPayload = (value: string): ClientConnectionPay
     const serverUrl = url.searchParams.get('server')?.trim() || '';
     const token = url.searchParams.get('token')?.trim() || '';
     const label = url.searchParams.get('label')?.trim() || '';
+    const profile = url.searchParams.get('profile')?.trim() || '';
 
     if (version !== '1' || !serverUrl || !token) {
       return null;
@@ -52,7 +57,7 @@ export const parseClientConnectionPayload = (value: string): ClientConnectionPay
       return null;
     }
 
-    return buildClientConnectionPayload({ serverUrl, token, label });
+    return buildClientConnectionPayload({ serverUrl, token, label, profile });
   } catch {
     return null;
   }

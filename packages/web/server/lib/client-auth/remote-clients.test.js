@@ -83,12 +83,33 @@ describe('remote client auth runtime', () => {
     }
   });
 
+  it('assigns external access profiles and capabilities', async () => {
+    const { dir, runtime } = await createRuntime();
+    try {
+      const created = await runtime.createClient({ label: 'Repair agent', profile: 'full-control' });
+      expect(created.client.profile).toBe('full-control');
+      expect(created.client.capabilities).toContain('filesystem:read');
+      expect(created.client.capabilities).toContain('filesystem:write');
+      expect(created.client.capabilities).toContain('terminal:use');
+
+      const authenticated = await runtime.authenticateBearerToken(created.token);
+      expect(authenticated?.client?.profile).toBe('full-control');
+      expect(authenticated?.client?.capabilities).toContain('process:control');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the token store private on disk', async () => {
     const { dir, runtime } = await createRuntime();
     try {
       await runtime.createClient({ label: 'Laptop' });
       const stat = await fs.stat(path.join(dir, 'remote-clients.json'));
-      expect(stat.mode & 0o777).toBe(0o600);
+      if (process.platform !== 'win32') {
+        expect(stat.mode & 0o777).toBe(0o600);
+      } else {
+        expect(stat.isFile()).toBe(true);
+      }
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

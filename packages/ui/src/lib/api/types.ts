@@ -1400,6 +1400,9 @@ export interface RemoteClientRecord {
   revokedAt: string | null;
   expiresAt?: string | null;
   clientKind?: string | null;
+  profile?: string | null;
+  capabilities?: string[];
+  allowedDirectories?: string[];
 }
 
 export interface RemoteClientCreateResult {
@@ -1418,7 +1421,15 @@ export interface RemoteClientPurgeRevokedResult {
 
 export interface ClientAuthAPI {
   listClients(): Promise<RemoteClientRecord[]>;
-  createClient(input?: { label?: string }): Promise<RemoteClientCreateResult>;
+  createClient(input?: {
+    label?: string;
+    expiresAt?: string | null;
+    clientKind?: string | null;
+    dedupeKey?: string | null;
+    profile?: string | null;
+    capabilities?: string[];
+    allowedDirectories?: string[];
+  }): Promise<RemoteClientCreateResult>;
   purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;
 }

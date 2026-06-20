@@ -3,7 +3,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 
 import { isModuleCliExecution, normalizeCliEntryPath } from './cli-entry.js';
-import { assertAuthenticatedNetworkExposure, parseArgs } from './cli.js';
+import { assertAuthenticatedNetworkExposure, parseArgs } from './cli-main.js';
 
 describe('cli args', () => {
   it('accepts legacy daemon flags as no-ops', () => {
@@ -31,6 +31,25 @@ describe('cli args', () => {
     expect(parsed.command).toBe('connect-url');
     expect(parsed.options.apiOnly).toBe(true);
     expect(parsed.helpRequested).toBe(true);
+  });
+
+  it('parses connect-url external access profile options', () => {
+    const parsed = parseArgs([
+      'connect-url',
+      '--profile',
+      'full-control',
+      '--ttl',
+      '24h',
+      '--capability',
+      'filesystem:read,filesystem:write',
+      '--capability',
+      'terminal:use',
+    ]);
+
+    expect(parsed.command).toBe('connect-url');
+    expect(parsed.options.profile).toBe('full-control');
+    expect(parsed.options.ttl).toBe('24h');
+    expect(parsed.options.capabilities).toEqual(['filesystem:read', 'filesystem:write', 'terminal:use']);
   });
 
   it('parses startup api-only option', () => {

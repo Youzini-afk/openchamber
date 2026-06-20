@@ -28,7 +28,15 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
     const response = await runtimeFetch('/api/client-auth/clients', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ label: input.label ?? '' }),
+      body: JSON.stringify({
+        label: input.label ?? '',
+        expiresAt: input.expiresAt ?? undefined,
+        clientKind: input.clientKind ?? undefined,
+        dedupeKey: input.dedupeKey ?? undefined,
+        profile: input.profile ?? undefined,
+        capabilities: input.capabilities,
+        allowedDirectories: input.allowedDirectories,
+      }),
     });
     const payload = await jsonOrNull<RemoteClientCreateResult & { error?: string }>(response);
     if (!response.ok || !payload?.client || typeof payload.token !== 'string') {

@@ -272,6 +272,61 @@ describe('core-routes', () => {
 
     expect(requireAuth).toHaveBeenCalledTimes(1);
   });
+
+  it('attaches client auth context to downstream API routes', async () => {
+    const app = express();
+    const requireAuth = vi.fn((_req, _res, next) => next());
+    const client = {
+      id: 'client-1',
+      label: 'External agent',
+      profile: 'full-control',
+      capabilities: ['filesystem:read'],
+    };
+
+    registerAuthAndAccessRoutes(app, {
+      express,
+      tunnelAuthController: {
+        classifyRequestScope: () => 'local',
+        requireTunnelSession: vi.fn(),
+        getTunnelSessionFromRequest: vi.fn(),
+        clearTunnelSessionCookie: vi.fn(),
+        exchangeBootstrapToken: vi.fn(),
+      },
+      uiAuthController: {
+        requireAuth,
+        resolveAuthContext: vi.fn(async () => ({ type: 'client', clientId: client.id, client })),
+        handleSessionStatus: vi.fn(),
+        handleSessionCreate: vi.fn(),
+        handlePasskeyStatus: vi.fn(),
+        handlePasskeyAuthenticationOptions: vi.fn(),
+        handlePasskeyAuthenticationVerify: vi.fn(),
+        handlePasskeyRegistrationOptions: vi.fn(),
+        handlePasskeyRegistrationVerify: vi.fn(),
+        handlePasskeyList: vi.fn(),
+        handlePasskeyRevoke: vi.fn(),
+        handleResetAuth: vi.fn(),
+      },
+      remoteClientAuthRuntime: {
+        recordAuditEvent: vi.fn(async () => ({ recorded: true })),
+      },
+      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+      normalizeTunnelSessionTtlMs: vi.fn(),
+    });
+
+    app.get('/api/downstream', (req, res) => {
+      res.json({ auth: req.openchamberAuth });
+    });
+
+    const response = await request(app).get('/api/downstream').expect(200);
+    expect(response.body.auth).toMatchObject({
+      type: 'client',
+      clientId: 'client-1',
+      client: {
+        profile: 'full-control',
+      },
+    });
+    expect(requireAuth).not.toHaveBeenCalled();
+  });
 });
 
 describe('client auth routes', () => {

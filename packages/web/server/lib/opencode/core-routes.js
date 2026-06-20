@@ -58,6 +58,32 @@ const hasPreviewProxyCredential = (req) => {
   return Boolean(getQueryParam(req, 'oc_preview_token') || getCookieValue(req, 'oc_preview_token'));
 };
 
+const redactAuditText = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed
+    .replace(/(token|password|secret|key)=([^&\s]+)/gi, '$1=<redacted>')
+    .slice(0, 240);
+};
+
+const extractAuditTarget = (req) => {
+  const source = req.body && typeof req.body === 'object' ? req.body : {};
+  const query = req.query && typeof req.query === 'object' ? req.query : {};
+  const target = {};
+  for (const key of ['root', 'path', 'cwd', 'directory']) {
+    const raw = source[key] ?? query[key];
+    if (typeof raw === 'string' && raw.trim()) {
+      target[key] = raw.trim().slice(0, 500);
+    }
+  }
+  const command = typeof source.command === 'string' ? redactAuditText(source.command) : null;
+  if (command) {
+    target.commandPreview = command;
+  }
+  return Object.keys(target).length > 0 ? target : null;
+};
+
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -101,6 +127,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       'api.health.v1',
       'api.runtime-url.v1',
       'api.raw-file.v1',
+      'api.external-access.v1',
       'realtime.sse.v1',
       'realtime.websocket.global-events.v1',
       'terminal.websocket.v1',
@@ -411,6 +438,32 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     return clients.find((client) => client.id === clientId) || null;
   };
 
+  const attachExternalAudit = (req, res, context) => {
+    if (req.__openchamberExternalAuditAttached) return;
+    if (context?.type !== 'client') return;
+    const client = context.client && typeof context.client === 'object' ? context.client : null;
+    const clientId = clientIdFromAuthContext(context);
+    if (!clientId || typeof remoteClientAuthRuntime?.recordAuditEvent !== 'function') return;
+    req.__openchamberExternalAuditAttached = true;
+    const startedAt = Date.now();
+    res.on('finish', () => {
+      void remoteClientAuthRuntime.recordAuditEvent({
+        clientId,
+        label: client?.label || null,
+        profile: client?.profile || null,
+        method: req.method,
+        path: req.originalUrl || req.url || req.path,
+        status: res.statusCode,
+        ip: req.ip || req.socket?.remoteAddress || null,
+        userAgent: req.get?.('user-agent') || null,
+        durationMs: Date.now() - startedAt,
+        target: extractAuditTarget(req),
+      }).catch((error) => {
+        console.warn('[external-access] failed to record audit event:', error?.message || error);
+      });
+    });
+  };
+
   const requireApiAuth = async (req, res, next) => {
     // Preview proxy requests carry a target-scoped capability token that the
     // preview proxy validates against the registered target id/TTL. Let those
@@ -423,6 +476,17 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
     if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
       return tunnelAuthController.requireTunnelSession(req, res, next);
+    }
+    if (typeof uiAuthController.resolveAuthContext === 'function') {
+      const context = await uiAuthController.resolveAuthContext(req, res, {
+        allowClientAuth: true,
+        allowUrlToken: true,
+      });
+      if (context) {
+        req.openchamberAuth = context;
+        attachExternalAudit(req, res, context);
+        return next();
+      }
     }
     return uiAuthController.requireAuth(req, res, next);
   };
@@ -570,8 +634,12 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     await runWithUiAuth(req, res, next, async () => {
       const result = await remoteClientAuthRuntime.createClient({
         label: req.body?.label,
+        expiresAt: req.body?.expiresAt,
         clientKind: req.body?.clientKind,
         dedupeKey: req.body?.dedupeKey,
+        profile: req.body?.profile,
+        capabilities: req.body?.capabilities,
+        allowedDirectories: req.body?.allowedDirectories,
       });
       res.setHeader('Cache-Control', 'no-store');
       res.status(201).json(result);
@@ -727,6 +795,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/config/skills') ||
       req.path.startsWith('/api/auth') ||
       req.path.startsWith('/api/config/plugins') ||
+      req.path.startsWith('/api/external') ||
       req.path.startsWith('/api/projects') ||
       req.path.startsWith('/api/fs') ||
       req.path.startsWith('/api/git') ||

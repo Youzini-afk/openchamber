@@ -5,6 +5,7 @@ import { registerGitRoutes } from '../git/routes.js';
 import { registerWorkspaceRoutes } from '../workspace/workspace-routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
+import { registerExternalAccessRoutes } from '../external-access/routes.js';
 import { registerConfigEntityRoutes } from './config-entity-routes.js';
 import { registerSettingsUtilityRoutes } from './core-routes.js';
 import { registerProjectIconRoutes } from './project-icon-routes.js';
@@ -62,10 +63,15 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenCodeAuthHeaders,
       getOpenCodePort,
       buildAugmentedPath,
+      openchamberVersion,
+      runtimeName,
+      serverStartedAt,
+      remoteClientAuthRuntime,
       projectConfigRuntime,
       scheduledTasksRuntime,
       getOpenChamberEventClients,
       writeSseEvent,
+      __dirname,
     } = routeDependencies;
 
     const {
@@ -144,6 +150,22 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       path,
       spawn,
       env: process.env,
+    });
+
+    registerExternalAccessRoutes(app, {
+      fsPromises,
+      path,
+      os,
+      process,
+      spawn,
+      buildAugmentedPath,
+      openchamberDataDir,
+      openchamberVersion,
+      runtimeName,
+      serverStartedAt,
+      remoteClientAuthRuntime,
+      resolveProjectDirectory,
+      __dirname,
     });
 
     registerProjectIconRoutes(app, {
