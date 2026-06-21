@@ -31,14 +31,14 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Sessions where the client has enabled Permission Auto-Accept. Mirrored
   // from the client-side permissionStore via POST /api/notifications/auto-accept
-  // so the server can suppress permission notifications BEFORE dispatch (the
-  // 500ms debounce race otherwise leaks notifications for auto-accepted
-  // permissions when the replied round-trip is slower than the debounce).
+  // so the server can keep permissions moving even after all browser windows
+  // close, while also suppressing stale permission notifications.
   const autoAcceptingSessions = new Set();
-  const setAutoAcceptSession = (sessionId, enabled) => {
+  const setAutoAcceptSession = async (sessionId, enabled, options = {}) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     if (enabled) {
       autoAcceptingSessions.add(sessionId);
+      await autoReplyPendingPermissions(sessionId, options.directories);
     } else {
       autoAcceptingSessions.delete(sessionId);
     }
@@ -60,19 +60,24 @@ export const createNotificationTriggerRuntime = (deps) => {
     });
   };
 
-  const getCachedSessionParentId = (sessionId) => {
-    const entry = sessionParentIdCache.get(sessionId);
+  const getSessionParentCacheKey = (sessionId, directory) => {
+    const normalizedDirectory = typeof directory === 'string' ? directory.trim() : '';
+    return `${normalizedDirectory}::${sessionId}`;
+  };
+
+  const getCachedSessionParentId = (sessionId, directory) => {
+    const entry = sessionParentIdCache.get(getSessionParentCacheKey(sessionId, directory));
     if (!entry) return undefined;
     if (Date.now() - entry.at > SESSION_PARENT_CACHE_TTL_MS) {
-      sessionParentIdCache.delete(sessionId);
+      sessionParentIdCache.delete(getSessionParentCacheKey(sessionId, directory));
       return undefined;
     }
     return entry.parentID;
   };
 
-  const setCachedSessionParentId = (sessionId, parentID) => {
+  const setCachedSessionParentId = (sessionId, parentID, directory) => {
     if (!parentID) return;
-    sessionParentIdCache.set(sessionId, { parentID: parentID ?? null, at: Date.now() });
+    sessionParentIdCache.set(getSessionParentCacheKey(sessionId, directory), { parentID: parentID ?? null, at: Date.now() });
   };
 
   const getParentIdFromPayload = (payload) => {
@@ -87,18 +92,18 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const parentID = getParentIdFromPayload(payload);
     if (parentID) {
-      setCachedSessionParentId(sessionId, parentID);
+      setCachedSessionParentId(sessionId, parentID, extractDirectoryFromPayload(payload));
     }
   };
 
-  const fetchSessionParentId = async (sessionId) => {
+  const fetchSessionParentId = async (sessionId, directory) => {
     if (!sessionId) return undefined;
 
-    const cached = getCachedSessionParentId(sessionId);
+    const cached = getCachedSessionParentId(sessionId, directory);
     if (cached !== undefined) return cached;
 
     try {
-      const response = await fetchImpl(buildOpenCodeUrl('/session', ''), {
+      const response = await fetchImpl(buildOpenCodeRequestUrl('/session', directory), {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -123,7 +128,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
       const match = sessions.find((session) => session && typeof session === 'object' && session.id === sessionId);
       const parentID = match?.parentID ?? null;
-      setCachedSessionParentId(sessionId, parentID);
+      setCachedSessionParentId(sessionId, parentID, directory);
       return parentID;
     } catch {
       return undefined;
@@ -132,14 +137,14 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Mirrors client-side autoRespondsPermission: a session auto-accepts if it
   // OR any ancestor is flagged. Walks the parent chain via fetchSessionParentId.
-  const isSessionAutoAccepting = async (sessionId) => {
+  const isSessionAutoAccepting = async (sessionId, directory) => {
     if (!sessionId || autoAcceptingSessions.size === 0) return false;
     let current = sessionId;
     const seen = new Set();
     while (current && !seen.has(current)) {
       if (autoAcceptingSessions.has(current)) return true;
       seen.add(current);
-      const parent = await fetchSessionParentId(current);
+      const parent = await fetchSessionParentId(current, directory);
       if (!parent) return false;
       current = parent;
     }
@@ -160,6 +165,48 @@ export const createNotificationTriggerRuntime = (deps) => {
       url.searchParams.set('directory', trimmedDirectory);
     }
     return url.toString();
+  };
+
+  const normalizeDirectoryList = (directories) => {
+    if (!Array.isArray(directories)) {
+      return [];
+    }
+
+    const seen = new Set();
+    const result = [];
+    for (const directory of directories) {
+      if (typeof directory !== 'string') continue;
+      const trimmed = directory.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      result.push(trimmed);
+    }
+    return result;
+  };
+
+  const listPendingPermissions = async (directory) => {
+    const response = await fetchImpl(buildOpenCodeRequestUrl('/permission', directory), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getOpenCodeAuthHeaders(),
+      },
+      signal: AbortSignal.timeout(AUTO_ACCEPT_REPLY_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`permission.list failed (${response.status})`);
+    }
+
+    const data = await response.json().catch(() => null);
+    const list = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+
+    return list.filter((permission) => permission && typeof permission === 'object');
   };
 
   const autoReplyToPermission = async ({ sessionId, requestId, directory }) => {
@@ -193,6 +240,32 @@ export const createNotificationTriggerRuntime = (deps) => {
       console.warn('[Notification] Permission auto-accept failed:', error?.message || error);
       return false;
     }
+  };
+
+  const autoReplyPendingPermissions = async (rootSessionId, directories = []) => {
+    if (!rootSessionId || !autoAcceptingSessions.has(rootSessionId)) return;
+
+    const targets = normalizeDirectoryList(directories);
+    const scanDirectories = targets.length > 0 ? targets : [undefined];
+    await Promise.all(scanDirectories.map(async (directory) => {
+      let pending = [];
+      try {
+        pending = await listPendingPermissions(directory);
+      } catch (error) {
+        console.warn('[Notification] Permission auto-accept pending scan failed:', error?.message || error);
+        return;
+      }
+
+      await Promise.all(pending.map(async (permission) => {
+        const sessionId = typeof permission.sessionID === 'string' && permission.sessionID.length > 0
+          ? permission.sessionID
+          : rootSessionId;
+        const requestId = permission.id ?? permission.requestID ?? permission.requestId;
+        if (typeof requestId !== 'string' || requestId.length === 0) return;
+        if (!await isSessionAutoAccepting(sessionId, directory)) return;
+        await autoReplyToPermission({ sessionId, requestId, directory });
+      }));
+    }));
   };
 
   const extractSessionIdFromPayload = (payload) => {
@@ -544,7 +617,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       // Client may be in Permission Auto-Accept for this session (or any
       // ancestor). Skip the whole notification path — the client responds
       // directly and the user has opted out of approval prompts.
-      if (await isSessionAutoAccepting(sessionId)) {
+      if (await isSessionAutoAccepting(sessionId, notificationDirectory)) {
         const replied = await autoReplyToPermission({
           sessionId,
           requestId,
@@ -564,7 +637,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       const timer = setTimeout(async () => {
         pushPermissionDebounceTimers.delete(sessionId);
 
-        if (await isSessionAutoAccepting(sessionId)) {
+        if (await isSessionAutoAccepting(sessionId, notificationDirectory)) {
           const replied = await autoReplyToPermission({
             sessionId,
             requestId,

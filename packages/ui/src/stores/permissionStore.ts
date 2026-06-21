@@ -232,23 +232,6 @@ export const usePermissionStore = create<PermissionStore>()(
                     });
 
                     const sessionScope = resolveSessionScope(sessionId, sessions);
-
-                    // Mirror inherited state to the server so it can suppress
-                    // permission notifications before the client auto-response
-                    // round-trip. Send known descendants too; server-side
-                    // ancestry lookup can lag OpenCode session indexing.
-                    for (const scopedSessionId of sessionScope) {
-                        void runtimeFetch('/api/notifications/auto-accept', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ sessionId: scopedSessionId, enabled }),
-                        }).catch(() => { /* best-effort */ });
-                    }
-
-                    if (!enabled) {
-                        return;
-                    }
-
                     const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(sessionId);
                     const directories = new Set<string>();
                     const currentDirectory = normalizeDirectoryCandidate(opencodeClient.getDirectory());
@@ -265,8 +248,23 @@ export const usePermissionStore = create<PermissionStore>()(
                             directories.add(mapped);
                         }
                     }
-
                     const directoryList = Array.from(directories);
+
+                    // Mirror inherited state to the server so it can suppress
+                    // permission notifications before the client auto-response
+                    // round-trip. Send known descendants too; server-side
+                    // ancestry lookup can lag OpenCode session indexing.
+                    for (const scopedSessionId of sessionScope) {
+                        void runtimeFetch('/api/notifications/auto-accept', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sessionId: scopedSessionId, enabled, directories: directoryList }),
+                        }).catch(() => { /* best-effort */ });
+                    }
+
+                    if (!enabled) {
+                        return;
+                    }
                     const pendingFromStores = collectPendingFromSyncStores();
                     // Best-effort: if listPendingPermissions throws (transient fetch failure),
                     // proceed with whatever sync-store snapshots gave us. The next SSE event

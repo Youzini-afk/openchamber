@@ -44,7 +44,8 @@ describe('notification permission auto-accept', () => {
 
   it('replies to OpenCode when the session has auto-accept enabled', async () => {
     const { runtime, fetchImpl, sendPushToAllUiSessions } = createRuntime();
-    runtime.setAutoAcceptSession('ses_1', true);
+    await runtime.setAutoAcceptSession('ses_1', true);
+    fetchImpl.mockClear();
 
     await runtime.maybeSendPushForTrigger(permissionAsked());
 
@@ -59,7 +60,7 @@ describe('notification permission auto-accept', () => {
 
   it('inherits auto-accept from a parent session before sending notifications', async () => {
     const fetchImpl = vi.fn(async (url, init) => {
-      if (String(url) === 'http://opencode.test/session') {
+      if (String(url) === 'http://opencode.test/session?directory=%2Frepo') {
         return new Response(JSON.stringify([
           { id: 'parent_ses' },
           { id: 'child_ses', parentID: 'parent_ses' },
@@ -68,7 +69,8 @@ describe('notification permission auto-accept', () => {
       return new Response(JSON.stringify({ ok: true, init }), { status: 200 });
     });
     const { runtime, sendPushToAllUiSessions } = createRuntime({ fetchImpl });
-    runtime.setAutoAcceptSession('parent_ses', true);
+    await runtime.setAutoAcceptSession('parent_ses', true);
+    fetchImpl.mockClear();
 
     await runtime.maybeSendPushForTrigger(permissionAsked({
       id: 'perm_child',
@@ -77,15 +79,35 @@ describe('notification permission auto-accept', () => {
     }));
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://opencode.test/session');
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://opencode.test/session?directory=%2Frepo');
     expect(fetchImpl.mock.calls[1][0]).toBe('http://opencode.test/permission/perm_child/reply?directory=%2Frepo');
     expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('scans pending permissions when auto-accept is mirrored to the server', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url) === 'http://opencode.test/permission?directory=%2Frepo') {
+        return new Response(JSON.stringify([
+          { id: 'perm_pending', sessionID: 'ses_1' },
+        ]), { status: 200 });
+      }
+      return new Response(JSON.stringify(true), { status: 200 });
+    });
+    const { runtime } = createRuntime({ fetchImpl });
+
+    await runtime.setAutoAcceptSession('ses_1', true, { directories: ['/repo'] });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://opencode.test/permission?directory=%2Frepo');
+    expect(fetchImpl.mock.calls[1][0]).toBe('http://opencode.test/permission/perm_pending/reply?directory=%2Frepo');
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({ reply: 'once' });
   });
 
   it('falls back to the notification path when server-side auto-accept fails', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ error: 'nope' }), { status: 500 }));
     const { runtime, sendPushToAllUiSessions } = createRuntime({ fetchImpl });
-    runtime.setAutoAcceptSession('ses_1', true);
+    await runtime.setAutoAcceptSession('ses_1', true);
+    fetchImpl.mockClear();
 
     await runtime.maybeSendPushForTrigger(permissionAsked());
     await new Promise((resolve) => setTimeout(resolve, 650));

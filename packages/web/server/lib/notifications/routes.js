@@ -335,17 +335,26 @@ export const registerNotificationRoutes = (app, dependencies) => {
   });
 
   // Mirror client-side Permission Auto-Accept state to the server so it can
-  // suppress permission notifications at the source (the 500ms debounce race
-  // otherwise leaks notifications for auto-accepted permissions).
+  // keep auto-accept working after the browser/PWA window closes.
   app.post('/api/notifications/auto-accept', (req, res) => {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
     const enabled = body.enabled === true;
+    const directories = Array.isArray(body.directories)
+      ? body.directories
+      : [body.directory];
+    const normalizedDirectories = directories
+      .filter((directory) => typeof directory === 'string' && directory.trim().length > 0)
+      .map((directory) => directory.trim());
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId required' });
     }
+    void ensureSessionWatcher();
     if (typeof setAutoAcceptSession === 'function') {
-      setAutoAcceptSession(sessionId, enabled);
+      void Promise.resolve(setAutoAcceptSession(sessionId, enabled, { directories: normalizedDirectories }))
+        .catch((error) => {
+          console.warn('[OpenCodeWatcher] auto-accept state update failed:', error?.message ?? error);
+        });
     }
     return res.json({ success: true, sessionId, enabled });
   });

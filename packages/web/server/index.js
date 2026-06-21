@@ -1008,11 +1008,9 @@ const bootstrapOpenCodeAtStartup = async (...args) => {
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
   }
-  if (ENV_DESKTOP_NOTIFY) {
-    void ensureGlobalWatcherStarted().catch((error) => {
-      console.warn(`Global event watcher startup failed: ${error?.message || error}`);
-    });
-  }
+  void ensureGlobalWatcherStarted().catch((error) => {
+    console.warn(`Global event watcher startup failed: ${error?.message || error}`);
+  });
 };
 const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
 const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
