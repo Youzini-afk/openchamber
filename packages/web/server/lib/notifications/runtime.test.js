@@ -58,6 +58,23 @@ describe('notification permission auto-accept', () => {
     expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
   });
 
+  it('replies to OpenCode when the server-wide auto-accept setting is enabled', async () => {
+    const readSettingsFromDisk = vi.fn(async () => ({
+      nativeNotificationsEnabled: false,
+      serverPermissionAutoAcceptEnabled: true,
+    }));
+    const { runtime, fetchImpl, sendPushToAllUiSessions } = createRuntime({ readSettingsFromDisk });
+
+    await runtime.maybeSendPushForTrigger(permissionAsked());
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('http://opencode.test/permission/perm_1/reply?directory=%2Frepo');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ reply: 'once' });
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
   it('inherits auto-accept from a parent session before sending notifications', async () => {
     const fetchImpl = vi.fn(async (url, init) => {
       if (String(url) === 'http://opencode.test/session?directory=%2Frepo') {
@@ -96,6 +113,28 @@ describe('notification permission auto-accept', () => {
     const { runtime } = createRuntime({ fetchImpl });
 
     await runtime.setAutoAcceptSession('ses_1', true, { directories: ['/repo'] });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://opencode.test/permission?directory=%2Frepo');
+    expect(fetchImpl.mock.calls[1][0]).toBe('http://opencode.test/permission/perm_pending/reply?directory=%2Frepo');
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({ reply: 'once' });
+  });
+
+  it('scans pending permissions when server-wide auto-accept is enabled', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url) === 'http://opencode.test/permission?directory=%2Frepo') {
+        return new Response(JSON.stringify([
+          { id: 'perm_pending', sessionID: 'ses_1' },
+        ]), { status: 200 });
+      }
+      return new Response(JSON.stringify(true), { status: 200 });
+    });
+    const { runtime } = createRuntime({
+      fetchImpl,
+      readSettingsFromDisk: vi.fn(async () => ({ serverPermissionAutoAcceptEnabled: true })),
+    });
+
+    await runtime.autoReplyPendingPermissionsForServerSetting(['/repo']);
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(fetchImpl.mock.calls[0][0]).toBe('http://opencode.test/permission?directory=%2Frepo');

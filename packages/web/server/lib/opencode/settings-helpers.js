@@ -213,6 +213,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.showDeletionDialog === 'boolean') {
       result.showDeletionDialog = candidate.showDeletionDialog;
     }
+    if (typeof candidate.serverPermissionAutoAcceptEnabled === 'boolean') {
+      result.serverPermissionAutoAcceptEnabled = candidate.serverPermissionAutoAcceptEnabled;
+    }
     if (typeof candidate.nativeNotificationsEnabled === 'boolean') {
       result.nativeNotificationsEnabled = candidate.nativeNotificationsEnabled;
     }

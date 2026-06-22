@@ -151,6 +151,23 @@ export const createNotificationTriggerRuntime = (deps) => {
     return false;
   };
 
+  const isServerPermissionAutoAcceptEnabled = async () => {
+    try {
+      const settings = await readSettingsFromDisk();
+      return settings?.serverPermissionAutoAcceptEnabled === true;
+    } catch (error) {
+      console.warn('[Notification] Failed to read server permission auto-accept setting:', error?.message || error);
+      return false;
+    }
+  };
+
+  const shouldAutoAcceptPermission = async (sessionId, directory) => {
+    if (await isServerPermissionAutoAcceptEnabled()) {
+      return true;
+    }
+    return isSessionAutoAccepting(sessionId, directory);
+  };
+
   const extractPermissionRequestId = (payload) => {
     if (!payload || typeof payload !== 'object') return null;
     const props = payload.properties;
@@ -263,6 +280,33 @@ export const createNotificationTriggerRuntime = (deps) => {
         const requestId = permission.id ?? permission.requestID ?? permission.requestId;
         if (typeof requestId !== 'string' || requestId.length === 0) return;
         if (!await isSessionAutoAccepting(sessionId, directory)) return;
+        await autoReplyToPermission({ sessionId, requestId, directory });
+      }));
+    }));
+  };
+
+  const autoReplyPendingPermissionsForServerSetting = async (directories = []) => {
+    if (!await isServerPermissionAutoAcceptEnabled()) return;
+
+    const targets = normalizeDirectoryList(directories);
+    const scanDirectories = targets.length > 0 ? targets : [undefined];
+    await Promise.all(scanDirectories.map(async (directory) => {
+      let pending = [];
+      try {
+        pending = await listPendingPermissions(directory);
+      } catch (error) {
+        console.warn('[Notification] Server permission auto-accept pending scan failed:', error?.message || error);
+        return;
+      }
+
+      await Promise.all(pending.map(async (permission) => {
+        const sessionId = typeof permission.sessionID === 'string' && permission.sessionID.length > 0
+          ? permission.sessionID
+          : typeof permission.sessionId === 'string' && permission.sessionId.length > 0
+            ? permission.sessionId
+            : undefined;
+        const requestId = permission.id ?? permission.requestID ?? permission.requestId;
+        if (typeof requestId !== 'string' || requestId.length === 0) return;
         await autoReplyToPermission({ sessionId, requestId, directory });
       }));
     }));
@@ -614,10 +658,10 @@ export const createNotificationTriggerRuntime = (deps) => {
         return;
       }
 
-      // Client may be in Permission Auto-Accept for this session (or any
-      // ancestor). Skip the whole notification path — the client responds
-      // directly and the user has opted out of approval prompts.
-      if (await isSessionAutoAccepting(sessionId, notificationDirectory)) {
+      // Either the client mirrored Permission Auto-Accept for this session, or
+      // the server-wide unattended setting is enabled. In both cases the
+      // backend replies directly and suppresses stale approval notifications.
+      if (await shouldAutoAcceptPermission(sessionId, notificationDirectory)) {
         const replied = await autoReplyToPermission({
           sessionId,
           requestId,
@@ -637,7 +681,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       const timer = setTimeout(async () => {
         pushPermissionDebounceTimers.delete(sessionId);
 
-        if (await isSessionAutoAccepting(sessionId, notificationDirectory)) {
+        if (await shouldAutoAcceptPermission(sessionId, notificationDirectory)) {
           const replied = await autoReplyToPermission({
             sessionId,
             requestId,
@@ -729,5 +773,6 @@ export const createNotificationTriggerRuntime = (deps) => {
   return {
     maybeSendPushForTrigger,
     setAutoAcceptSession,
+    autoReplyPendingPermissionsForServerSetting,
   };
 };

@@ -415,6 +415,12 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.showDeletionDialog === 'boolean' && settings.showDeletionDialog !== store.showDeletionDialog) {
     store.setShowDeletionDialog(settings.showDeletionDialog);
   }
+  if (
+    typeof settings.serverPermissionAutoAcceptEnabled === 'boolean'
+    && settings.serverPermissionAutoAcceptEnabled !== store.serverPermissionAutoAcceptEnabled
+  ) {
+    store.setServerPermissionAutoAcceptEnabled(settings.serverPermissionAutoAcceptEnabled);
+  }
   if (typeof settings.nativeNotificationsEnabled === 'boolean' && settings.nativeNotificationsEnabled !== store.nativeNotificationsEnabled) {
     store.setNativeNotificationsEnabled(settings.nativeNotificationsEnabled);
   }
@@ -781,6 +787,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.showDeletionDialog === 'boolean') {
     result.showDeletionDialog = candidate.showDeletionDialog;
+  }
+  if (typeof candidate.serverPermissionAutoAcceptEnabled === 'boolean') {
+    result.serverPermissionAutoAcceptEnabled = candidate.serverPermissionAutoAcceptEnabled;
   }
   if (typeof candidate.nativeNotificationsEnabled === 'boolean') {
     result.nativeNotificationsEnabled = candidate.nativeNotificationsEnabled;

@@ -198,6 +198,13 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['changed files', 'turns'],
   },
   {
+    id: 'chat.server-permission-auto-accept',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.field.serverPermissionAutoAccept',
+    descriptionKey: 'settings.openchamber.visual.field.serverPermissionAutoAcceptTooltip',
+    keywords: ['permission', 'permissions', 'auto accept', 'approve', 'unattended', 'backend'],
+  },
+  {
     id: 'chat.dotfiles',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.showDotfiles',

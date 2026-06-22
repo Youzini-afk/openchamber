@@ -649,6 +649,7 @@ export interface SettingsPayload {
   showReasoningTraces?: boolean;
   collapsibleThinkingBlocks?: boolean;
   showDeletionDialog?: boolean;
+  serverPermissionAutoAcceptEnabled?: boolean;
   nativeNotificationsEnabled?: boolean;
   notificationMode?: 'always' | 'hidden-only';
   autoDeleteEnabled?: boolean;

@@ -64,6 +64,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     refreshOpenCodeAfterConfigChange,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    autoReplyPendingPermissionsForServerSetting,
   } = dependencies;
 
   let authLibrary = null;
@@ -294,6 +295,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   app.put('/api/config/settings', async (req, res) => {
     try {
       const updated = await persistSettings(req.body ?? {});
+      if (req.body?.serverPermissionAutoAcceptEnabled === true && typeof autoReplyPendingPermissionsForServerSetting === 'function') {
+        const scanDirectories = Array.from(new Set([
+          ...(Array.isArray(updated?.projects)
+            ? updated.projects
+                .map((project) => (typeof project?.path === 'string' ? project.path.trim() : ''))
+                .filter(Boolean)
+            : []),
+          typeof updated?.lastDirectory === 'string' ? updated.lastDirectory.trim() : '',
+          typeof updated?.homeDirectory === 'string' ? updated.homeDirectory.trim() : '',
+        ].filter(Boolean)));
+        void autoReplyPendingPermissionsForServerSetting(scanDirectories).catch((error) => {
+          console.warn('[API:PUT /api/config/settings] Server permission auto-accept scan failed:', error?.message ?? error);
+        });
+      }
       res.json(updated);
     } catch (error) {
       console.error('[API:PUT /api/config/settings] Failed to save settings:', error);

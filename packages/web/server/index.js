@@ -704,6 +704,7 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
 
 const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSendPushForTrigger(...args);
 const setAutoAcceptSession = (...args) => notificationTriggerRuntime.setAutoAcceptSession(...args);
+const autoReplyPendingPermissionsForServerSetting = (...args) => notificationTriggerRuntime.autoReplyPendingPermissionsForServerSetting(...args);
 
 const globalMessageStreamHub = createGlobalMessageStreamHub({
   buildOpenCodeUrl,
@@ -1257,6 +1258,7 @@ async function main(options = {}) {
     isUnsafeSkillRelativePath,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    autoReplyPendingPermissionsForServerSetting,
     getOpenCodePort: () => openCodePort,
     buildAugmentedPath,
     projectConfigRuntime,

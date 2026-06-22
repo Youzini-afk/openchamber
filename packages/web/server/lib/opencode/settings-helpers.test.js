@@ -124,6 +124,17 @@ describe('settings helpers', () => {
     });
   });
 
+  it('accepts serverPermissionAutoAcceptEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ serverPermissionAutoAcceptEnabled: true })).toEqual({
+      serverPermissionAutoAcceptEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ serverPermissionAutoAcceptEnabled: false })).toEqual({
+      serverPermissionAutoAcceptEnabled: false,
+    });
+  });
+
   it('accepts shortcut overrides as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 

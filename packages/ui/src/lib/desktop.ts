@@ -64,6 +64,7 @@ export type DesktopSettings = {
   showReasoningTraces?: boolean;
   collapsibleThinkingBlocks?: boolean;
   showDeletionDialog?: boolean;
+  serverPermissionAutoAcceptEnabled?: boolean;
   nativeNotificationsEnabled?: boolean;
   notificationMode?: 'always' | 'hidden-only';
   notifyOnSubtasks?: boolean;

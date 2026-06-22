@@ -569,6 +569,7 @@ interface UIStore {
   chatRenderMode: ChatRenderMode;
   activityRenderMode: ActivityRenderMode;
   showDeletionDialog: boolean;
+  serverPermissionAutoAcceptEnabled: boolean;
   autoDeleteEnabled: boolean;
   autoDeleteAfterDays: number;
   sessionRetentionAction: SessionRetentionAction;
@@ -713,6 +714,7 @@ interface UIStore {
   setChatRenderMode: (value: ChatRenderMode) => void;
   setActivityRenderMode: (value: ActivityRenderMode) => void;
   setShowDeletionDialog: (value: boolean) => void;
+  setServerPermissionAutoAcceptEnabled: (value: boolean) => void;
   setAutoDeleteEnabled: (value: boolean) => void;
   setAutoDeleteAfterDays: (days: number) => void;
   setSessionRetentionAction: (value: SessionRetentionAction) => void;
@@ -855,6 +857,7 @@ export const useUIStore = create<UIStore>()(
         chatRenderMode: 'live',
         activityRenderMode: 'summary',
         showDeletionDialog: true,
+        serverPermissionAutoAcceptEnabled: false,
         autoDeleteEnabled: false,
         autoDeleteAfterDays: 30,
         sessionRetentionAction: 'archive',
@@ -1614,6 +1617,10 @@ export const useUIStore = create<UIStore>()(
           set({ showDeletionDialog: value });
         },
 
+        setServerPermissionAutoAcceptEnabled: (value) => {
+          set({ serverPermissionAutoAcceptEnabled: value });
+        },
+
         setAutoDeleteEnabled: (value) => {
           set({ autoDeleteEnabled: value });
         },
@@ -2271,6 +2278,7 @@ export const useUIStore = create<UIStore>()(
           chatRenderMode: state.chatRenderMode,
           activityRenderMode: state.activityRenderMode,
           showDeletionDialog: state.showDeletionDialog,
+          serverPermissionAutoAcceptEnabled: state.serverPermissionAutoAcceptEnabled,
           autoDeleteEnabled: state.autoDeleteEnabled,
           autoDeleteAfterDays: state.autoDeleteAfterDays,
           sessionRetentionAction: state.sessionRetentionAction,

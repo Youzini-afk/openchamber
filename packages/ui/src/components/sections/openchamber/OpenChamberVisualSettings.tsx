@@ -234,7 +234,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'wideChatLayout' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
+export type VisibleSetting = 'theme' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'fontSize' | 'terminalFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'wideChatLayout' | 'splitAssistantMessageActions' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'serverPermissionAutoAccept' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'expandedTools' | 'queueMode' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -308,6 +308,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setWeekStartPreference = useUIStore(state => state.setWeekStartPreference);
     const showSplitAssistantMessageActions = useUIStore(state => state.showSplitAssistantMessageActions);
     const setShowSplitAssistantMessageActions = useUIStore(state => state.setShowSplitAssistantMessageActions);
+    const serverPermissionAutoAcceptEnabled = useUIStore(state => state.serverPermissionAutoAcceptEnabled);
+    const setServerPermissionAutoAcceptEnabled = useUIStore(state => state.setServerPermissionAutoAcceptEnabled);
     const messageStreamTransport = useConfigStore((state) => state.settingsMessageStreamTransport);
     const setMessageStreamTransport = useConfigStore((state) => state.setSettingsMessageStreamTransport);
     const settingsDefaultFileViewerPreview = useConfigStore((state) => state.settingsDefaultFileViewerPreview);
@@ -426,6 +428,11 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         void updateDesktopSettings({ showSplitAssistantMessageActions: enabled });
     }, [setShowSplitAssistantMessageActions]);
 
+    const handleServerPermissionAutoAcceptChange = React.useCallback((enabled: boolean) => {
+        setServerPermissionAutoAcceptEnabled(enabled);
+        void updateDesktopSettings({ serverPermissionAutoAcceptEnabled: enabled });
+    }, [setServerPermissionAutoAcceptEnabled]);
+
     const handleInputSpellcheckChange = React.useCallback((enabled: boolean) => {
         setInputSpellcheckEnabled(enabled);
         void updateDesktopSettings({ inputSpellcheckEnabled: enabled });
@@ -543,6 +550,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         || shouldShow('dotfiles')
         || shouldShow('fileViewerPreview')
         || shouldShow('reasoning')
+        || shouldShow('serverPermissionAutoAccept')
         || shouldShow('queueMode')
         || shouldShow('persistDraft')
         || shouldShow('showToolFileIcons')
@@ -1691,7 +1699,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                 </div>
                             )}
 
-                            {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('queueMode') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
+                            {(shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || shouldShow('wideChatLayout') || shouldShow('splitAssistantMessageActions') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('serverPermissionAutoAccept') || shouldShow('queueMode') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
                                 <section className="p-2 space-y-0.5">
                                     {shouldShow('reasoning') && (
                                         <div
@@ -1891,6 +1899,40 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 ariaLabel={t('settings.openchamber.visual.field.showTurnChangedFilesAria')}
                                             />
                                             <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.showTurnChangedFiles')}</span>
+                                        </div>
+                                    )}
+
+                                    {shouldShow('serverPermissionAutoAccept') && (
+                                        <div
+                                            data-settings-item="chat.server-permission-auto-accept"
+                                            className="group flex cursor-pointer items-center gap-2 py-0.5"
+                                            role="button"
+                                            tabIndex={0}
+                                            aria-pressed={serverPermissionAutoAcceptEnabled}
+                                            onClick={() => handleServerPermissionAutoAcceptChange(!serverPermissionAutoAcceptEnabled)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === ' ' || event.key === 'Enter') {
+                                                    event.preventDefault();
+                                                    handleServerPermissionAutoAcceptChange(!serverPermissionAutoAcceptEnabled);
+                                                }
+                                            }}
+                                        >
+                                            <Checkbox
+                                                checked={serverPermissionAutoAcceptEnabled}
+                                                onChange={handleServerPermissionAutoAcceptChange}
+                                                ariaLabel={t('settings.openchamber.visual.field.serverPermissionAutoAcceptAria')}
+                                            />
+                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                <span className="typography-ui-label text-foreground">{t('settings.openchamber.visual.field.serverPermissionAutoAccept')}</span>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <RiInformationLine className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent sideOffset={8} className="max-w-xs">
+                                                        {t('settings.openchamber.visual.field.serverPermissionAutoAcceptTooltip')}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
                                         </div>
                                     )}
 
