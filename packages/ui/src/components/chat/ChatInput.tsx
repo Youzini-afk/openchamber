@@ -81,13 +81,13 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import { usePermissionStore } from '@/stores/permissionStore';
-import { partitionMessagesByRevert, sortMessagesForRevert } from '@/sync/revert-filter';
 import { extractGitChangedFiles } from './changedFiles';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { fetchResponseStyleInstruction } from '@/lib/responseStyle';
 import { wrapSystemReminder } from '@/lib/systemReminder';
 import { getSyncMessages } from '@/sync/sync-refs';
+import { EMPTY_REVERTED_MESSAGE_DOCK_STATE, buildRevertedMessageDockState, type RevertedMessageDockState } from './revertedMessageDockState';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import {
@@ -103,11 +103,10 @@ import {
     buildAttachmentCitationText,
     findAttachmentCitationRanges,
 } from './attachmentCitations';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '@opencode-ai/sdk/v2/client';
 
 const MAX_VISIBLE_TEXTAREA_LINES = 8;
 const EMPTY_QUEUE: QueuedMessage[] = [];
-const EMPTY_MESSAGES: Message[] = [];
 const FILE_MENTION_TOKEN = /^@[^\s]+$/;
 // Single-line URL pasted over a selection becomes a markdown link.
 const PASTE_LINK_URL_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
@@ -391,37 +390,28 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
     const [restoringId, setRestoringId] = React.useState<string | null>(null);
     const [forkingId, setForkingId] = React.useState<string | null>(null);
     const [collapsed, setCollapsed] = React.useState(true);
-    const revertMessageID = useDirectorySync(
+    const revertedStateRef = React.useRef<RevertedMessageDockState>(EMPTY_REVERTED_MESSAGE_DOCK_STATE);
+    const revertedState = useDirectorySync(
         React.useCallback((state) => {
-            if (!sessionId) return undefined;
-            const session = state.session.find((item) => item.id === sessionId);
-            return (session as { revert?: { messageID?: string } } | undefined)?.revert?.messageID;
+            const next = buildRevertedMessageDockState(state, sessionId, revertedStateRef.current);
+            revertedStateRef.current = next;
+            return next;
         }, [sessionId]),
         directory,
     );
-    const sessionMessages = useDirectorySync(
-        React.useCallback((state) => (sessionId ? state.message[sessionId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES), [sessionId]),
-        directory,
-    );
-    const partsByMessage = useDirectorySync(React.useCallback((state) => state.part, []), directory);
-
+    const revertMessageID = revertedState.revertMessageID;
     const userMessages = React.useMemo(
-        () => sortMessagesForRevert(sessionMessages.filter((message): message is Message & { role: 'user' } => message.role === 'user')),
-        [sessionMessages],
-    );
-    const revertedUserMessages = React.useMemo(
-        () => revertMessageID ? partitionMessagesByRevert(userMessages, revertMessageID).removed : [],
-        [revertMessageID, userMessages],
+        () => revertedState.records.map((record) => record.message),
+        [revertedState],
     );
     const noTextContent = t('chat.revertPopover.noTextContent');
     const items = React.useMemo(() => {
         if (!revertMessageID) return [];
-        return revertedUserMessages
-            .map((message) => ({
-                id: message.id,
-                text: getRevertedPreview(partsByMessage[message.id] ?? [], noTextContent),
-            }));
-    }, [noTextContent, partsByMessage, revertMessageID, revertedUserMessages]);
+        return revertedState.records.map((record) => ({
+            id: record.message.id,
+            text: getRevertedPreview(record.parts, noTextContent),
+        }));
+    }, [noTextContent, revertMessageID, revertedState]);
     const firstRevertedMessageId = items[0]?.id;
 
     React.useEffect(() => {
@@ -432,8 +422,7 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
         if (!sessionId || restoringId) return;
         setRestoringId(messageId);
         try {
-            const messageIndex = revertedUserMessages.findIndex((message) => message.id === messageId);
-            const nextMessage = messageIndex >= 0 ? revertedUserMessages[messageIndex + 1] : undefined;
+            const nextMessage = userMessages.find((message) => message.id > messageId);
             if (nextMessage) {
                 await revertToMessage(sessionId, nextMessage.id, { skipRedoPush: true });
             } else {
@@ -442,7 +431,7 @@ const RevertedMessageDock: React.FC<RevertedMessageDockProps> = React.memo(({ se
         } finally {
             setRestoringId(null);
         }
-    }, [handleSlashRedo, revertToMessage, revertedUserMessages, restoringId, sessionId]);
+    }, [handleSlashRedo, revertToMessage, restoringId, sessionId, userMessages]);
 
     const handleFork = React.useCallback(async (messageId: string) => {
         if (!sessionId || forkingId) return;

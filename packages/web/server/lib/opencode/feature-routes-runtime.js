@@ -62,6 +62,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       getOpenCodePort,
+      autoReplyPendingPermissionsForServerSetting,
       buildAugmentedPath,
       openchamberVersion,
       runtimeName,
@@ -116,6 +117,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       refreshOpenCodeAfterConfigChange,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      autoReplyPendingPermissionsForServerSetting,
     });
 
     registerOpenAgentRoutes(app, {

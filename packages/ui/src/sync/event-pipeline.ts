@@ -470,6 +470,13 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     const normalizedPayload = normalizeEventType(payload)
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory
     const d = getOrCreateDir(routedDirectory)
+    // A full part snapshot is a coalescing barrier for that part's deltas:
+    // drop its pending delta coalescing keys so a delta arriving after the
+    // snapshot starts a fresh queue entry instead of merging into a delta
+    // queued before the snapshot, which the snapshot would then overwrite and
+    // drop the later delta's text. The already-queued delta event stays.
+    // Also fires for message.part.removed so deltas for the removed part
+    // don't merge into a stale queue entry.
     clearPartDeltaCoalescingBarrier(d, normalizedPayload)
     const k = key(normalizedPayload)
     if (k) {

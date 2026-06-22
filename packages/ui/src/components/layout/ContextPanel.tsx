@@ -24,7 +24,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
-import { buildEmbeddedSessionChatURL } from '@/lib/embeddedSessionChat';
+import { getOrCreateEmbeddedSessionChatURL, type EmbeddedSessionChatURLCacheEntry } from './contextPanelEmbeddedChat';
 import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from "@/components/ui/OpenChamberLogo";
 import { invokeDesktopCommand } from '@/lib/desktopNative';
@@ -418,6 +418,7 @@ const runIframeScript = async <T,>(iframe: HTMLIFrameElement, script: string): P
   const result = evaluate.call(frameWindow, script) as unknown;
   return await Promise.resolve(result) as T;
 };
+
 
 const truncateTabLabel = (value: string, maxChars: number): string => {
   if (value.length <= maxChars) {
@@ -2005,7 +2006,7 @@ export const ContextPanel: React.FC = () => {
   const reorderContextPanelTabs = useUIStore((state) => state.reorderContextPanelTabs);
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
-  const { themeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
+  const { themeMode, setThemeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
 
   const tabs = React.useMemo(() => panelState?.tabs ?? [], [panelState?.tabs]);
   const activeTab = tabs.find((tab) => tab.id === panelState?.activeTabId) ?? tabs[tabs.length - 1] ?? null;
@@ -2021,6 +2022,7 @@ export const ContextPanel: React.FC = () => {
   const activeResizePointerIDRef = React.useRef<number | null>(null);
   const panelRef = React.useRef<HTMLElement | null>(null);
   const chatFrameRefs = React.useRef<Map<string, HTMLIFrameElement>>(new Map());
+  const chatFrameSrcByTabIDRef = React.useRef<Map<string, EmbeddedSessionChatURLCacheEntry>>(new Map());
   const wasOpenRef = React.useRef(false);
   const previousIsOpenRef = React.useRef(isOpen);
   const suppressWidthTransitionFrameRef = React.useRef<number | null>(null);
@@ -2180,6 +2182,24 @@ export const ContextPanel: React.FC = () => {
 
   const activeChatTabID = activeTab?.mode === 'chat' ? activeTab.id : null;
 
+  const getEmbeddedChatSrc = React.useCallback((tabID: string, sessionID: string, readOnly: boolean): string => {
+    return getOrCreateEmbeddedSessionChatURL(chatFrameSrcByTabIDRef.current, tabID, sessionID, directoryKey || null, readOnly, {
+      mode: themeMode,
+      lightThemeId,
+      darkThemeId,
+      currentTheme,
+    });
+  }, [currentTheme, darkThemeId, directoryKey, lightThemeId, themeMode]);
+
+  React.useEffect(() => {
+    const liveTabIDs = new Set(tabs.map((tab) => tab.id));
+    for (const tabID of chatFrameSrcByTabIDRef.current.keys()) {
+      if (!liveTabIDs.has(tabID)) {
+        chatFrameSrcByTabIDRef.current.delete(tabID);
+      }
+    }
+  }, [tabs]);
+
   const handleDiffScopeChange = React.useCallback((nextScope: 'working' | 'staged') => {
     if (!directoryKey || activeTab?.mode !== 'diff') {
       return;
@@ -2267,6 +2287,37 @@ export const ContextPanel: React.FC = () => {
       );
     }
   }, [activeChatTabID]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const isKnownChatFrame = Array.from(chatFrameRefs.current.values())
+        .some((frame) => frame.contentWindow === event.source);
+      if (!isKnownChatFrame) {
+        return;
+      }
+
+      const data = event.data as { type?: unknown };
+      if (data?.type !== 'openchamber:cycle-theme-request') {
+        return;
+      }
+
+      const modes: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system'];
+      const currentIndex = modes.indexOf(themeMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      setThemeMode(modes[nextIndex]);
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [setThemeMode, themeMode]);
 
   React.useLayoutEffect(() => {
     const hasAnyChatTab = tabs.some((tab) => tab.mode === 'chat');
@@ -2448,11 +2499,7 @@ export const ContextPanel: React.FC = () => {
             return null;
           }
 
-          const src = buildEmbeddedSessionChatURL({
-            sessionId: sessionID,
-            directory: directoryKey || null,
-            readOnly: tab.readOnly,
-          });
+          const src = getEmbeddedChatSrc(tab.id, sessionID, tab.readOnly);
           if (!src) {
             return null;
           }

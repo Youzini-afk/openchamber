@@ -1,6 +1,7 @@
 import React from 'react';
-import { RiArrowLeftLine } from '@remixicon/react';
 import type { Message, Part, Session } from '@opencode-ai/sdk/v2';
+import type { PermissionRequest } from '@/types/permission';
+import type { QuestionRequest } from '@/types/question';
 
 import { ChatInput } from './ChatInput';
 import { DraftPresetChips } from './DraftPresetChips';
@@ -23,14 +24,9 @@ import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
-import type { PermissionRequest } from '@/types/permission';
-import type { QuestionRequest } from '@/types/question';
+import { Icon } from "@/components/icon/Icon";
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import {
-    collectVisibleSessionIdsForBlockingRequests,
-    flattenBlockingRequests,
-} from './lib/blockingRequests';
 
 // New sync system imports
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -38,22 +34,21 @@ import { useStreamingStore } from '@/sync/streaming';
 import {
     useSessionMessageCount,
     useSessionMessageRecords,
-    useSessions,
-    useDirectorySync,
     useSyncDirectory,
+    useDirectorySync,
     useSessionStatus,
+    useScopedBlockingPermissions,
+    useScopedBlockingQuestions,
+    useParentSession,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionPrefetch, subscribeSessionPrefetch } from '@/sync/session-prefetch-cache';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
-import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useI18n } from '@/lib/i18n';
 import { isVSCodeRuntime } from '@/lib/desktop';
 
 const EMPTY_MESSAGES: Array<{ info: Message; parts: Part[] }> = [];
-const EMPTY_PERMISSIONS: PermissionRequest[] = [];
-const EMPTY_QUESTIONS: QuestionRequest[] = [];
 const IDLE_SESSION_STATUS = { type: 'idle' as const };
 const CHAT_FORCE_SCROLL_BOTTOM_EVENT = 'openchamber:chat-force-scroll-bottom';
 const CHAT_SCROLL_STYLE = {
@@ -141,6 +136,7 @@ type ChatViewportProps = {
     isDesktopExpandedInput: boolean;
     isMobile: boolean;
     stickyUserHeader: boolean;
+    directory?: string;
     scrollRef: React.RefObject<HTMLDivElement | null>;
     messageListRef: React.RefObject<MessageListHandle | null>;
     pendingRevealWork: boolean;
@@ -170,6 +166,7 @@ const ChatViewport = React.memo(({
     isDesktopExpandedInput,
     isMobile,
     stickyUserHeader,
+    directory,
     scrollRef,
     messageListRef,
     pendingRevealWork,
@@ -239,6 +236,7 @@ const ChatViewport = React.memo(({
                             isLoadingOlder={isLoadingOlder}
                             scrollToBottom={scrollToBottom}
                             scrollRef={scrollRef}
+                            directory={directory}
                         />
                         {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
                             <div>
@@ -267,6 +265,7 @@ const ChatViewport = React.memo(({
         && prev.isDesktopExpandedInput === next.isDesktopExpandedInput
         && prev.isMobile === next.isMobile
         && prev.stickyUserHeader === next.stickyUserHeader
+        && prev.directory === next.directory
         && prev.scrollRef === next.scrollRef
         && prev.messageListRef === next.messageListRef
         && prev.pendingRevealWork === next.pendingRevealWork
@@ -412,7 +411,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         effectiveSessionDirectory,
     );
     // Messages from sync system
-    const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory);
+    const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', effectiveSessionDirectory, {
+        suspendPartUpdates: Boolean(streamingMessageId),
+        suspendPartUpdatesForMessageId: streamingMessageId,
+    });
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
     const sessionPrefetchInfo = React.useSyncExternalStore(
         React.useCallback(
@@ -428,55 +430,18 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         React.useCallback(() => undefined, []),
     );
 
-    // Sessions from sync system
-    const sessions = useSessions(effectiveSessionDirectory);
-
     // Plan detection - watches messages for plan creation and signals store
     usePlanDetection(currentSessionId ?? '', sessionMessages);
 
     // Session status from sync system
     const sessionStatusForCurrent = useSessionStatus(currentSessionId ?? '', effectiveSessionDirectory) ?? IDLE_SESSION_STATUS;
 
-    // Permissions & questions from sync system
-    const allPermissions = useDirectorySync(
-        React.useCallback((s) => s.permission ?? {}, []),
-        effectiveSessionDirectory,
-    );
-    const allQuestions = useDirectorySync(
-        React.useCallback((s) => s.question ?? {}, []),
-        effectiveSessionDirectory,
-    );
+    // Scoped blocking requests — only subscribe to permissions/questions for
+    // the current session + descendant subagent sessions, not all sessions in
+    // the directory.
+    const sessionPermissions = useScopedBlockingPermissions(currentSessionId, effectiveSessionDirectory);
+    const sessionQuestions = useScopedBlockingQuestions(currentSessionId, effectiveSessionDirectory);
 
-    // Convert Record → Map for blockingRequests helpers
-    const permissionsMap = React.useMemo(() => {
-        const m = new Map<string, PermissionRequest[]>();
-        for (const [k, v] of Object.entries(allPermissions)) m.set(k, v as PermissionRequest[]);
-        return m;
-    }, [allPermissions]);
-
-    const questionsMap = React.useMemo(() => {
-        const m = new Map<string, QuestionRequest[]>();
-        for (const [k, v] of Object.entries(allQuestions)) m.set(k, v as QuestionRequest[]);
-        return m;
-    }, [allQuestions]);
-
-    const scopedSessionIds = React.useMemo(
-        () => collectVisibleSessionIdsForBlockingRequests(
-            sessions.map((session) => ({ id: session.id, parentID: session.parentID })),
-            currentSessionId,
-        ),
-        [sessions, currentSessionId],
-    );
-
-    const sessionPermissions = React.useMemo(() => {
-        if (scopedSessionIds.length === 0) return EMPTY_PERMISSIONS;
-        return flattenBlockingRequests(permissionsMap, scopedSessionIds);
-    }, [permissionsMap, scopedSessionIds]);
-
-    const sessionQuestions = React.useMemo(() => {
-        if (scopedSessionIds.length === 0) return EMPTY_QUESTIONS;
-        return flattenBlockingRequests(questionsMap, scopedSessionIds);
-    }, [questionsMap, scopedSessionIds]);
     const sessionIsWorking = React.useMemo(() => {
         if (!currentSessionId || sessionPermissions.length > 0 || sessionQuestions.length > 0) {
             return false;
@@ -566,15 +531,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         return project ? getProjectDisplayLabel(project) : null;
     }, [activeProjectId, newSessionDraft?.selectedProjectId, projects]);
 
-    const parentSession = React.useMemo(() => {
-        if (!currentSessionId) return null;
-        const current = sessions.find((session) => session.id === currentSessionId);
-        const parentID = current?.parentID;
-        if (!parentID) return null;
-        return sessions.find((session) => session.id === parentID)
-            ?? getAllSyncSessions().find((session) => session.id === parentID)
-            ?? null;
-    }, [currentSessionId, sessions]);
+    const parentSession = useParentSession(currentSessionId, effectiveSessionDirectory);
 
     const handleReturnToParentSession = React.useCallback(() => {
         if (!parentSession) return;
@@ -594,7 +551,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 ? t('chat.container.returnToParent.titleNamed', { title: parentSession.title })
                 : t('chat.container.returnToParent.title')}
         >
-            <RiArrowLeftLine className="h-4 w-4" />
+            <Icon name="arrow-left" className="h-4 w-4" />
             {t('chat.container.returnToParent.label')}
         </Button>
     ) : null;
@@ -943,6 +900,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 isDesktopExpandedInput={isDesktopExpandedInput}
                 isMobile={isMobile}
                 stickyUserHeader={stickyUserHeader}
+                directory={effectiveSessionDirectory}
                 scrollRef={scrollRef}
                 messageListRef={messageListRef}
                 pendingRevealWork={timelineController.pendingRevealWork}

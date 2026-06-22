@@ -47,6 +47,7 @@ export interface ResolveFallbackParams {
  * - Not a task tool
  * - Task is finalized
  * - Parent session is unknown
+ * - Task start time is unknown
  * - No unambiguous match found
  */
 export function resolveFallbackTaskSessionId(params: ResolveFallbackParams): string | undefined {
@@ -72,6 +73,8 @@ export function resolveFallbackTaskSessionId(params: ResolveFallbackParams): str
     return true;
   });
 
+  // Apply the time window even while running. Without it, a newly rendered task
+  // can briefly bind to the previous child session before its own child exists.
   const windowMs = hasRetried ? TASK_SESSION_MATCH_WINDOW_WIDE_MS : TASK_SESSION_MATCH_WINDOW_MS;
   const latestAllowed = taskStartTime + windowMs;
   candidates = candidates.filter((session) => {

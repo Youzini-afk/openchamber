@@ -659,6 +659,8 @@ export const GitView: React.FC<GitViewProps> = ({
   const [expandedCommitHashes, setExpandedCommitHashes] = React.useState<Set<string>>(new Set());
   const [commitFilesMap, setCommitFilesMap] = React.useState<Map<string, CommitFileEntry[]>>(new Map());
   const [loadingCommitHashes, setLoadingCommitHashes] = React.useState<Set<string>>(new Set());
+  const commitFilesMapRef = React.useRef(commitFilesMap);
+  const loadingCommitHashesRef = React.useRef(loadingCommitHashes);
   const [historyBranchDivider, setHistoryBranchDivider] = React.useState<HistoryBranchDivider>(null);
   const [remoteUrl, setRemoteUrl] = React.useState<string | null>(null);
   const [gitmojiSearch, setGitmojiSearch] = React.useState('');
@@ -775,11 +777,19 @@ export const GitView: React.FC<GitViewProps> = ({
   }, []);
 
   React.useEffect(() => {
+    commitFilesMapRef.current = commitFilesMap;
+  }, [commitFilesMap]);
+
+  React.useEffect(() => {
+    loadingCommitHashesRef.current = loadingCommitHashes;
+  }, [loadingCommitHashes]);
+
+  React.useEffect(() => {
     if (!currentDirectory || !git) return;
 
     // Find hashes that are expanded but not yet loaded or loading
     const hashesToLoad = Array.from(expandedCommitHashes).filter(
-      (hash) => !commitFilesMap.has(hash) && !loadingCommitHashes.has(hash)
+      (hash) => !commitFilesMapRef.current.has(hash) && !loadingCommitHashesRef.current.has(hash)
     );
 
     if (hashesToLoad.length === 0) return;
@@ -791,6 +801,7 @@ export const GitView: React.FC<GitViewProps> = ({
       for (const hash of hashesToLoad) {
         next.add(hash);
       }
+      loadingCommitHashesRef.current = next;
       return next;
     });
 
@@ -811,6 +822,7 @@ export const GitView: React.FC<GitViewProps> = ({
         for (const { hash, files } of results) {
           next.set(hash, files);
         }
+        commitFilesMapRef.current = next;
         return next;
       });
       setLoadingCommitHashes((prev) => {
@@ -818,14 +830,29 @@ export const GitView: React.FC<GitViewProps> = ({
         for (const { hash } of results) {
           next.delete(hash);
         }
+        loadingCommitHashesRef.current = next;
         return next;
       });
     });
 
     return () => {
       cancelled = true;
+      setLoadingCommitHashes((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const hash of hashesToLoad) {
+          if (next.delete(hash)) {
+            changed = true;
+          }
+        }
+        if (!changed) {
+          return prev;
+        }
+        loadingCommitHashesRef.current = next;
+        return next;
+      });
     };
-  }, [expandedCommitHashes, currentDirectory, git, commitFilesMap, loadingCommitHashes]);
+  }, [expandedCommitHashes, currentDirectory, git]);
 
   React.useEffect(() => {
     if (!currentDirectory) return;
