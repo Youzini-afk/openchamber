@@ -20,6 +20,7 @@ import type { StreamPhase } from './message/types';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionParts } from '@/sync/sync-context';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
+import { estimateVirtualizedChatItemSize, type ChatVirtualLayoutMode } from './lib/virtualization/chatItemSizeEstimate';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const MESSAGE_LIST_DYNAMIC_TAIL_COUNT = 12;
@@ -925,6 +926,7 @@ type StaticHistoryListProps = {
     virtualizerRef: React.Ref<VirtualizerHandle>;
     virtualizerKey: string;
     virtualCache?: CacheSnapshot;
+    estimatedItemSize?: number;
     shift: boolean;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
@@ -940,7 +942,7 @@ type StaticHistoryListProps = {
     reviewTransferDirection?: ReviewTransferDirection | null;
 };
 
-const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, scrollRef, virtualizerRef, virtualizerKey, virtualCache, shift, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, sessionIsWorking, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
+const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, scrollRef, virtualizerRef, virtualizerKey, virtualCache, estimatedItemSize, shift, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, sessionIsWorking, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const renderEntry = React.useCallback((entry: RenderEntry) => {
         return (
             <MessageListEntry
@@ -986,6 +988,7 @@ const StaticHistoryList = React.memo(({ entries, shouldVirtualize, contentRef, s
             data={entries}
             cache={virtualCache}
             bufferSize={MESSAGE_LIST_BUFFER_SIZE}
+            itemSize={estimatedItemSize}
             shift={shift}
             scrollRef={scrollRef}
         >
@@ -1096,6 +1099,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     // kept on the interface so callers don't break; acknowledge it here.
     void isLoadingOlder;
     const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
+    const wideChatLayoutEnabled = useUIStore(state => state.wideChatLayoutEnabled);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const showTurnChangedFiles = useUIStore((state) => state.showTurnChangedFiles);
@@ -1297,6 +1301,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }, [allEntries, shouldSplitDynamicTail]);
     const shouldVirtualizeHistory = shouldSplitDynamicTail && historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const historyEntryKeys = React.useMemo(() => historyEntries.map((entry) => entry.key), [historyEntries]);
+    const virtualLayoutMode = React.useMemo<ChatVirtualLayoutMode>(
+        () => (wideChatLayoutEnabled ? 'wide' : 'standard'),
+        [wideChatLayoutEnabled],
+    );
+    const estimatedHistoryItemSize = React.useMemo(
+        () => shouldVirtualizeHistory
+            ? estimateVirtualizedChatItemSize(historyEntries, virtualLayoutMode)
+            : undefined,
+        [historyEntries, shouldVirtualizeHistory, virtualLayoutMode],
+    );
     // The virtualizer remounts when its key changes. The previous key joined
     // EVERY entry key, so any ordinary content change (a single turn's text
     // growing, a tool reveal) flipped a key character and forced the
@@ -1307,9 +1321,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         () => {
             const firstKey = historyEntryKeys[0] ?? '';
             const lastKey = historyEntryKeys.length > 0 ? historyEntryKeys[historyEntryKeys.length - 1] ?? '' : '';
-            return `${sessionKey}:${historyEntryKeys.length}:${firstKey}:${lastKey}`;
+            return `${sessionKey}:${virtualLayoutMode}:${historyEntryKeys.length}:${firstKey}:${lastKey}`;
         },
-        [historyEntryKeys, sessionKey],
+        [historyEntryKeys, sessionKey, virtualLayoutMode],
     );
     const virtualCache = React.useMemo(
         () => (shouldVirtualizeHistory ? readTimelineCache(sessionKey, historyEntryKeys) : undefined),
@@ -1617,6 +1631,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             virtualizerRef={setHistoryVirtualizer}
                             virtualizerKey={historyVirtualizerKey}
                             virtualCache={virtualCache}
+                            estimatedItemSize={estimatedHistoryItemSize}
                             shift={false}
                             onMessageContentChange={stableHistoryContentChange}
                             getAnimationHandlers={stableGetAnimationHandlers}

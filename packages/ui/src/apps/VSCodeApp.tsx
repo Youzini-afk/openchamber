@@ -25,6 +25,7 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { SyncProvider } from '@/sync/sync-context';
 import { SyncAppEffects } from './AppEffects';
 import { useAppFontEffects } from './useAppFontEffects';
+import { useWideChatLayoutClass } from '@/hooks/useWideChatLayoutClass';
 
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 
@@ -186,12 +187,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   useWindowTitle();
   useRouter();
 
-  React.useEffect(() => {
-    document.documentElement.classList.toggle('wide-chat-layout', wideChatLayoutEnabled);
-    return () => {
-      document.documentElement.classList.remove('wide-chat-layout');
-    };
-  }, [wideChatLayoutEnabled]);
+  useWideChatLayoutClass(wideChatLayoutEnabled);
 
   React.useEffect(() => {
     void refreshGitHubAuthStatus(apis.github, { force: true });

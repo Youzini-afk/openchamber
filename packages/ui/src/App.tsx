@@ -67,6 +67,7 @@ import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import { resetStreamingState } from '@/sync/streaming';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { markStartupTrace, startupTraceEnabled } from '@/lib/startupTrace';
+import { useWideChatLayoutClass } from '@/hooks/useWideChatLayoutClass';
 
 // Lazy-loaded heavy views — loaded on demand to reduce initial bundle size.
 const OnboardingScreen = lazyWithChunkRecovery(() =>
@@ -259,12 +260,7 @@ function App({ apis }: AppProps) {
     });
   }, []);
 
-  React.useEffect(() => {
-    document.documentElement.classList.toggle('wide-chat-layout', wideChatLayoutEnabled);
-    return () => {
-      document.documentElement.classList.remove('wide-chat-layout');
-    };
-  }, [wideChatLayoutEnabled]);
+  useWideChatLayoutClass(wideChatLayoutEnabled);
 
   React.useEffect(() => {
     registerRuntimeAPIs(apis);
