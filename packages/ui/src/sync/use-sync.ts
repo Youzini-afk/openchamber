@@ -28,6 +28,8 @@ const MOBILE_INITIAL_MESSAGE_PAGE_SIZE = 30
 const HISTORY_MESSAGE_PAGE_SIZE = 100
 const INITIAL_PAGE_EXPANSION_LIMITS = [100, 150] as const
 const VSCODE_INITIAL_PAGE_EXPANSION_LIMITS = [50, 80, 120] as const
+const PROGRESSIVE_MOUNT_DELAY_MS = 700
+const PROGRESSIVE_MOUNT_IDLE_TIMEOUT_MS = 1500
 const MAX_SEEN_DIRS = 30
 const VSCODE_SESSION_CACHE_LIMIT = 4
 const MOBILE_SESSION_CACHE_LIMIT = 4
@@ -88,6 +90,24 @@ export function endProgressiveMount(sessionID: string, token: number): void {
   if (progressiveMountInFlightBySession.get(sessionID) === token) {
     progressiveMountInFlightBySession.delete(sessionID)
   }
+}
+
+type IdleCapableWindow = typeof window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
+}
+
+function waitForProgressiveHistorySlot(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve()
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+      const requestIdle = (window as IdleCapableWindow).requestIdleCallback
+      if (typeof requestIdle === "function") {
+        requestIdle(() => resolve(), { timeout: PROGRESSIVE_MOUNT_IDLE_TIMEOUT_MS })
+        return
+      }
+      resolve()
+    }, PROGRESSIVE_MOUNT_DELAY_MS)
+  })
 }
 
 type SyncMeta = {
@@ -559,7 +579,11 @@ export function useSync() {
             const token = beginProgressiveMount(sessionID)
             void (async () => {
               try {
-                await loadMessages(sessionID, { before: currentMeta.cursor, mode: "prepend", isStale })
+                await waitForProgressiveHistorySlot()
+                if (isStale()) return
+                const latestMeta = getMetaFor(sessionID)
+                if (!latestMeta.cursor || latestMeta.complete) return
+                await loadMessages(sessionID, { before: latestMeta.cursor, mode: "prepend", isStale })
               } finally {
                 endProgressiveMount(sessionID, token)
               }

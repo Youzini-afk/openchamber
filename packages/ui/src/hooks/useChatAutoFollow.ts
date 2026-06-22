@@ -136,6 +136,7 @@ export const useChatAutoFollow = ({
     const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingSaveRef = React.useRef<{ sessionId: string; anchor: number } | null>(null);
     const settleBurstRafRef = React.useRef<number | null>(null);
+    const contentChangeFrameRef = React.useRef<number | null>(null);
     const lastUserReleaseAtRef = React.useRef(0);
     // When restoreSnapshot is invoked while ChatViewport is still hydrating
     // (skeleton rendered, no scroll container yet), we record the session here
@@ -256,6 +257,13 @@ export const useChatAutoFollow = ({
             window.cancelAnimationFrame(settleBurstRafRef.current);
         }
         settleBurstRafRef.current = null;
+    }, []);
+
+    const stopContentChangeFrame = React.useCallback(() => {
+        if (contentChangeFrameRef.current !== null && typeof window !== 'undefined') {
+            window.cancelAnimationFrame(contentChangeFrameRef.current);
+        }
+        contentChangeFrameRef.current = null;
     }, []);
 
     const releaseAutoFollow = React.useCallback(() => {
@@ -594,14 +602,28 @@ export const useChatAutoFollow = ({
         updateOverflowAndButton();
     }, [sessionMessageCount, updateOverflowAndButton]);
 
-    const notifyContentChange = React.useCallback((_reason?: ContentChangeReason) => {
-        void _reason;
+    const flushContentChangeFrame = React.useCallback(() => {
+        contentChangeFrameRef.current = null;
         updateOverflowAndButton();
         if (stateRef.current === 'following') {
             clampToBottomIfFollowing();
             startFollowLoop();
         }
     }, [clampToBottomIfFollowing, startFollowLoop, updateOverflowAndButton]);
+
+    const scheduleContentChangeFrame = React.useCallback(() => {
+        if (typeof window === 'undefined') {
+            flushContentChangeFrame();
+            return;
+        }
+        if (contentChangeFrameRef.current !== null) return;
+        contentChangeFrameRef.current = window.requestAnimationFrame(flushContentChangeFrame);
+    }, [flushContentChangeFrame]);
+
+    const notifyContentChange = React.useCallback((_reason?: ContentChangeReason) => {
+        void _reason;
+        scheduleContentChangeFrame();
+    }, [scheduleContentChangeFrame]);
 
     const animationHandlersRef = React.useRef<Map<string, AnimationHandlers>>(new Map());
 
@@ -610,10 +632,7 @@ export const useChatAutoFollow = ({
         if (cached) return cached;
 
         const kick = () => {
-            if (stateRef.current === 'following') {
-                clampToBottomIfFollowing();
-                startFollowLoop();
-            }
+            scheduleContentChangeFrame();
         };
 
         const handlers: AnimationHandlers = {
@@ -629,19 +648,20 @@ export const useChatAutoFollow = ({
         };
         animationHandlersRef.current.set(messageId, handlers);
         return handlers;
-    }, [clampToBottomIfFollowing, startFollowLoop, updateOverflowAndButton]);
+    }, [scheduleContentChangeFrame, updateOverflowAndButton]);
 
     React.useEffect(() => {
         return () => {
             stopFollowLoop();
             stopSettleBurst();
+            stopContentChangeFrame();
             flushSave();
             if (saveTimerRef.current !== null) {
                 clearTimeout(saveTimerRef.current);
                 saveTimerRef.current = null;
             }
         };
-    }, [flushSave, stopFollowLoop, stopSettleBurst]);
+    }, [flushSave, stopContentChangeFrame, stopFollowLoop, stopSettleBurst]);
 
     React.useEffect(() => {
         if (!onActiveTurnChange) return;
@@ -705,6 +725,9 @@ export const useChatAutoFollow = ({
         const mutationObserver = new MutationObserver((records) => {
             let changed = false;
             records.forEach((record) => {
+                if (record.target instanceof HTMLElement && record.target.closest('[data-turn-id]')) {
+                    return;
+                }
                 record.removedNodes.forEach((node) => {
                     collectTurnNodes(node).forEach((turnNode) => {
                         if (unregisterTurnNode(turnNode)) changed = true;

@@ -16,10 +16,15 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isAbsoluteFilePath, isFilePathWithinDirectory, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import { renderMarkdownBlocks, renderMarkdownSync } from './markdown/markdownCore';
 import { ensureMarkdownShikiTheme, getMarkdownSyntaxVars } from './markdown/markdownTheme';
+import {
+  shouldEnableFileReferenceAnnotations,
+  shouldUseRichMarkdownFirstPaint,
+} from './markdown/markdownPerformance';
 import {
   attachMarkdownInteractions,
   decorateMarkdown,
@@ -1007,6 +1012,7 @@ const useMorphdomMarkdown = ({
   syntaxVars,
   ctx,
   onContentChange,
+  useRichFirstPaint,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   text: string;
@@ -1015,6 +1021,7 @@ const useMorphdomMarkdown = ({
   syntaxVars: Record<string, string>;
   ctx: DecorateContext;
   onContentChange?: (reason?: ContentChangeReason) => void;
+  useRichFirstPaint: boolean;
 }) => {
   const onContentChangeRef = React.useRef(onContentChange);
   onContentChangeRef.current = onContentChange;
@@ -1038,16 +1045,23 @@ const useMorphdomMarkdown = ({
       // `display:contents` keeps margin-collapsing/spacing identical to a flat
       // HTML body — the wrapper exists only for per-block reconciliation.
       block.style.display = 'contents';
-      block.innerHTML = renderMarkdownSync(text);
-      // Decorate synchronously too: wrap code blocks in their framed card,
-      // mark inline code, build table controls, etc. The async pass re-decorates
-      // its own DOM before morphing, so without this the first paint shows bare
-      // <pre>/tables that "snap" into their decorated form a tick later. Matching
-      // the structure here keeps the async morph to syntax colors only.
-      decorateMarkdown(block, ctx);
+      if (useRichFirstPaint) {
+        block.innerHTML = renderMarkdownSync(text);
+        // Decorate synchronously too: wrap code blocks in their framed card,
+        // mark inline code, build table controls, etc. The async pass re-decorates
+        // its own DOM before morphing, so without this the first paint shows bare
+        // <pre>/tables that "snap" into their decorated form a tick later. Matching
+        // the structure here keeps the async morph to syntax colors only.
+        decorateMarkdown(block, ctx);
+      } else {
+        const pre = document.createElement('pre');
+        pre.className = 'whitespace-pre-wrap break-words font-sans leading-relaxed';
+        pre.textContent = text;
+        block.appendChild(pre);
+      }
       target.appendChild(block);
     }
-  }, [containerRef, text, ctx]);
+  }, [containerRef, text, ctx, useRichFirstPaint]);
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -1146,6 +1160,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const openContextPreview = useUIStore((state) => state.openContextPreview);
+  const isConstrainedRuntime = runtime.isVSCode || isMobileSurfaceRuntime();
 
   const handlePreviewLoopback = React.useCallback((url: string) => {
     if (!effectiveDirectory) return;
@@ -1162,7 +1177,12 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
-    enabled: enableFileReferences && !isStreaming,
+    enabled: shouldEnableFileReferenceAnnotations({
+      enabled: enableFileReferences,
+      isStreaming,
+      contentLength: content.length,
+      isConstrainedRuntime,
+    }),
   });
   useExternalLinkInteractions({ containerRef });
 
@@ -1170,7 +1190,19 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const ctx = useDecorateContext(currentTheme, effectiveDirectory ? handlePreviewLoopback : undefined);
   const cacheKey = `markdown-${part?.id ? `part-${part.id}` : `message-${messageId}`}`;
 
-  useMorphdomMarkdown({ containerRef, text: pacedText, streaming: live, cacheKey, syntaxVars, ctx, onContentChange });
+  useMorphdomMarkdown({
+    containerRef,
+    text: pacedText,
+    streaming: live,
+    cacheKey,
+    syntaxVars,
+    ctx,
+    onContentChange,
+    useRichFirstPaint: shouldUseRichMarkdownFirstPaint({
+      contentLength: pacedText.length,
+      isConstrainedRuntime,
+    }),
+  });
 
   const markdownContent = (
     <div className={cn('break-words w-full min-w-0', className)} ref={containerRef}>
@@ -1230,6 +1262,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const isConstrainedRuntime = runtime.isVSCode || isMobileSurfaceRuntime();
 
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
@@ -1248,7 +1281,12 @@ const SimpleMarkdownRendererImpl: React.FC<{
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
-    enabled: enableFileReferences,
+    enabled: shouldEnableFileReferenceAnnotations({
+      enabled: enableFileReferences,
+      isStreaming: false,
+      contentLength: renderedContent.length,
+      isConstrainedRuntime,
+    }),
   });
   useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
 
@@ -1263,6 +1301,10 @@ const SimpleMarkdownRendererImpl: React.FC<{
     syntaxVars,
     ctx,
     onContentChange,
+    useRichFirstPaint: shouldUseRichMarkdownFirstPaint({
+      contentLength: renderedContent.length,
+      isConstrainedRuntime,
+    }),
   });
 
   return (

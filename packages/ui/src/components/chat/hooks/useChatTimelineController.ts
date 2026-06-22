@@ -109,6 +109,26 @@ export const shouldAutoLoadEarlierForUnderfilledPinnedViewport = (input: {
     return input.scrollHeight <= input.clientHeight + 1;
 };
 
+export const shouldLoadEarlierFromHistoryScroll = (input: {
+    sessionId: string | null;
+    isPinned: boolean;
+    scrollTop: number;
+    threshold: number;
+    canLoadEarlier: boolean;
+    isLoadingOlder: boolean;
+    pendingRevealWork: boolean;
+    historyInteractionActive: boolean;
+    progressiveMountInFlight: boolean;
+}): boolean => {
+    if (!input.sessionId) return false;
+    if (input.isPinned) return false;
+    if (input.historyInteractionActive || input.progressiveMountInFlight) return false;
+    if (input.scrollTop >= input.threshold) return false;
+    if (!input.canLoadEarlier) return false;
+    if (input.isLoadingOlder || input.pendingRevealWork) return false;
+    return true;
+};
+
 export const useChatTimelineController = ({
     sessionId,
     messages,
@@ -527,10 +547,20 @@ export const useChatTimelineController = ({
     const handleHistoryScroll = React.useCallback(() => {
         const container = scrollRef.current;
         if (!container) return;
-        if (isPinnedRef.current) return;
-        if (container.scrollTop >= HISTORY_SCROLL_THRESHOLD) return;
-        if (!historySignalsRef.current.canLoadEarlier) return;
-        if (isLoadingOlderRef.current || pendingRevealWorkRef.current) return;
+        const currentSession = sessionIdRef.current;
+        if (!shouldLoadEarlierFromHistoryScroll({
+            sessionId: currentSession,
+            isPinned: isPinnedRef.current,
+            scrollTop: container.scrollTop,
+            threshold: HISTORY_SCROLL_THRESHOLD,
+            canLoadEarlier: historySignalsRef.current.canLoadEarlier,
+            isLoadingOlder: isLoadingOlderRef.current,
+            pendingRevealWork: pendingRevealWorkRef.current,
+            historyInteractionActive: historyInteractionRef.current,
+            progressiveMountInFlight: currentSession ? isProgressiveMountInFlight(currentSession) : false,
+        })) {
+            return;
+        }
 
         void loadEarlier({ userInitiated: true });
     }, [loadEarlier, scrollRef]);

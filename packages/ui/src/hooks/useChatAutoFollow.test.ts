@@ -199,6 +199,60 @@ describe('useChatAutoFollow RO rAF coalescing (Fix 1)', () => {
     });
 });
 
+const createCoalescedContentChangeHandler = () => {
+    let frame: number | null = null;
+    let flushCount = 0;
+    let rafScheduledCount = 0;
+    const rafQueue: FrameRequestCallback[] = [];
+
+    const raf = (cb: FrameRequestCallback): number => {
+        rafScheduledCount += 1;
+        rafQueue.push(cb);
+        return rafScheduledCount;
+    };
+
+    const flush = () => {
+        frame = null;
+        flushCount += 1;
+    };
+
+    const notifyContentChange = () => {
+        if (frame !== null) return;
+        frame = raf(flush);
+    };
+
+    const drainRAF = () => {
+        const queue = [...rafQueue];
+        rafQueue.length = 0;
+        for (const cb of queue) {
+            cb(0);
+        }
+    };
+
+    return {
+        notifyContentChange,
+        drainRAF,
+        getFlushCount: () => flushCount,
+        getRAFScheduledCount: () => rafScheduledCount,
+    };
+};
+
+describe('useChatAutoFollow content-change rAF coalescing', () => {
+    test('a burst of structural markdown changes schedules one follow flush', () => {
+        const handler = createCoalescedContentChangeHandler();
+
+        for (let i = 0; i < 100; i += 1) {
+            handler.notifyContentChange();
+        }
+
+        expect(handler.getRAFScheduledCount()).toBe(1);
+        expect(handler.getFlushCount()).toBe(0);
+
+        handler.drainRAF();
+        expect(handler.getFlushCount()).toBe(1);
+    });
+});
+
 /**
  * Fix 2: spy effect is disabled when state === 'following' && sessionIsWorking.
  * This test verifies the gating condition itself — the hook's effect early-returns

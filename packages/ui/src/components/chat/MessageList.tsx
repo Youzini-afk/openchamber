@@ -25,12 +25,10 @@ const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const MESSAGE_LIST_DYNAMIC_TAIL_COUNT = 12;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
-// Keep the virtualizer's off-screen buffer small. A large buffer (the previous
-// 900) meant the virtualizer retained measurement/state for hundreds of rows
-// the user will never scroll to during a streaming session, and each RO/IO
-// callback walked all of them. 30 is enough to keep scrolling smooth without
-// paying measurement cost for rows far outside the viewport.
-const MESSAGE_LIST_BUFFER_SIZE = 30;
+// virtua's bufferSize is pixels, not item count. Keep roughly half a viewport
+// worth of headroom so fast wheel scrolls do not cross an unmeasured edge, while
+// still avoiding the older very-large overscan that kept too much DOM alive.
+const MESSAGE_LIST_BUFFER_SIZE = 360;
 const TIMELINE_CACHE_LIMIT = 16;
 // Dynamic chat rows can grow after the first paint (markdown/Shiki workers,
 // tool output reveal, task summaries). Restoring stale virtual heights during

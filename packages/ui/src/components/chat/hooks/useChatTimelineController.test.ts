@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+    shouldLoadEarlierFromHistoryScroll,
     shouldAutoLoadEarlierForUnderfilledPinnedViewport,
 } from './useChatTimelineController';
 import { isProgressiveMountInFlight } from '@/sync/use-sync';
@@ -40,6 +41,42 @@ describe('shouldAutoLoadEarlierForUnderfilledPinnedViewport', () => {
             ...baseInput,
             pendingRevealWork: true,
         })).toBe(false);
+    });
+});
+
+describe('shouldLoadEarlierFromHistoryScroll', () => {
+    const scrollInput = {
+        sessionId: 'ses_1',
+        isPinned: false,
+        scrollTop: 100,
+        threshold: 200,
+        canLoadEarlier: true,
+        isLoadingOlder: false,
+        pendingRevealWork: false,
+        historyInteractionActive: false,
+        progressiveMountInFlight: false,
+    };
+
+    test('loads when released near the top and no history work is active', () => {
+        expect(shouldLoadEarlierFromHistoryScroll(scrollInput)).toBe(true);
+    });
+
+    test('does not chain loads during history interaction or progressive mount', () => {
+        expect(shouldLoadEarlierFromHistoryScroll({
+            ...scrollInput,
+            historyInteractionActive: true,
+        })).toBe(false);
+        expect(shouldLoadEarlierFromHistoryScroll({
+            ...scrollInput,
+            progressiveMountInFlight: true,
+        })).toBe(false);
+    });
+
+    test('does not load while pinned, away from top, or already busy', () => {
+        expect(shouldLoadEarlierFromHistoryScroll({ ...scrollInput, isPinned: true })).toBe(false);
+        expect(shouldLoadEarlierFromHistoryScroll({ ...scrollInput, scrollTop: 250 })).toBe(false);
+        expect(shouldLoadEarlierFromHistoryScroll({ ...scrollInput, isLoadingOlder: true })).toBe(false);
+        expect(shouldLoadEarlierFromHistoryScroll({ ...scrollInput, pendingRevealWork: true })).toBe(false);
     });
 });
 
