@@ -475,6 +475,316 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isStringArray = (value: unknown): value is string[] =>
     Array.isArray(value) && value.every((item) => typeof item === "string");
 
+const trimProviderString = (value: unknown): string => (
+    typeof value === "string" ? value.trim() : ""
+);
+
+const isPlainProviderRecord = (value: unknown): value is Record<string, unknown> => (
+    isRecord(value) && !Array.isArray(value)
+);
+
+const readProviderBoolean = (...values: unknown[]): boolean => (
+    values.some((value) => value === true)
+);
+
+const readProviderPositiveInteger = (...values: unknown[]): number | undefined => {
+    for (const value of values) {
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+            return Math.floor(value);
+        }
+        if (typeof value === "string") {
+            const parsed = Number(value.replace(/,/g, "").trim());
+            if (Number.isFinite(parsed) && parsed > 0) {
+                return Math.floor(parsed);
+            }
+        }
+    }
+    return undefined;
+};
+
+const readProviderLimitRecord = (entry: Record<string, unknown>): Record<string, unknown> => (
+    isPlainProviderRecord(entry.limit) ? entry.limit : {}
+);
+
+const readProviderContextLimit = (entry: Record<string, unknown>): number | undefined => {
+    const limit = readProviderLimitRecord(entry);
+    return readProviderPositiveInteger(
+        limit.context,
+        limit.contextLimit,
+        limit.context_limit,
+        limit.contextWindow,
+        limit.context_window,
+        limit.contextLength,
+        limit.context_length,
+        limit.maxContext,
+        limit.max_context,
+        limit.maxContextLength,
+        limit.max_context_length,
+        limit.inputTokenLimit,
+        limit.input_token_limit,
+        entry.context,
+        entry.contextLimit,
+        entry.context_limit,
+        entry.contextWindow,
+        entry.context_window,
+        entry.contextLength,
+        entry.context_length,
+        entry.maxContext,
+        entry.max_context,
+        entry.maxContextLength,
+        entry.max_context_length,
+        entry.inputTokenLimit,
+        entry.input_token_limit,
+    );
+};
+
+const readProviderOutputLimit = (entry: Record<string, unknown>): number | undefined => {
+    const limit = readProviderLimitRecord(entry);
+    return readProviderPositiveInteger(
+        limit.output,
+        limit.outputLimit,
+        limit.output_limit,
+        limit.outputTokenLimit,
+        limit.output_token_limit,
+        limit.maxOutput,
+        limit.max_output,
+        limit.maxOutputTokens,
+        limit.max_output_tokens,
+        entry.output,
+        entry.outputLimit,
+        entry.output_limit,
+        entry.outputTokenLimit,
+        entry.output_token_limit,
+        entry.maxOutput,
+        entry.max_output,
+        entry.maxOutputTokens,
+        entry.max_output_tokens,
+    );
+};
+
+const normalizeProviderModalityList = (value: unknown): string[] => (
+    Array.isArray(value)
+        ? Array.from(new Set(value
+            .map((item) => trimProviderString(item).toLowerCase())
+            .filter(Boolean)))
+        : []
+);
+
+const hasProviderImageModality = (value: unknown): boolean => (
+    normalizeProviderModalityList(value).some((item) => item === "image" || item.includes("image"))
+);
+
+const buildProviderCapabilityModalities = (
+    entry: Record<string, unknown>,
+    capabilities: Record<string, unknown>,
+    direction: "input" | "output",
+    forceImage: boolean,
+) => {
+    const modalities = isPlainProviderRecord(entry.modalities) ? entry.modalities : {};
+    const capabilityModalities = isPlainProviderRecord(capabilities[direction])
+        ? capabilities[direction] as Record<string, unknown>
+        : {};
+    const explicitList = normalizeProviderModalityList(modalities[direction]);
+    const values = new Set(explicitList);
+    const hasExplicitModalities = values.size > 0;
+    if (!hasExplicitModalities && Object.keys(capabilityModalities).length === 0) {
+        values.add("text");
+    }
+    if (forceImage && direction === "input") {
+        values.add("image");
+    }
+
+    const has = (key: string) => (
+        capabilityModalities[key] === true || values.has(key)
+    );
+
+    return {
+        text: capabilityModalities.text === true || values.has("text") || (!hasExplicitModalities && capabilityModalities.text !== false),
+        audio: has("audio"),
+        image: has("image"),
+        video: has("video"),
+        pdf: has("pdf"),
+    };
+};
+
+const buildProviderModelCost = (entry: Record<string, unknown>) => {
+    const cost = isPlainProviderRecord(entry.cost) ? entry.cost : {};
+    const cache = isPlainProviderRecord(cost.cache) ? cost.cache : {};
+    return {
+        input: typeof cost.input === "number" && Number.isFinite(cost.input) ? cost.input : 0,
+        output: typeof cost.output === "number" && Number.isFinite(cost.output) ? cost.output : 0,
+        cache: {
+            read: typeof cache.read === "number" && Number.isFinite(cache.read)
+                ? cache.read
+                : (typeof cost.cache_read === "number" && Number.isFinite(cost.cache_read) ? cost.cache_read : 0),
+            write: typeof cache.write === "number" && Number.isFinite(cache.write)
+                ? cache.write
+                : (typeof cost.cache_write === "number" && Number.isFinite(cost.cache_write) ? cost.cache_write : 0),
+        },
+    };
+};
+
+const normalizeProviderModelEntry = (
+    providerId: string,
+    fallbackModelId: string,
+    value: unknown,
+): ProviderModel | null => {
+    const entry = isPlainProviderRecord(value) ? value : {};
+    const modelId = trimProviderString(entry.id) || trimProviderString(fallbackModelId) || trimProviderString(value);
+    if (!modelId) {
+        return null;
+    }
+
+    const capabilities = isPlainProviderRecord(entry.capabilities) ? entry.capabilities : {};
+    const attachment = readProviderBoolean(
+        capabilities.attachment,
+        entry.attachment,
+        entry.image,
+        entry.imageInput,
+        entry.vision,
+    ) || hasProviderImageModality(isPlainProviderRecord(entry.modalities) ? entry.modalities.input : undefined);
+    const toolcall = readProviderBoolean(
+        capabilities.toolcall,
+        capabilities.tool_call,
+        entry.toolcall,
+        entry.tool_call,
+        entry.toolCall,
+    );
+    const reasoning = readProviderBoolean(capabilities.reasoning, entry.reasoning);
+    const temperature = capabilities.temperature === false ? false : entry.temperature !== false;
+    const context = readProviderContextLimit(entry) ?? 0;
+    const output = readProviderOutputLimit(entry) ?? 0;
+    const api = isPlainProviderRecord(entry.api) ? entry.api : {};
+    const options = isPlainProviderRecord(entry.options) ? entry.options : {};
+    const headers = isPlainProviderRecord(entry.headers) ? entry.headers : {};
+    const status = entry.status === "alpha" || entry.status === "beta" || entry.status === "deprecated" || entry.status === "active"
+        ? entry.status
+        : "active";
+
+    return {
+        ...entry,
+        id: modelId,
+        providerID: trimProviderString(entry.providerID) || trimProviderString(entry.providerId) || providerId,
+        api: {
+            id: trimProviderString(api.id) || "chat",
+            url: trimProviderString(api.url),
+            npm: trimProviderString(api.npm),
+        },
+        name: trimProviderString(entry.name) || modelId,
+        capabilities: {
+            ...capabilities,
+            temperature,
+            reasoning,
+            attachment,
+            toolcall,
+            input: buildProviderCapabilityModalities(entry, capabilities, "input", attachment),
+            output: buildProviderCapabilityModalities(entry, capabilities, "output", false),
+        },
+        cost: buildProviderModelCost(entry),
+        limit: { context, output },
+        status,
+        options,
+        headers,
+    } as ProviderModel;
+};
+
+const normalizeProviderModelList = (providerId: string, models: unknown): ProviderModel[] => {
+    const entries: Array<[string, unknown]> = Array.isArray(models)
+        ? models.map((entry) => [
+            isPlainProviderRecord(entry) ? trimProviderString(entry.id) : trimProviderString(entry),
+            entry,
+        ])
+        : isPlainProviderRecord(models)
+            ? Object.entries(models)
+            : [];
+
+    const seen = new Set<string>();
+    const result: ProviderModel[] = [];
+    for (const [fallbackModelId, value] of entries) {
+        const model = normalizeProviderModelEntry(providerId, fallbackModelId, value);
+        if (!model || seen.has(model.id)) {
+            continue;
+        }
+        seen.add(model.id);
+        result.push(model);
+    }
+    return result;
+};
+
+const readSavedProviderConfig = async (
+    providerId: string,
+    directory: string | null,
+): Promise<{ name?: string; models: unknown } | null> => {
+    try {
+        const response = await runtimeFetch(`/api/provider/${encodeURIComponent(providerId)}/config`, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            ...(directory ? { query: { directory } } : {}),
+        });
+        if (!response.ok) {
+            return null;
+        }
+
+        const payload = await response.json().catch(() => null);
+        const config = isPlainProviderRecord(payload?.config)
+            ? payload.config
+            : isPlainProviderRecord(payload?.data) && isPlainProviderRecord(payload.data.config)
+                ? payload.data.config
+                : null;
+        if (!config || !(Array.isArray(config.models) || isPlainProviderRecord(config.models))) {
+            return null;
+        }
+
+        return {
+            name: trimProviderString(config.name) || undefined,
+            models: config.models,
+        };
+    } catch {
+        return null;
+    }
+};
+
+const applySavedProviderModels = async (
+    providers: ProviderWithModelList[],
+    directory: string | null,
+): Promise<ProviderWithModelList[]> => {
+    if (providers.length === 0) {
+        return providers;
+    }
+
+    const savedConfigs = new Map<string, { name?: string; models: unknown }>();
+    await Promise.all(providers.map(async (provider) => {
+        if (provider.source !== "config" && provider.source !== "custom") {
+            return;
+        }
+        const config = await readSavedProviderConfig(provider.id, directory);
+        if (!config) {
+            return;
+        }
+        const models = normalizeProviderModelList(provider.id, config.models);
+        if (models.length === 0) {
+            return;
+        }
+        savedConfigs.set(provider.id, { ...config, models });
+    }));
+
+    if (savedConfigs.size === 0) {
+        return providers;
+    }
+
+    return providers.map((provider) => {
+        const saved = savedConfigs.get(provider.id);
+        if (!saved || !Array.isArray(saved.models) || saved.models.length === 0) {
+            return provider;
+        }
+        return {
+            ...provider,
+            ...(saved.name ? { name: saved.name } : {}),
+            models: saved.models as ProviderModel[],
+        };
+    });
+};
+
 const isModelsDevModelEntry = (value: unknown): value is ModelsDevModelEntry => {
     if (!isRecord(value)) {
         return false;
@@ -1552,14 +1862,17 @@ export const useConfigStore = create<ConfigStore>()(
                             const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
                             const defaults = apiResult?.default || {};
 
-                            const processedProviders: ProviderWithModelList[] = providers.map((provider) => {
-                                const modelRecord = provider.models ?? {};
-                                const models: ProviderModel[] = Object.keys(modelRecord).map((modelId) => modelRecord[modelId]);
+                            const runtimeProviders: ProviderWithModelList[] = providers.map((provider) => {
+                                const models = normalizeProviderModelList(provider.id, provider.models);
                                 return {
                                     ...provider,
                                     models,
                                 };
                             });
+                            const processedProviders = await applySavedProviderModels(
+                                runtimeProviders,
+                                fromDirectoryKey(directoryKey),
+                            );
 
                             if (isStaleRequest()) {
                                 return;

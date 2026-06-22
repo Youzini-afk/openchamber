@@ -11,6 +11,7 @@ let storage = new Map<string, string>();
 let liveProviderId = 'live';
 let liveProviderIdsByDirectory = new Map<string, string>();
 let liveProviderVariants: Record<string, Record<string, unknown>> | undefined;
+let omitLiveModelId = false;
 let getProvidersCalls = 0;
 let getConfigCalls = 0;
 let listAgentsCalls = 0;
@@ -18,6 +19,9 @@ let liveAgents: TestAgent[] = [];
 let listAgentsImpl: ((directory?: string | null) => Promise<TestAgent[]>) | null = null;
 let withDirectoryCalls: Array<string | null> = [];
 let currentFetchDirectory: string | null = DIRECTORY;
+let runtimeFetchImpl: (...args: unknown[]) => Promise<Response> = async () => new Response(JSON.stringify({}), {
+  headers: { 'Content-Type': 'application/json' },
+});
 
 const makeStorage = (): Storage => ({
   getItem: (key: string) => storage.get(key) ?? null,
@@ -80,7 +84,7 @@ const providerResponse = (id: string, modelId = `${id}-model`, variants?: Record
   options: {},
   models: {
     [modelId]: {
-      id: modelId,
+      ...(omitLiveModelId ? {} : { id: modelId }),
       name: modelId,
       providerID: id,
       api: { id: 'chat', url: '', npm: '' },
@@ -187,9 +191,7 @@ mock.module('@/contexts/runtimeAPIRegistry', () => ({
 }));
 
 mock.module('@/lib/runtime-fetch', () => ({
-  runtimeFetch: mock(async () => new Response(JSON.stringify({}), {
-    headers: { 'Content-Type': 'application/json' },
-  })),
+  runtimeFetch: mock((...args: unknown[]) => runtimeFetchImpl(...args)),
 }));
 
 mock.module('@/lib/persistence', () => ({
@@ -217,6 +219,7 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'live';
     liveProviderIdsByDirectory = new Map<string, string>();
     liveProviderVariants = undefined;
+    omitLiveModelId = false;
     getProvidersCalls = 0;
     getConfigCalls = 0;
     listAgentsCalls = 0;
@@ -224,6 +227,9 @@ describe('useConfigStore provider persistence', () => {
     listAgentsImpl = null;
     withDirectoryCalls = [];
     currentFetchDirectory = DIRECTORY;
+    runtimeFetchImpl = async () => new Response(JSON.stringify({}), {
+      headers: { 'Content-Type': 'application/json' },
+    });
     setSyncRefs({} as never, { children: new Map(), getState: () => undefined } as never, DIRECTORY);
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
@@ -368,6 +374,73 @@ describe('useConfigStore provider persistence', () => {
     expect(state.currentProviderId).toBe('live');
     expect(state.currentModelId).toBe('live-model');
     expect(state.currentVariant).toBe('fast');
+  });
+
+  test('loadProviders preserves model ids from provider model record keys', async () => {
+    liveProviderId = 'custom';
+    omitLiveModelId = true;
+
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, force: true, source: 'test:modelRecordKey' });
+
+    const state = useConfigStore.getState();
+    expect(state.providers[0]?.models.map((entry) => entry.id)).toEqual(['custom-model']);
+    expect(state.currentProviderId).toBe('custom');
+    expect(state.currentModelId).toBe('custom-model');
+  });
+
+  test('saved custom provider models override runtime provider model snapshots', async () => {
+    liveProviderId = 'custom';
+    runtimeFetchImpl = async (input) => {
+      const url = typeof input === 'string' ? input : '';
+      if (url.includes('/api/provider/custom/config')) {
+        return new Response(JSON.stringify({
+          providerId: 'custom',
+          config: {
+            providerId: 'custom',
+            name: 'Custom Provider',
+            baseURL: 'https://api.example.test/v1',
+            models: [
+              {
+                id: 'saved-model',
+                name: 'Saved Model',
+                context: 32000,
+                output: 4096,
+                attachment: true,
+                tool_call: true,
+                reasoning: true,
+                variants: { high: {} },
+              },
+              { id: 'saved-flash', name: 'Saved Flash' },
+            ],
+          },
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({}), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, force: true, source: 'test:savedCustomModels' });
+
+    const state = useConfigStore.getState();
+    expect(state.providers[0]?.name).toBe('Custom Provider');
+    expect(state.providers[0]?.models.map((entry) => entry.id)).toEqual(['saved-model', 'saved-flash']);
+    expect(state.currentProviderId).toBe('custom');
+    expect(state.currentModelId).toBe('saved-model');
+    expect(state.providers[0]?.models[0]?.limit).toEqual({ context: 32000, output: 4096 });
+    expect(state.providers[0]?.models[0]?.capabilities.reasoning).toBe(true);
+    expect(state.providers[0]?.models[0]?.capabilities.toolcall).toBe(true);
+    expect(state.providers[0]?.models[0]?.capabilities.attachment).toBe(true);
+    const metadata = state.getModelMetadata('custom', 'saved-model');
+    expect(metadata?.id).toBe('saved-model');
+    expect(metadata?.providerId).toBe('custom');
+    expect(metadata?.tool_call).toBe(true);
+    expect(metadata?.reasoning).toBe(true);
+    expect(metadata?.attachment).toBe(true);
+    expect(metadata?.limit).toEqual({ context: 32000, output: 4096 });
   });
 
   test('loadAgents does not fetch OpenCode config directly', async () => {
