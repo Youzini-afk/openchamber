@@ -11,6 +11,7 @@ let storage = new Map<string, string>();
 let liveProviderId = 'live';
 let liveProviderIdsByDirectory = new Map<string, string>();
 let liveProviderVariants: Record<string, Record<string, unknown>> | undefined;
+let liveProviderSource: 'env' | 'config' | 'custom' | 'api' = 'config';
 let omitLiveModelId = false;
 let getProvidersCalls = 0;
 let getConfigCalls = 0;
@@ -79,7 +80,7 @@ const provider = (id: string, modelId = `${id}-model`, variants?: Record<string,
 const providerResponse = (id: string, modelId = `${id}-model`, variants?: Record<string, Record<string, unknown>>) => ({
   id,
   name: id,
-  source: 'config' as const,
+  source: liveProviderSource,
   env: [],
   options: {},
   models: {
@@ -219,6 +220,7 @@ describe('useConfigStore provider persistence', () => {
     liveProviderId = 'live';
     liveProviderIdsByDirectory = new Map<string, string>();
     liveProviderVariants = undefined;
+    liveProviderSource = 'config';
     omitLiveModelId = false;
     getProvidersCalls = 0;
     getConfigCalls = 0;
@@ -390,6 +392,7 @@ describe('useConfigStore provider persistence', () => {
 
   test('saved custom provider models override runtime provider model snapshots', async () => {
     liveProviderId = 'custom';
+    liveProviderSource = 'api';
     runtimeFetchImpl = async (input) => {
       const url = typeof input === 'string' ? input : '';
       if (url.includes('/api/provider/custom/config')) {

@@ -28,9 +28,15 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { CustomProviderEditor } from './CustomProviderEditor';
 import {
   createCustomProviderFormStateFromConfig,
-  hasEditableProviderConfigSource,
 } from './customProviderForm';
 import type { CustomProviderEditableFormState } from './customProviderForm';
+import {
+  buildProviderSourcesFromConfig,
+  canEditProviderFromDetails,
+  isEditableCustomProviderConfig,
+  readProviderConfigPayload,
+} from './providerDetailConfig';
+import type { ProviderSources } from './providerDetailConfig';
 import { shouldLoadAvailableProviders } from './providerAvailability';
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat(getCurrentIntlLocale(), {
@@ -68,18 +74,6 @@ interface ProviderOption {
   name?: string;
 }
 
-interface ProviderSourceInfo {
-  exists: boolean;
-  path?: string | null;
-}
-
-interface ProviderSources {
-  auth: ProviderSourceInfo;
-  user: ProviderSourceInfo;
-  project: ProviderSourceInfo;
-  custom?: ProviderSourceInfo;
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -93,12 +87,6 @@ const getCurrentDirectory = (): string | null => {
 
 const getProviderSourceCacheKey = (providerId: string, directory: string | null): string =>
   `${providerId}\u0000${directory || ''}`;
-
-const isEditableCustomProviderConfig = (config: unknown): boolean => {
-  if (!isRecord(config)) return false;
-  const baseURL = typeof config.baseURL === 'string' ? config.baseURL.trim() : '';
-  return baseURL.length > 0 && (Array.isArray(config.models) || isRecord(config.models));
-};
 
 const normalizeAuthType = (method: AuthMethod) => {
   const raw = typeof method.type === 'string' ? method.type : '';
@@ -196,6 +184,7 @@ export const ProvidersPage: React.FC = () => {
   const [providerSearchQuery, setProviderSearchQuery] = React.useState('');
   const [providerDropdownOpen, setProviderDropdownOpen] = React.useState(false);
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
+  const [editableProviderConfigs, setEditableProviderConfigs] = React.useState<Record<string, CustomProviderEditableFormState | null>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [addProviderMode, setAddProviderMode] = React.useState<'known' | 'custom'>('known');
   const [editingCustomProvider, setEditingCustomProvider] = React.useState(false);
@@ -350,27 +339,71 @@ export const ProvidersPage: React.FC = () => {
           }
           return next;
         });
-        const response = await runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-          ...(directory ? { query: { directory } } : {}),
-        });
+        const [sourceResponse, configResponse] = await Promise.allSettled([
+          runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/source`, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            ...(directory ? { query: { directory } } : {}),
+          }),
+          runtimeFetch(`/api/provider/${encodeURIComponent(selectedProviderId)}/config`, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            ...(directory ? { query: { directory } } : {}),
+          }),
+        ]);
 
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(payload?.error || t('settings.providers.page.toast.providerSourcesLoadFailed'));
+        if (sourceResponse.status === 'fulfilled') {
+          const response = sourceResponse.value;
+          const payload = await response.json().catch(() => null);
+          if (response.ok) {
+            const sources = (payload?.sources ?? payload?.data?.sources) as ProviderSources | undefined;
+            if (!cancelled && sources) {
+              setProviderSources((prev) => ({
+                ...prev,
+                [sourceCacheKey]: sources,
+              }));
+            }
+          } else if (!cancelled) {
+            console.warn('Failed to load provider sources:', payload?.error || t('settings.providers.page.toast.providerSourcesLoadFailed'));
+          }
+        } else if (!cancelled) {
+          console.warn('Failed to load provider sources:', sourceResponse.reason);
         }
 
-        const sources = (payload?.sources ?? payload?.data?.sources) as ProviderSources | undefined;
-        if (!cancelled && sources) {
-          setProviderSources((prev) => ({
+        if (configResponse.status === 'fulfilled') {
+          const response = configResponse.value;
+          const payload = await response.json().catch(() => null);
+          const config = response.ok ? readProviderConfigPayload(payload) : undefined;
+          const editState = isEditableCustomProviderConfig(config)
+            ? createCustomProviderFormStateFromConfig(config)
+            : null;
+          if (!cancelled) {
+            setEditableProviderConfigs((prev) => ({
+              ...prev,
+              [sourceCacheKey]: editState,
+            }));
+            if (editState && config) {
+              setProviderSources((prev) => ({
+                ...prev,
+                [sourceCacheKey]: buildProviderSourcesFromConfig(config, prev[sourceCacheKey]),
+              }));
+            }
+          }
+        } else if (!cancelled) {
+          setEditableProviderConfigs((prev) => ({
             ...prev,
-            [sourceCacheKey]: sources,
+            [sourceCacheKey]: null,
           }));
         }
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load provider sources:', error);
+          const directory = getCurrentDirectory() || currentDirectory || null;
+          const sourceCacheKey = getProviderSourceCacheKey(selectedProviderId, directory);
+          setEditableProviderConfigs((prev) => ({
+            ...prev,
+            [sourceCacheKey]: null,
+          }));
         }
       }
     };
@@ -387,6 +420,13 @@ export const ProvidersPage: React.FC = () => {
   const selectedSources = selectedProviderId
     ? providerSources[getProviderSourceCacheKey(selectedProviderId, selectedProviderDirectory)]
     : undefined;
+  const selectedProviderConfigKey = selectedProviderId
+    ? getProviderSourceCacheKey(selectedProviderId, selectedProviderDirectory)
+    : '';
+  const selectedEditableProviderConfig = selectedProviderConfigKey
+    ? editableProviderConfigs[selectedProviderConfigKey]
+    : null;
+  const canEditSelectedProvider = canEditProviderFromDetails(selectedEditableProviderConfig, selectedSources);
 
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
@@ -567,6 +607,12 @@ export const ProvidersPage: React.FC = () => {
     }
 
     try {
+      if (selectedEditableProviderConfig) {
+        setCustomProviderEditState(selectedEditableProviderConfig);
+        setEditingCustomProvider(true);
+        return;
+      }
+
       const directory = getCurrentDirectory();
       const response = await runtimeFetch(
         `/api/provider/${encodeURIComponent(selectedProviderId)}/config`,
@@ -583,13 +629,18 @@ export const ProvidersPage: React.FC = () => {
         return;
       }
 
-      const config = payload?.config;
+      const config = readProviderConfigPayload(payload);
       if (!isEditableCustomProviderConfig(config)) {
         toast.error(t('settings.providers.page.toast.customProviderConfigUnavailable'));
         return;
       }
 
-      setCustomProviderEditState(createCustomProviderFormStateFromConfig(config));
+      const editState = createCustomProviderFormStateFromConfig(config);
+      setEditableProviderConfigs((prev) => ({
+        ...prev,
+        [getProviderSourceCacheKey(selectedProviderId, directory)]: editState,
+      }));
+      setCustomProviderEditState(editState);
       setEditingCustomProvider(true);
     } catch (error) {
       console.error('Failed to load custom provider config:', error);
@@ -938,7 +989,7 @@ export const ProvidersPage: React.FC = () => {
               </p>
             </div>
           </div>
-          {selectedSources && hasEditableProviderConfigSource(selectedSources) && (
+          {canEditSelectedProvider && (
             <Button
               variant="outline"
               size="xs"

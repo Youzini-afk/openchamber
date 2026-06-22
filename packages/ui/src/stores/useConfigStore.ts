@@ -754,9 +754,6 @@ const applySavedProviderModels = async (
 
     const savedConfigs = new Map<string, { name?: string; models: unknown }>();
     await Promise.all(providers.map(async (provider) => {
-        if (provider.source !== "config" && provider.source !== "custom") {
-            return;
-        }
         const config = await readSavedProviderConfig(provider.id, directory);
         if (!config) {
             return;
