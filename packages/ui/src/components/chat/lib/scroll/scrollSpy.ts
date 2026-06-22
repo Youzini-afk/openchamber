@@ -9,6 +9,63 @@ export type OffsetTurn = {
     top: number;
 };
 
+/**
+ * Compute the intersection ratio of an element rect within a container rect.
+ * Returns the fraction of the element's height that overlaps the container
+ * (0..1). If the element has zero height or doesn't overlap, returns 0.
+ *
+ * Exported for unit testing the coordinate-system consistency of the
+ * visible-geometry refresh path (Blocking 1 regression test).
+ */
+export const computeIntersectionRatio = (
+    elementRect: { top: number; bottom: number; height: number },
+    containerRect: { top: number; bottom: number },
+): number => {
+    const elementHeight = elementRect.height;
+    if (elementHeight <= 0) {
+        return 0;
+    }
+
+    const overlapTop = Math.max(elementRect.top, containerRect.top);
+    const overlapBottom = Math.min(elementRect.bottom, containerRect.bottom);
+    const overlap = overlapBottom - overlapTop;
+    if (overlap <= 0) {
+        return 0;
+    }
+
+    return Math.min(1, overlap / elementHeight);
+};
+
+/**
+ * Measure the current viewport-coordinate geometry (top + ratio) of a visible
+ * turn element relative to its scroll container. Both values are in VIEWPORT
+ * coordinates (getBoundingClientRect().top), matching the coordinate system
+ * used by `update()`'s `line = container.getBoundingClientRect().top + 100`.
+ *
+ * Exported for unit testing. The spy's `refreshVisibleGeometry()` uses this
+ * to re-read the visible subset on each update so active-turn picking uses
+ * current positions, not stale IO-callback snapshots.
+ */
+export const measureVisibleTurnGeometry = (
+    element: HTMLElement,
+    container: HTMLElement,
+): { ratio: number; top: number } => {
+    const elementRect = element.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const ratio = computeIntersectionRatio(
+        {
+            top: elementRect.top,
+            bottom: elementRect.bottom,
+            height: elementRect.height,
+        },
+        {
+            top: containerRect.top,
+            bottom: containerRect.bottom,
+        },
+    );
+    return { ratio, top: elementRect.top };
+};
+
 type ScrollSpyInput = {
     onActive: (id: string) => void;
     raf?: (cb: FrameRequestCallback) => number;
@@ -107,6 +164,16 @@ export const createScrollSpy = (input: ScrollSpyInput) => {
             return;
         }
 
+        // Avoid running getBoundingClientRect for every turn node on every
+        // frame. update() prefers the IntersectionObserver visible map and
+        // only falls back to offsets when visibility is empty. While IO has
+        // any visible entries, keep the (possibly stale) offset list and let
+        // the visible map drive active-turn picking. Only do the full sweep
+        // when there is no IO signal to fall back on.
+        if (visible.size > 0) {
+            return;
+        }
+
         const baseTop = container.getBoundingClientRect().top;
         offsets = [...nodes].map(([key, element]) => ({
             id: key,
@@ -116,11 +183,54 @@ export const createScrollSpy = (input: ScrollSpyInput) => {
         dirty = false;
     };
 
+    const refreshVisibleGeometry = () => {
+        // The IntersectionObserver visible map stores geometry (top, ratio)
+        // captured at the time the IO callback fired — in VIEWPORT coordinates
+        // (entry.boundingClientRect.top). After threshold was reduced to
+        // [0, 1], IO only fires on enter/leave — so during normal scrolling
+        // the visible map keeps stale top AND stale ratio values indefinitely,
+        // causing active-turn picking to lag behind the real scroll position
+        // and pick based on outdated intersection ratios.
+        //
+        // Re-read getBoundingClientRect for the (typically small) visible
+        // subset only. This is NOT a full sweep of all nodes — it touches
+        // only the handful of turns currently intersecting the viewport,
+        // which is cheap even for high-floor sessions.
+        //
+        // Coordinate system: we store VIEWPORT top (element.getBoundingClientRect().top)
+        // to match the IO callback's coordinate system AND the `line` used by
+        // update() (container.getBoundingClientRect().top + 100). The previous
+        // implementation stored content coordinates (rect.top - baseTop + scrollTop)
+        // which mismatched the viewport-coordinate `line` and broke active-turn
+        // picking at high scrollTop values.
+        //
+        // We also recompute the intersection ratio (overlap height / element
+        // height) so pickVisibleTurnId's ratio-first sort uses current
+        // visibility, not the stale ratio from the last enter/leave callback.
+        const container = root;
+        if (!container || visible.size === 0) {
+            return;
+        }
+
+        for (const [key, element] of nodes) {
+            const entry = visible.get(key);
+            if (!entry) continue;
+            const measured = measureVisibleTurnGeometry(element, container);
+            if (measured.top !== entry.top || measured.ratio !== entry.ratio) {
+                visible.set(key, measured);
+            }
+        }
+    };
+
     const update = () => {
         const container = root;
         if (!container) {
             return;
         }
+
+        // Refresh the visible subset's geometry so active-turn picking uses
+        // current scroll-relative positions, not stale IO-callback snapshots.
+        refreshVisibleGeometry();
 
         const line = container.getBoundingClientRect().top + 100;
         const next =
@@ -185,7 +295,12 @@ export const createScrollSpy = (input: ScrollSpyInput) => {
                     },
                     {
                         root: container,
-                        threshold: [0, 0.25, 0.5, 0.75, 1],
+                        // Only fire on enter/leave to skip the 0.25/0.5/0.75
+                        // intermediate thresholds. Picking the active turn only
+                        // needs "is it visible at all" + the geometry, so the
+                        // intermediate ratios are noise that schedule extra rAF
+                        // work during streaming.
+                        threshold: [0, 1],
                     },
                 );
             } catch {
@@ -220,12 +335,33 @@ export const createScrollSpy = (input: ScrollSpyInput) => {
         mo?.disconnect();
         mo = undefined;
         if (CtorMO) {
-            mo = new CtorMO(() => {
-                dirty = true;
-                schedule();
+            mo = new CtorMO((records) => {
+                // Without subtree:true, MO only fires for direct children of
+                // the scroll container. The turn nodes are direct children of
+                // the inner content wrapper, but turn-internal mutations
+                // (streaming text growth, tool reveal) should not invalidate
+                // the spy. Filter to only count records whose target is a
+                // turn node container — everything else is interior churn.
+                let changed = false;
+                for (const record of records) {
+                    const target = record.target;
+                    if (!(target instanceof HTMLElement)) continue;
+                    if (!target.dataset.turnId && !target.hasAttribute('data-turn-entry')) {
+                        continue;
+                    }
+                    if (record.addedNodes.length > 0 || record.removedNodes.length > 0) {
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed) {
+                    dirty = true;
+                    schedule();
+                }
             });
+            // childList only — no subtree. We only care about turn nodes being
+            // added/removed at the container level, not interior churn.
             const moConfig: MutationObserverInit = {
-                subtree: true,
                 childList: true,
             };
             if (!CtorRO) {

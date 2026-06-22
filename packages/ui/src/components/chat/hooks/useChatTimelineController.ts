@@ -11,6 +11,7 @@ import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
+import { isProgressiveMountInFlight } from '@/sync/use-sync';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -125,11 +126,34 @@ export const useChatTimelineController = ({
     const turnWindowModel = React.useMemo(() => {
         const key = sessionId ?? ""
         const cached = key ? turnModelCache.get(key) : undefined
-        if (cached && cached.messages === messages) {
-            rememberTurnModel(key, cached)
-            previousTurnWindowModelRef.current = cached.model
-            previousMessagesRef.current = messages
-            return cached.model
+        // Loose cache hit: same length + same first/last message id. The
+        // previous strict check (cached.messages === messages) required exact
+        // reference equality, which almost never holds because each render
+        // creates a new messages array from the store — so the cache was
+        // effectively dead code. The loose check catches the streaming case
+        // (last message's parts grow but its id/role/parent stay the same)
+        // and lets updateTurnWindowModelIncremental refresh the model in
+        // O(delta) instead of rebuilding O(N) on every frame.
+        if (cached && cached.messages.length === messages.length && messages.length > 0) {
+            const cachedFirstId = cached.messages[0]?.info?.id ?? null
+            const cachedLastId = cached.messages[cached.messages.length - 1]?.info?.id ?? null
+            const currentFirstId = messages[0]?.info?.id ?? null
+            const currentLastId = messages[messages.length - 1]?.info?.id ?? null
+            if (cachedFirstId === currentFirstId && cachedLastId === currentLastId) {
+                const incrementalModel = updateTurnWindowModelIncremental(
+                    cached.model,
+                    cached.messages,
+                    messages,
+                )
+                if (incrementalModel) {
+                    rememberTurnModel(key, { messages, model: incrementalModel })
+                    previousTurnWindowModelRef.current = incrementalModel
+                    previousMessagesRef.current = messages
+                    return incrementalModel
+                }
+                // updateTurnWindowModelIncremental returned null — interior
+                // changes it can't handle. Fall through to the full rebuild.
+            }
         }
 
         const incrementalModel = updateTurnWindowModelIncremental(
@@ -344,11 +368,15 @@ export const useChatTimelineController = ({
         oldestId: string | null;
         newestId: string | null;
         scrollHeight: number;
+        sessionId: string | null;
     } | null>(null);
 
     React.useLayoutEffect(() => {
         const container = scrollRef.current;
         if (!container) return;
+
+        const currentOldestId = renderedMessages[0]?.info?.id ?? null;
+        const currentNewestId = renderedMessages[renderedMessages.length - 1]?.info?.id ?? null;
 
         const snap = prePrependScrollRef.current;
         if (snap) {
@@ -364,23 +392,26 @@ export const useChatTimelineController = ({
                 }
             }
         } else {
-            // Auto-detect a prepend: the oldest message changed while the newest
-            // stayed the same (distinguishes a real prepend from a session
-            // switch, a bottom append, or a streaming part growing). Compensate
-            // synchronously by the exact height delta — for a bottom-pinned
-            // viewport this keeps it pinned, for a released one it preserves the
-            // read position, with no intermediate frame for auto-follow to fight.
+            // Auto-detect a prepend by the oldest message id changing WITHIN
+            // the same session. We no longer require the newest id to be
+            // unchanged: when streaming and prepend land in the same commit,
+            // newestId also changes and the old guard would skip compensation
+            // — leaving the viewport visibly jumped up until auto-follow
+            // yanked it back on the next frame (a one-shot up/down judder).
+            // Instead, compensate by the height delta whenever a prepend is
+            // detected within the same session, regardless of whether the
+            // tail also grew. The full delta includes any streaming tail
+            // growth; for a bottom-pinned viewport auto-follow re-clamps on
+            // the next frame anyway, and for a released viewport the small
+            // over-compensation (tail growth) is far less jarring than the
+            // large under-compensation (whole prepend page) of skipping.
             const prev = prependTrackingRef.current;
-            const currentOldestId = renderedMessages[0]?.info?.id ?? null;
-            const currentNewestId = renderedMessages[renderedMessages.length - 1]?.info?.id ?? null;
             const isPrepend = Boolean(
                 prev
                 && prev.oldestId
                 && currentOldestId
                 && currentOldestId !== prev.oldestId
-                && prev.newestId
-                && currentNewestId
-                && currentNewestId === prev.newestId,
+                && prev.sessionId === sessionIdRef.current,
             );
             if (isPrepend && prev) {
                 const delta = container.scrollHeight - prev.scrollHeight;
@@ -391,9 +422,10 @@ export const useChatTimelineController = ({
         }
 
         prependTrackingRef.current = {
-            oldestId: renderedMessages[0]?.info?.id ?? null,
-            newestId: renderedMessages[renderedMessages.length - 1]?.info?.id ?? null,
+            oldestId: currentOldestId,
+            newestId: currentNewestId,
             scrollHeight: container.scrollHeight,
+            sessionId: sessionIdRef.current,
         };
     }, [renderedMessages, scrollRef, restoreViewportAnchor]);
 
@@ -505,6 +537,10 @@ export const useChatTimelineController = ({
 
     const loadEarlierIfPinnedViewportUnderfilled = React.useCallback(() => {
         if (historyInteractionRef.current) return;
+        // Don't compete with a progressive mount that's already prepending
+        // older history for this session from useSync. Running both in the
+        // same frame produces a double delta application and visible judder.
+        if (sessionIdRef.current && isProgressiveMountInFlight(sessionIdRef.current)) return;
         const container = scrollRef.current;
         if (!container) return;
         if (!shouldAutoLoadEarlierForUnderfilledPinnedViewport({

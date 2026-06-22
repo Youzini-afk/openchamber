@@ -553,19 +553,41 @@ export const useChatAutoFollow = ({
         const container = containerEl;
         if (!container || typeof ResizeObserver === 'undefined') return;
 
-        const observer = new ResizeObserver(() => {
+        // RO can fire many times per frame during streaming (markdown workers
+        // settling, tool reveals, async height changes). Calling clamp +
+        // startFollowLoop synchronously on every callback creates a feedback
+        // loop: our scrollTop write triggers a reflow, which triggers another
+        // RO callback, which writes scrollTop again — and settledFrames never
+        // reaches SETTLE_FRAMES so the rAF loop runs forever. Coalesce all RO
+        // callbacks within a frame into a single rAF flush (same pattern as
+        // OverlayScrollbar's scheduleMetricsUpdate). startFollowLoop is a
+        // no-op when a loop is already running, so the in-flight loop converges
+        // naturally instead of being reset on every RO tick.
+        let roFrame: number | null = null;
+        const flush = () => {
+            roFrame = null;
             updateOverflowAndButton();
             if (stateRef.current === 'following') {
                 clampToBottomIfFollowing();
                 startFollowLoop();
             }
+        };
+        const observer = new ResizeObserver(() => {
+            if (roFrame !== null) return;
+            roFrame = window.requestAnimationFrame(flush);
         });
         observer.observe(container);
         const inner = container.firstElementChild;
         if (inner instanceof Element) {
             observer.observe(inner);
         }
-        return () => observer.disconnect();
+        return () => {
+            if (roFrame !== null && typeof window !== 'undefined') {
+                window.cancelAnimationFrame(roFrame);
+                roFrame = null;
+            }
+            observer.disconnect();
+        };
     }, [clampToBottomIfFollowing, containerEl, startFollowLoop, updateOverflowAndButton]);
 
     React.useEffect(() => {
@@ -625,6 +647,23 @@ export const useChatAutoFollow = ({
         if (!onActiveTurnChange) return;
         const container = containerEl;
         if (!container) return;
+
+        // While auto-following a working (streaming) session, the active-turn
+        // tracker is noise: the viewport is pinned to the bottom and the user
+        // cannot read intermediate turns anyway. Keeping the spy's
+        // IntersectionObserver / MutationObserver / ResizeObserver alive during
+        // streaming adds rAF work that competes with the follow loop and feeds
+        // the observer feedback ring. Tear the spy down (its cleanup calls
+        // clear + disconnect) and re-create it when the user releases or the
+        // session stops working.
+        if (state === 'following' && sessionIsWorking) {
+            // Clear the stale active turn so the UI/navigation layer doesn't
+            // hold onto the turn that was active when streaming started.
+            // Without this, ArrowUp navigation in a pinned streaming session
+            // would jump from a stale activeTurnId instead of from the tail.
+            onActiveTurnChange(null);
+            return;
+        }
 
         let lastActiveTurnId: string | null = null;
         const spy = createScrollSpy({
@@ -689,7 +728,7 @@ export const useChatAutoFollow = ({
             mutationObserver.disconnect();
             spy.destroy();
         };
-    }, [containerEl, onActiveTurnChange]);
+    }, [containerEl, onActiveTurnChange, state, sessionIsWorking]);
 
     return {
         scrollRef,

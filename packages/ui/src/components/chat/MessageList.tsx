@@ -12,6 +12,7 @@ import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
 import { getNormalizedMessageForDisplay, hasCompactionPart } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
 import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
 import { streamPerfCount, streamPerfMeasure } from '@/stores/utils/streamDebug';
@@ -24,7 +25,12 @@ const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const MESSAGE_LIST_DYNAMIC_TAIL_COUNT = 12;
 const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
 const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
-const MESSAGE_LIST_BUFFER_SIZE = 900;
+// Keep the virtualizer's off-screen buffer small. A large buffer (the previous
+// 900) meant the virtualizer retained measurement/state for hundreds of rows
+// the user will never scroll to during a streaming session, and each RO/IO
+// callback walked all of them. 30 is enough to keep scrolling smooth without
+// paying measurement cost for rows far outside the viewport.
+const MESSAGE_LIST_BUFFER_SIZE = 30;
 const TIMELINE_CACHE_LIMIT = 16;
 // Dynamic chat rows can grow after the first paint (markdown/Shiki workers,
 // tool output reveal, task summaries). Restoring stale virtual heights during
@@ -1033,7 +1039,13 @@ const StreamingTailContent: React.FC<{
     activeStreamingPhase,
     reviewTransferDirection,
 }) => {
-    const liveParts = useSessionParts(activeStreamingMessageId ?? '', directory);
+    const livePartsRaw = useSessionParts(activeStreamingMessageId ?? '', directory);
+    // Throttle the streaming tail to one update per 50ms instead of once per
+    // 60fps frame. `message.part.delta` fires ~60/sec; rebuilding the live
+    // entry (which re-runs turn projection for the tail) on every delta burns
+    // main-thread time and competes with the auto-follow rAF clamp. 50ms is
+    // fast enough to feel live and slow enough to let the browser breathe.
+    const liveParts = useDebouncedValue(livePartsRaw, 50);
     const liveEntry = React.useMemo(() => buildLiveStreamingEntry(entry, {
         activeStreamingMessageId,
         liveParts,
@@ -1081,6 +1093,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     directory,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
+    // shift is now hard-coded to false (useChatTimelineController's
+    // useLayoutEffect handles prepend compensation exclusively). The prop is
+    // kept on the interface so callers don't break; acknowledge it here.
+    void isLoadingOlder;
     const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
@@ -1283,8 +1299,18 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }, [allEntries, shouldSplitDynamicTail]);
     const shouldVirtualizeHistory = shouldSplitDynamicTail && historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const historyEntryKeys = React.useMemo(() => historyEntries.map((entry) => entry.key), [historyEntries]);
+    // The virtualizer remounts when its key changes. The previous key joined
+    // EVERY entry key, so any ordinary content change (a single turn's text
+    // growing, a tool reveal) flipped a key character and forced the
+    // Virtualizer to drop all measured heights and remount — visibly slow on
+    // high-floor sessions. Depend only on the stable edges (session, count,
+    // first/last entry key) so interior churn does not remount the virtualizer.
     const historyVirtualizerKey = React.useMemo(
-        () => `${sessionKey}:${historyEntryKeys.join('\u001f')}`,
+        () => {
+            const firstKey = historyEntryKeys[0] ?? '';
+            const lastKey = historyEntryKeys.length > 0 ? historyEntryKeys[historyEntryKeys.length - 1] ?? '' : '';
+            return `${sessionKey}:${historyEntryKeys.length}:${firstKey}:${lastKey}`;
+        },
         [historyEntryKeys, sessionKey],
     );
     const virtualCache = React.useMemo(
@@ -1593,7 +1619,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             virtualizerRef={setHistoryVirtualizer}
                             virtualizerKey={historyVirtualizerKey}
                             virtualCache={virtualCache}
-                            shift={isLoadingOlder}
+                            shift={false}
                             onMessageContentChange={stableHistoryContentChange}
                             getAnimationHandlers={stableGetAnimationHandlers}
                             scrollToBottom={stableScrollToBottom}

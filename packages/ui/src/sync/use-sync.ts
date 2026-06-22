@@ -47,6 +47,49 @@ const syncSessionInflightByKey = new Map<string, Promise<void>>()
 // sidebar) from having each completed fetch fight for focus.
 const syncSessionGenerationByKey = new Map<string, number>()
 
+// Tracks which sessions currently have a progressive mount (second-page
+// prepend) in flight. useChatTimelineController's
+// loadEarlierIfPinnedViewportUnderfilled checks this to avoid racing a second
+// prepend on top of the one progressive mount is already dispatching —
+// running both in the same frame applies the height delta twice and judders.
+//
+// The value is a token (incrementing number), NOT a boolean. When two
+// progressive mounts overlap for the same session (e.g. user rapidly
+// re-enters the session), the older request's finally block must NOT clear
+// the newer request's token. Each request captures its own token at start
+// and only deletes the Map entry if the stored token still matches its own.
+const progressiveMountInFlightBySession = new Map<string, number>()
+let progressiveMountTokenCounter = 0
+
+// Module-level export so non-hook consumers (useChatTimelineController) can
+// query progressive mount state without subscribing to the sync store.
+export function isProgressiveMountInFlight(sessionID: string): boolean {
+  return progressiveMountInFlightBySession.has(sessionID)
+}
+
+// Test + internal helper: marks a progressive mount as in-flight and returns
+// the token the caller must pass to endProgressiveMount to clear it. The token
+// guards against a stale finally clearing a newer request's flag.
+//
+// Exported for unit testing the overlap race (two tokens for the same session;
+// the older finally must NOT clear the newer token).
+export function beginProgressiveMount(sessionID: string): number {
+  progressiveMountTokenCounter += 1
+  const token = progressiveMountTokenCounter
+  progressiveMountInFlightBySession.set(sessionID, token)
+  return token
+}
+
+// Test + internal helper: clears the in-flight flag ONLY if the stored token
+// matches the caller's token. If a newer progressive mount for the same
+// session has already started (overwriting the token), this is a no-op —
+// the newer request's flag survives.
+export function endProgressiveMount(sessionID: string, token: number): void {
+  if (progressiveMountInFlightBySession.get(sessionID) === token) {
+    progressiveMountInFlightBySession.delete(sessionID)
+  }
+}
+
 type SyncMeta = {
   limit: number
   cursor: string | undefined
@@ -507,7 +550,20 @@ export function useSync() {
         if (!isStale()) {
           const currentMeta = getMetaFor(sessionID)
           if (currentMeta.cursor && !currentMeta.complete) {
-            loadMessages(sessionID, { before: currentMeta.cursor, mode: "prepend", isStale })
+            // Mark this session as having a progressive mount in flight so
+            // loadEarlierIfPinnedViewportUnderfilled doesn't race a second
+            // prepend on top of this one. beginProgressiveMount returns a
+            // token; endProgressiveMount only clears if the token still
+            // matches — so a newer overlapping progressive mount for the
+            // same session is NOT cleared by this request's finally.
+            const token = beginProgressiveMount(sessionID)
+            void (async () => {
+              try {
+                await loadMessages(sessionID, { before: currentMeta.cursor, mode: "prepend", isStale })
+              } finally {
+                endProgressiveMount(sessionID, token)
+              }
+            })()
           }
         }
       })()
