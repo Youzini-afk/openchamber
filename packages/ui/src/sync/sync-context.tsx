@@ -28,7 +28,6 @@ import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize
 import { syncDebug } from "./debug"
 import { getReconnectCandidateSessionIds } from "./reconnect-recovery"
 import { opencodeClient } from "@/lib/opencode/client"
-import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { toast } from "@/components/ui"
@@ -39,6 +38,11 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
+import {
+  autoAcceptGroupedPermissions,
+  removePermissionRequestFromStore,
+  shouldAutoAcceptPermissionForSession,
+} from "./permission-auto-accept"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { openSessionFromToast } from "./session-navigation"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
@@ -1138,34 +1142,10 @@ export async function resyncBlockingRequestsForDirectory(
       grouped[sessionId].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     }
 
-    const permissionStore = usePermissionStore.getState()
-    const autoAcceptingSessionIds = Object.keys(grouped).filter((sessionId) => permissionStore.isSessionAutoAccepting(sessionId))
+    const visibleGrouped = await autoAcceptGroupedPermissions(grouped, (permission) =>
+      sessionActions.respondToPermission(permission.sessionID, permission.id, "once"))
 
-    if (autoAcceptingSessionIds.length > 0) {
-      const acceptedIdsBySession = new Map<string, Set<string>>()
-      await Promise.all(autoAcceptingSessionIds.flatMap((sessionId) =>
-        (grouped[sessionId] ?? []).map(async (permission) => {
-          try {
-            await sessionActions.respondToPermission(permission.sessionID, permission.id, "once")
-            const accepted = acceptedIdsBySession.get(sessionId) ?? new Set<string>()
-            accepted.add(permission.id)
-            acceptedIdsBySession.set(sessionId, accepted)
-          } catch {
-            // Keep failed auto-accept permissions in UI state so the user can act.
-          }
-        }),
-      ))
-
-      for (const sessionId of autoAcceptingSessionIds) {
-        const acceptedIds = acceptedIdsBySession.get(sessionId)
-        if (!acceptedIds) continue
-        const remaining = (grouped[sessionId] ?? []).filter((permission) => !acceptedIds.has(permission.id))
-        if (remaining.length > 0) grouped[sessionId] = remaining
-        else delete grouped[sessionId]
-      }
-    }
-
-    for (const [sessionId, permissions] of Object.entries(grouped)) {
+    for (const [sessionId, permissions] of Object.entries(visibleGrouped)) {
       const knownIds = new Set((before.permission[sessionId] ?? []).map((item) => item.id))
       const isViewed = isViewedInCurrentSession(directory, sessionId)
       if (isViewed) continue
@@ -1190,11 +1170,11 @@ export async function resyncBlockingRequestsForDirectory(
 
     store.setState((state: DirectoryStore) => {
       const merged = { ...state.permission }
-      for (const [sessionId, permissions] of Object.entries(grouped)) {
+      for (const [sessionId, permissions] of Object.entries(visibleGrouped)) {
         merged[sessionId] = permissions
       }
       for (const sessionId of candidates) {
-        if (grouped[sessionId]) continue
+        if (visibleGrouped[sessionId]) continue
         const beforeSignature = beforeSignatures.get(sessionId) ?? ""
         const currentSignature = requestSignature(state.permission[sessionId])
         if (currentSignature !== beforeSignature) continue
@@ -1389,10 +1369,11 @@ function handleEvent(
 
   if (payload.type === "permission.asked") {
     const permission = payload.properties as PermissionRequest
-    const permissionStore = usePermissionStore.getState()
-    if (permissionStore.isSessionAutoAccepting(permission.sessionID)) {
+    if (shouldAutoAcceptPermissionForSession(permission.sessionID)) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
-      void sessionActions.respondToPermission(permission.sessionID, permission.id, "once").catch(() => undefined)
+      void sessionActions.respondToPermission(permission.sessionID, permission.id, "once")
+        .then(() => removePermissionRequestFromStore(store, permission.sessionID, permission.id))
+        .catch(() => undefined)
       return
     }
 

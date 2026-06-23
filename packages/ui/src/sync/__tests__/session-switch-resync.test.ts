@@ -33,6 +33,12 @@ mock.module("@/stores/permissionStore", () => ({
   },
 }))
 
+mock.module("@/stores/useUIStore", () => ({
+  useUIStore: {
+    getState: () => ({ serverPermissionAutoAcceptEnabled: false }),
+  },
+}))
+
 mock.module("@/stores/useTodosPersistStore", () => ({
   useTodosPersistStore: { getState: () => ({}) },
 }))

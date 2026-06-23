@@ -3,6 +3,7 @@ import { retry } from "./retry"
 import type { GlobalState, State } from "./types"
 import { runtimeFetch } from "../lib/runtime-fetch"
 import { emitSyncConfigChanged } from "./sync-refs"
+import { autoAcceptGroupedPermissions } from "./permission-auto-accept"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -253,15 +254,28 @@ export async function bootstrapDirectory(input: {
       const grouped = groupBySession(
         (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm?.sessionID),
       )
+      const visibleGrouped = await autoAcceptGroupedPermissions(grouped, async (permission) => {
+        const result = await sdk.permission.reply({
+          requestID: permission.id,
+          reply: "once",
+          ...(directory ? { directory } : {}),
+        })
+        if (result.error || result.data !== true) {
+          const status = (result as { response?: { status?: number } }).response?.status
+          const err = new Error(`permission.reply failed${status ? ` (${status})` : ""}: ${String(result.error ?? "empty response")}`)
+          if (status !== undefined) (err as Error & { status?: number }).status = status
+          throw err
+        }
+      })
       const current = getState()
       const merged = { ...current.permission }
-      for (const [sessionID, perms] of Object.entries(grouped)) {
+      for (const [sessionID, perms] of Object.entries(visibleGrouped)) {
         merged[sessionID] = perms
           .filter((p) => !!p?.id)
           .sort((a, b) => cmp(a.id, b.id))
       }
       for (const sessionID of beforeSignatures.keys()) {
-        if (grouped[sessionID]) continue
+        if (visibleGrouped[sessionID]) continue
         const beforeSignature = beforeSignatures.get(sessionID) ?? ""
         const currentSignature = requestSignature(current.permission[sessionID])
         if (currentSignature !== beforeSignature) continue

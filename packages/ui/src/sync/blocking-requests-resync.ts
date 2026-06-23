@@ -2,8 +2,8 @@ import type { QuestionRequest, PermissionRequest } from '@opencode-ai/sdk/v2/cli
 import type { StoreApi } from 'zustand';
 
 import { opencodeClient } from '@/lib/opencode/client';
-import { usePermissionStore } from '@/stores/permissionStore';
 import type { DirectoryStore } from './child-store';
+import { autoAcceptGroupedPermissions } from './permission-auto-accept';
 import * as sessionActions from './session-actions';
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -84,28 +84,16 @@ export async function resyncBlockingRequestsForDirectory(
       grouped[sessionId].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     }
 
-    const permissionStore = usePermissionStore.getState();
-    const autoAcceptingSessionIds = Object.keys(grouped).filter((sessionId) => permissionStore.isSessionAutoAccepting(sessionId));
-    if (autoAcceptingSessionIds.length > 0) {
-      await Promise.all(
-        autoAcceptingSessionIds.flatMap((sessionId) =>
-          (grouped[sessionId] ?? []).map((permission) =>
-            sessionActions.respondToPermission(permission.sessionID, permission.id, 'once').catch(() => undefined),
-          ),
-        ),
-      );
-      for (const sessionId of autoAcceptingSessionIds) {
-        delete grouped[sessionId];
-      }
-    }
+    const visibleGrouped = await autoAcceptGroupedPermissions(grouped, (permission) =>
+      sessionActions.respondToPermission(permission.sessionID, permission.id, 'once'));
 
     store.setState((state: DirectoryStore) => {
       const merged = { ...state.permission };
-      for (const [sessionId, permissions] of Object.entries(grouped)) {
+      for (const [sessionId, permissions] of Object.entries(visibleGrouped)) {
         merged[sessionId] = permissions;
       }
       for (const sessionId of candidates) {
-        if (grouped[sessionId]) continue;
+        if (visibleGrouped[sessionId]) continue;
         const beforeSignature = beforeSignatures.get(sessionId) ?? '';
         const currentSignature = requestSignature(state.permission[sessionId]);
         if (currentSignature !== beforeSignature) continue;
