@@ -104,6 +104,21 @@ const isAtBottomSnapshot = (snapshot: NonNullable<SessionMemoryState['scrollPosi
     return max - snapshot.scrollTop <= threshold;
 };
 
+export const shouldRepinReleasedViewport = (input: {
+    state: AutoFollowState;
+    nearBottom: boolean;
+    inGrace: boolean;
+    currentTop: number;
+    previousTop: number;
+    maxScrollTop: number;
+}): boolean => {
+    if (input.state !== 'released') return false;
+    if (!input.nearBottom) return false;
+    if (!input.inGrace) return true;
+    if (input.currentTop > input.previousTop + SETTLE_EPSILON) return true;
+    return input.maxScrollTop - input.currentTop <= SETTLE_EPSILON;
+};
+
 export const useChatAutoFollow = ({
     currentSessionId,
     sessionMessageCount,
@@ -134,6 +149,7 @@ export const useChatAutoFollow = ({
     const settledFramesRef = React.useRef(0);
     const lastScrollTopRef = React.useRef(0);
     const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const repinGraceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingSaveRef = React.useRef<{ sessionId: string; anchor: number } | null>(null);
     const settleBurstRafRef = React.useRef<number | null>(null);
     const contentChangeFrameRef = React.useRef<number | null>(null);
@@ -266,14 +282,45 @@ export const useChatAutoFollow = ({
         contentChangeFrameRef.current = null;
     }, []);
 
+    const cancelRepinGraceTimer = React.useCallback(() => {
+        if (repinGraceTimerRef.current !== null) {
+            clearTimeout(repinGraceTimerRef.current);
+            repinGraceTimerRef.current = null;
+        }
+    }, []);
+
+    const scheduleRepinAfterGrace = React.useCallback(() => {
+        const container = scrollRef.current;
+        if (!container || stateRef.current !== 'released') return;
+        if (!isNearBottom(container, isMobile)) return;
+        if (repinGraceTimerRef.current !== null) return;
+
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const elapsed = now - lastUserReleaseAtRef.current;
+        const delay = Math.max(0, REPIN_GRACE_AFTER_RELEASE_MS - elapsed);
+
+        repinGraceTimerRef.current = setTimeout(() => {
+            repinGraceTimerRef.current = null;
+            const latestContainer = scrollRef.current;
+            if (!latestContainer || stateRef.current !== 'released') return;
+            if (!isNearBottom(latestContainer, isMobile)) return;
+
+            setStateValue('following');
+            lastUserReleaseAtRef.current = 0;
+            startFollowLoop();
+        }, delay);
+    }, [isMobile, setStateValue, startFollowLoop]);
+
     const releaseAutoFollow = React.useCallback(() => {
         stopFollowLoop();
         stopSettleBurst();
+        cancelRepinGraceTimer();
         lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
         setStateValue('released');
-    }, [setStateValue, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
 
     const releaseFromUserIntent = React.useCallback(() => {
+        cancelRepinGraceTimer();
         if (stateRef.current === 'following') {
             stopFollowLoop();
             stopSettleBurst();
@@ -282,12 +329,13 @@ export const useChatAutoFollow = ({
         } else {
             lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
         }
-    }, [setStateValue, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
 
     const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
         const container = scrollRef.current;
         setStateValue('following');
         lastUserReleaseAtRef.current = 0;
+        cancelRepinGraceTimer();
         if (!container) return;
         if (mode === 'smooth') {
             const target = Math.max(0, container.scrollHeight - container.clientHeight);
@@ -301,7 +349,7 @@ export const useChatAutoFollow = ({
         stopFollowLoop();
         stopSettleBurst();
         writeScrollTopInstant(target);
-    }, [markProgrammaticWrite, setStateValue, stopFollowLoop, stopSettleBurst, writeScrollTopInstant]);
+    }, [cancelRepinGraceTimer, markProgrammaticWrite, setStateValue, stopFollowLoop, stopSettleBurst, writeScrollTopInstant]);
 
     const flushSave = React.useCallback(() => {
         if (saveTimerRef.current !== null) {
@@ -357,6 +405,7 @@ export const useChatAutoFollow = ({
             // Record the request so the container-attach effect can replay it.
             pendingInitialRestoreRef.current = sessionId;
             setStateValue('following');
+            cancelRepinGraceTimer();
             return false;
         }
         pendingInitialRestoreRef.current = null;
@@ -366,6 +415,7 @@ export const useChatAutoFollow = ({
         if (!saved || isAtBottomSnapshot(saved, isMobile)) {
             setStateValue('following');
             lastUserReleaseAtRef.current = 0;
+            cancelRepinGraceTimer();
             const target = Math.max(0, container.scrollHeight - container.clientHeight);
             writeScrollTopInstant(target);
             startFollowLoop();
@@ -378,6 +428,7 @@ export const useChatAutoFollow = ({
         const targetTop = Math.round(ratio * currentMaxScroll);
 
         setStateValue('released');
+        cancelRepinGraceTimer();
         writeScrollTopInstant(targetTop);
 
         const memState = getViewportSessionMemory(sessionId);
@@ -388,7 +439,7 @@ export const useChatAutoFollow = ({
         });
 
         return true;
-    }, [isMobile, setStateValue, startFollowLoop, updateViewportAnchor, writeScrollTopInstant]);
+    }, [cancelRepinGraceTimer, isMobile, setStateValue, startFollowLoop, updateViewportAnchor, writeScrollTopInstant]);
 
     React.useEffect(() => {
         if (!currentSessionId || currentSessionId === lastSessionIdRef.current) {
@@ -399,12 +450,13 @@ export const useChatAutoFollow = ({
         flushSave();
         stopFollowLoop();
         stopSettleBurst();
+        cancelRepinGraceTimer();
         markProgrammaticWrite();
         // Drop any pending restore request inherited from a different session.
         if (pendingInitialRestoreRef.current && pendingInitialRestoreRef.current !== currentSessionId) {
             pendingInitialRestoreRef.current = null;
         }
-    }, [currentSessionId, flushSave, markProgrammaticWrite, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, currentSessionId, flushSave, markProgrammaticWrite, stopFollowLoop, stopSettleBurst]);
 
     React.useEffect(() => {
         if (sessionIsWorking && stateRef.current === 'following') {
@@ -470,9 +522,24 @@ export const useChatAutoFollow = ({
 
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const inGrace = (now - lastUserReleaseAtRef.current) < REPIN_GRACE_AFTER_RELEASE_MS;
-        if (stateRef.current === 'released' && isNearBottom(container, isMobile) && !inGrace) {
+        const nearBottom = isNearBottom(container, isMobile);
+        const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+        if (shouldRepinReleasedViewport({
+            state: stateRef.current,
+            nearBottom,
+            inGrace,
+            currentTop,
+            previousTop,
+            maxScrollTop,
+        })) {
+            cancelRepinGraceTimer();
             setStateValue('following');
+            lastUserReleaseAtRef.current = 0;
             startFollowLoop();
+        } else if (stateRef.current === 'released' && nearBottom && inGrace) {
+            scheduleRepinAfterGrace();
+        } else if (stateRef.current === 'released' && !nearBottom) {
+            cancelRepinGraceTimer();
         }
 
         queueSave();
@@ -480,6 +547,8 @@ export const useChatAutoFollow = ({
         isInProgrammaticWindow,
         isMobile,
         queueSave,
+        cancelRepinGraceTimer,
+        scheduleRepinAfterGrace,
         setStateValue,
         startFollowLoop,
         stopFollowLoop,
@@ -605,11 +674,21 @@ export const useChatAutoFollow = ({
     const flushContentChangeFrame = React.useCallback(() => {
         contentChangeFrameRef.current = null;
         updateOverflowAndButton();
+        const container = scrollRef.current;
+        if (container && stateRef.current === 'released') {
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            const inGrace = (now - lastUserReleaseAtRef.current) < REPIN_GRACE_AFTER_RELEASE_MS;
+            if (isNearBottom(container, isMobile) && !inGrace) {
+                cancelRepinGraceTimer();
+                setStateValue('following');
+                lastUserReleaseAtRef.current = 0;
+            }
+        }
         if (stateRef.current === 'following') {
             clampToBottomIfFollowing();
             startFollowLoop();
         }
-    }, [clampToBottomIfFollowing, startFollowLoop, updateOverflowAndButton]);
+    }, [cancelRepinGraceTimer, clampToBottomIfFollowing, isMobile, setStateValue, startFollowLoop, updateOverflowAndButton]);
 
     const scheduleContentChangeFrame = React.useCallback(() => {
         if (typeof window === 'undefined') {
@@ -655,13 +734,14 @@ export const useChatAutoFollow = ({
             stopFollowLoop();
             stopSettleBurst();
             stopContentChangeFrame();
+            cancelRepinGraceTimer();
             flushSave();
             if (saveTimerRef.current !== null) {
                 clearTimeout(saveTimerRef.current);
                 saveTimerRef.current = null;
             }
         };
-    }, [flushSave, stopContentChangeFrame, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, flushSave, stopContentChangeFrame, stopFollowLoop, stopSettleBurst]);
 
     React.useEffect(() => {
         if (!onActiveTurnChange) return;

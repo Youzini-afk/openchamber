@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { shouldRepinReleasedViewport } from './useChatAutoFollow';
+
 /**
  * These tests verify the rAF coalescing PATTERN used in useChatAutoFollow's
  * ResizeObserver effect (Fix 1) and the spy-gating condition (Fix 2).
@@ -250,6 +252,59 @@ describe('useChatAutoFollow content-change rAF coalescing', () => {
 
         handler.drainRAF();
         expect(handler.getFlushCount()).toBe(1);
+    });
+});
+
+describe('useChatAutoFollow released viewport repin', () => {
+    const baseInput = {
+        state: 'released' as const,
+        nearBottom: true,
+        inGrace: true,
+        currentTop: 800,
+        previousTop: 760,
+        maxScrollTop: 800,
+    };
+
+    test('re-pins immediately when the user scrolls downward into the bottom zone during grace', () => {
+        expect(shouldRepinReleasedViewport(baseInput)).toBe(true);
+    });
+
+    test('re-pins immediately at the exact bottom even if the scroll delta is neutral', () => {
+        expect(shouldRepinReleasedViewport({
+            ...baseInput,
+            currentTop: 800,
+            previousTop: 800,
+        })).toBe(true);
+    });
+
+    test('does not re-pin during grace when the user is moving upward near the bottom', () => {
+        expect(shouldRepinReleasedViewport({
+            ...baseInput,
+            currentTop: 760,
+            previousTop: 800,
+            maxScrollTop: 820,
+        })).toBe(false);
+    });
+
+    test('re-pins after grace when the viewport is still near the bottom', () => {
+        expect(shouldRepinReleasedViewport({
+            ...baseInput,
+            inGrace: false,
+            currentTop: 760,
+            previousTop: 800,
+            maxScrollTop: 820,
+        })).toBe(true);
+    });
+
+    test('does not re-pin away from the bottom or while already following', () => {
+        expect(shouldRepinReleasedViewport({
+            ...baseInput,
+            nearBottom: false,
+        })).toBe(false);
+        expect(shouldRepinReleasedViewport({
+            ...baseInput,
+            state: 'following',
+        })).toBe(false);
     });
 });
 
