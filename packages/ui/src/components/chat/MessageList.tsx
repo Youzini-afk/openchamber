@@ -21,6 +21,7 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionParts } from '@/sync/sync-context';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import { estimateVirtualizedChatItemSize, type ChatVirtualLayoutMode } from './lib/virtualization/chatItemSizeEstimate';
+import { splitDynamicTailEntries } from './lib/virtualization/splitDynamicTailEntries';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
 const MESSAGE_LIST_DYNAMIC_TAIL_COUNT = 12;
@@ -1291,14 +1292,14 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     // React/ResizeObserver can settle actual heights before we reintroduce
     // absolute-positioned virtual rows.
     const shouldSplitDynamicTail = !disableStaging && allEntries.length > MESSAGE_LIST_DYNAMIC_TAIL_COUNT + MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
-    const historyEntries = React.useMemo(() => {
-        if (!shouldSplitDynamicTail) return allEntries;
-        return allEntries.slice(0, -MESSAGE_LIST_DYNAMIC_TAIL_COUNT);
-    }, [allEntries, shouldSplitDynamicTail]);
-    const dynamicTailEntries = React.useMemo(() => {
-        if (!shouldSplitDynamicTail) return [] as RenderEntry[];
-        return allEntries.slice(-MESSAGE_LIST_DYNAMIC_TAIL_COUNT);
-    }, [allEntries, shouldSplitDynamicTail]);
+    const { historyEntries, dynamicTailEntries } = React.useMemo(() => splitDynamicTailEntries({
+        allEntries,
+        staticRenderEntries,
+        trailingStreamingEntry,
+        activeStreamingMessageId,
+        shouldSplitDynamicTail,
+        dynamicTailCount: MESSAGE_LIST_DYNAMIC_TAIL_COUNT,
+    }), [activeStreamingMessageId, allEntries, shouldSplitDynamicTail, staticRenderEntries, trailingStreamingEntry]);
     const shouldVirtualizeHistory = shouldSplitDynamicTail && historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const historyEntryKeys = React.useMemo(() => historyEntries.map((entry) => entry.key), [historyEntries]);
     const virtualLayoutMode = React.useMemo<ChatVirtualLayoutMode>(
