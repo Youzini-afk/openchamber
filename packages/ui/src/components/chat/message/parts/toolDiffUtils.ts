@@ -13,6 +13,11 @@ const GIT_DIFF_FILE_BREAK_PATTERN = /(?=^diff --git\s+)/gm;
 const GIT_DIFF_FILE_BREAK_TEST = /^diff --git\s+/m;
 const UNIFIED_DIFF_FILE_BREAK_PATTERN = /(?=^---\s+\S)/gm;
 const UNIFIED_DIFF_FILE_BREAK_TEST = /^---\s+\S/m;
+const APPLY_PATCH_FILE_HEADER_PATTERN = /^\*\*\*\s+(Add File|Update File|Delete File):\s+(.+)$/;
+const APPLY_PATCH_MOVE_TO_PATTERN = /^\*\*\*\s+Move to:\s+(.+)$/;
+const APPLY_PATCH_BEGIN_PATTERN = /^\*\*\*\s+Begin Patch$/;
+const APPLY_PATCH_END_PATTERN = /^\*\*\*\s+End Patch$/;
+const APPLY_PATCH_EOF_PATTERN = /^\*\*\*\s+End of File$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null;
@@ -48,6 +53,221 @@ const normalizeParsedPath = (path: string | undefined): string => {
 const makeSyntheticPath = (title: string): string => {
     const normalized = title.trim().replace(/\s+/g, '-');
     return normalized.length > 0 ? normalized : 'file';
+};
+
+type ApplyPatchAction = 'add' | 'update' | 'delete';
+
+type ApplyPatchFile = {
+    action: ApplyPatchAction;
+    oldPath: string;
+    newPath: string;
+    lines: string[];
+};
+
+type ApplyPatchHunk = {
+    header?: string;
+    section?: string;
+    lines: string[];
+};
+
+const normalizeApplyPatchPath = (path: string): string => {
+    const normalized = path.trim().replace(/\\/g, '/').replace(/^[ab]\//, '').replace(/^\/+/, '');
+    return normalized.length > 0 ? normalized : 'file';
+};
+
+const diffPath = (prefix: 'a' | 'b', path: string): string => {
+    const normalized = normalizeApplyPatchPath(path);
+    return `${prefix}/${normalized}`;
+};
+
+const parseApplyPatchEnvelope = (patch: string): ApplyPatchFile[] | null => {
+    const files: ApplyPatchFile[] = [];
+    let current: ApplyPatchFile | null = null;
+    let sawEnvelope = false;
+
+    const finishCurrent = () => {
+        if (!current) {
+            return;
+        }
+        files.push(current);
+        current = null;
+    };
+
+    for (const line of patch.split('\n')) {
+        if (APPLY_PATCH_BEGIN_PATTERN.test(line)) {
+            sawEnvelope = true;
+            continue;
+        }
+
+        if (APPLY_PATCH_END_PATTERN.test(line)) {
+            sawEnvelope = true;
+            finishCurrent();
+            break;
+        }
+
+        const fileHeader = line.match(APPLY_PATCH_FILE_HEADER_PATTERN);
+        if (fileHeader) {
+            sawEnvelope = true;
+            finishCurrent();
+
+            const actionText = fileHeader[1];
+            const path = fileHeader[2]?.trim() ?? '';
+            const action: ApplyPatchAction = actionText === 'Add File'
+                ? 'add'
+                : actionText === 'Delete File'
+                    ? 'delete'
+                    : 'update';
+
+            current = {
+                action,
+                oldPath: path,
+                newPath: path,
+                lines: [],
+            };
+            continue;
+        }
+
+        const moveTo = line.match(APPLY_PATCH_MOVE_TO_PATTERN);
+        if (moveTo && current) {
+            sawEnvelope = true;
+            current.newPath = moveTo[1]?.trim() || current.newPath;
+            continue;
+        }
+
+        if (APPLY_PATCH_EOF_PATTERN.test(line)) {
+            sawEnvelope = true;
+            continue;
+        }
+
+        if (current) {
+            current.lines.push(line);
+        }
+    }
+
+    finishCurrent();
+
+    return sawEnvelope ? files : null;
+};
+
+const isDiffBodyLine = (line: string): boolean => {
+    if (line.length === 0) {
+        return false;
+    }
+
+    const marker = line[0];
+    return marker === ' ' || marker === '+' || marker === '-' || marker === '\\';
+};
+
+const formatRange = (start: number, count: number): string => {
+    return count === 1 ? String(start) : `${start},${count}`;
+};
+
+const countOldLines = (lines: string[]): number =>
+    lines.reduce((count, line) => count + (line.startsWith(' ') || line.startsWith('-') ? 1 : 0), 0);
+
+const countNewLines = (lines: string[]): number =>
+    lines.reduce((count, line) => count + (line.startsWith(' ') || line.startsWith('+') ? 1 : 0), 0);
+
+const buildApplyPatchUpdateHunks = (lines: string[]): string[] => {
+    const hunks: string[] = [];
+    let current: ApplyPatchHunk | null = null;
+    let oldCursor = 1;
+    let newCursor = 1;
+
+    const flushCurrent = () => {
+        if (!current || current.lines.length === 0) {
+            current = null;
+            return;
+        }
+
+        const oldLineCount = countOldLines(current.lines);
+        const newLineCount = countNewLines(current.lines);
+        const header = current.header
+            ?? `@@ -${formatRange(oldCursor, oldLineCount)} +${formatRange(newCursor, newLineCount)} @@${current.section ? ` ${current.section}` : ''}`;
+
+        hunks.push([header, ...current.lines].join('\n'));
+        oldCursor += Math.max(oldLineCount, 1);
+        newCursor += Math.max(newLineCount, 1);
+        current = null;
+    };
+
+    for (const line of lines) {
+        if (line.startsWith('*** ')) {
+            continue;
+        }
+
+        if (line.startsWith('@@')) {
+            flushCurrent();
+            current = HUNK_HEADER_PATTERN.test(line)
+                ? { header: line, lines: [] }
+                : { section: line.replace(/^@@\s*/, '').trim(), lines: [] };
+            continue;
+        }
+
+        if (!isDiffBodyLine(line)) {
+            continue;
+        }
+
+        current ??= { lines: [] };
+        current.lines.push(line);
+    }
+
+    flushCurrent();
+    return hunks;
+};
+
+const buildApplyPatchFileDiff = (file: ApplyPatchFile): { patch: string; title: string } | null => {
+    const oldPath = normalizeApplyPatchPath(file.oldPath);
+    const newPath = normalizeApplyPatchPath(file.newPath || file.oldPath);
+    const title = file.action === 'delete' ? oldPath : newPath;
+
+    if (file.action === 'add') {
+        const addedLines = file.lines.filter((line) => line.startsWith('+'));
+        if (addedLines.length === 0) {
+            return null;
+        }
+
+        return {
+            title,
+            patch: [
+                '--- /dev/null',
+                `+++ ${diffPath('b', newPath)}`,
+                `@@ -0,0 +${formatRange(1, addedLines.length)} @@`,
+                ...addedLines,
+            ].join('\n'),
+        };
+    }
+
+    if (file.action === 'delete') {
+        const removedLines = file.lines.filter((line) => line.startsWith('-'));
+        if (removedLines.length === 0) {
+            return null;
+        }
+
+        return {
+            title,
+            patch: [
+                `--- ${diffPath('a', oldPath)}`,
+                '+++ /dev/null',
+                `@@ -${formatRange(1, removedLines.length)} +0,0 @@`,
+                ...removedLines,
+            ].join('\n'),
+        };
+    }
+
+    const hunks = buildApplyPatchUpdateHunks(file.lines);
+    if (hunks.length === 0) {
+        return null;
+    }
+
+    return {
+        title,
+        patch: [
+            `--- ${diffPath('a', oldPath)}`,
+            `+++ ${diffPath('b', newPath)}`,
+            ...hunks,
+        ].join('\n'),
+    };
 };
 
 const hasOnlyUnifiedDiffBodyLines = (patch: string): boolean => {
@@ -128,6 +348,34 @@ const getPatchEntriesFromText = (
     const normalized = normalizePatchText(patch);
     if (!normalized) {
         return [];
+    }
+
+    if (APPLY_PATCH_ENVELOPE_PATTERN.test(normalized)) {
+        const files = parseApplyPatchEnvelope(normalized);
+        const entries: DiffPatchEntry[] = [];
+
+        for (const file of files ?? []) {
+            const built = buildApplyPatchFileDiff(file);
+            if (!built) {
+                continue;
+            }
+
+            const info = getRenderablePatchInfo(built.patch);
+            if (!info) {
+                continue;
+            }
+
+            entries.push({
+                id: `${idPrefix}-${entries.length}`,
+                title: resolveTitle(info.title || built.title || fallbackTitle),
+                patch: info.patch,
+                renderMode: 'diff',
+            });
+        }
+
+        if (entries.length > 0) {
+            return entries;
+        }
     }
 
     const direct = getRenderablePatchInfo(normalized);

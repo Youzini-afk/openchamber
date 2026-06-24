@@ -5,19 +5,58 @@ import { getDiffPatchEntries, getRenderablePatchInfo } from './toolDiffUtils';
 const identity = (path: string) => path;
 
 describe('toolDiffUtils', () => {
-    test('treats raw apply_patch envelopes as text, not visual diffs', () => {
+    test('renders raw apply_patch add-file envelopes as visual diffs', () => {
         const entries = getDiffPatchEntries(undefined, [
             '*** Begin Patch',
-            '*** Update File: src/app.ts',
-            '@@ -1 +1 @@',
-            '-old',
-            '+new',
+            '*** Add File: src/app.ts',
+            '+const value = 1;',
+            '+export default value;',
             '*** End Patch',
         ].join('\n'), identity);
 
         expect(entries).toHaveLength(1);
-        expect(entries[0]?.renderMode).toBe('text');
-        expect(entries[0]?.patch).toContain('*** Begin Patch');
+        expect(entries[0]?.renderMode).toBe('diff');
+        expect(entries[0]?.title).toBe('src/app.ts');
+        expect(entries[0]?.patch).toContain('--- /dev/null');
+        expect(entries[0]?.patch).toContain('+++ b/src/app.ts');
+        expect(entries[0]?.patch).toContain('+const value = 1;');
+        expect(entries[0]?.patch).not.toContain('*** Begin Patch');
+    });
+
+    test('renders raw apply_patch update envelopes with synthetic hunks', () => {
+        const entries = getDiffPatchEntries(undefined, [
+            '*** Begin Patch',
+            '*** Update File: src/app.ts',
+            '@@',
+            ' const keep = true;',
+            '-const value = 1;',
+            '+const value = 2;',
+            '*** End Patch',
+        ].join('\n'), identity);
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.renderMode).toBe('diff');
+        expect(entries[0]?.title).toBe('src/app.ts');
+        expect(entries[0]?.patch).toContain('--- a/src/app.ts');
+        expect(entries[0]?.patch).toContain('+++ b/src/app.ts');
+        expect(entries[0]?.patch).toContain('@@ -1,2 +1,2 @@');
+    });
+
+    test('splits multi-file apply_patch envelopes into visual diff entries', () => {
+        const entries = getDiffPatchEntries(undefined, [
+            '*** Begin Patch',
+            '*** Add File: src/a.ts',
+            '+export const a = 1;',
+            '*** Update File: src/b.ts',
+            '@@',
+            '-export const b = 1;',
+            '+export const b = 2;',
+            '*** End Patch',
+        ].join('\n'), identity);
+
+        expect(entries).toHaveLength(2);
+        expect(entries.map((entry) => entry.renderMode)).toEqual(['diff', 'diff']);
+        expect(entries.map((entry) => entry.title)).toEqual(['src/a.ts', 'src/b.ts']);
     });
 
     test('splits multi-file unified patches into one renderable entry per file', () => {
