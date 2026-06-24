@@ -37,6 +37,15 @@ const WORKSPACE_KEYS = [
   'workspace.sidebar.trash.empty',
   'workspace.sidebar.state.empty',
   'workspace.sidebar.state.loading',
+  'workspace.sidebar.dialog.create.folderTitle',
+  'workspace.sidebar.dialog.create.fileTitle',
+  'workspace.sidebar.dialog.create.folderDescription',
+  'workspace.sidebar.dialog.create.fileDescription',
+  'workspace.sidebar.dialog.create.namePlaceholder',
+  'workspace.sidebar.dialog.create.invalidName',
+  'workspace.sidebar.dialog.create.failed',
+  'workspace.sidebar.dialog.create.cancel',
+  'workspace.sidebar.dialog.create.confirm',
   'workspace.sidebar.dialog.rename.title',
   'workspace.sidebar.dialog.rename.description',
   'workspace.sidebar.dialog.rename.placeholder',
@@ -167,6 +176,18 @@ describe('workspace sidebar messages', () => {
     expect(source).toContain("t('workspace.sidebar.dialog.rename.title')");
     expect(source).toContain("t('workspace.sidebar.dialog.rename.submit')");
     expect(source).not.toContain("window.prompt(t('workspace.sidebar.prompt.renameTo')");
+  });
+
+  test('workspace create uses a localized dialog instead of a native prompt', () => {
+    const source = readFileSync(
+      resolve(testDir, '../../../components/workspace/WorkspaceSidebarSection.tsx'),
+      'utf8',
+    );
+
+    expect(source).toContain("t('workspace.sidebar.dialog.create.folderTitle')");
+    expect(source).toContain("t('workspace.sidebar.dialog.create.confirm')");
+    expect(source).not.toContain("window.prompt(t('workspace.sidebar.prompt.newFolderName')");
+    expect(source).not.toContain("window.prompt(t('workspace.sidebar.prompt.newFileName')");
   });
 
   test('workspace sidebar exposes the hidden trash directory', () => {

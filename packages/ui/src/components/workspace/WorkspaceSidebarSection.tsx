@@ -66,6 +66,13 @@ type WorkspaceSidebarSectionProps = {
   isActive?: boolean;
 };
 
+type CreateEntryKind = 'folder' | 'file';
+
+type CreateDialogState = {
+  kind: CreateEntryKind;
+  parent: string;
+};
+
 const TRASH_PATH = '.trash';
 const TREE_INDENT_PX = 14;
 const TREE_ROW_LEFT_PADDING_PX = 4;
@@ -122,6 +129,18 @@ const childPath = (parent: string, name: string): string => {
   const trimmedName = name.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
   if (!trimmedName) return parent;
   return parent ? `${parent}/${trimmedName}` : trimmedName;
+};
+
+const isSafeCreateEntryName = (name: string): boolean => {
+  const trimmed = name.trim();
+  return Boolean(
+    trimmed
+    && trimmed !== '.'
+    && trimmed !== '..'
+    && !trimmed.includes('/')
+    && !trimmed.includes('\\')
+    && !trimmed.includes('\0')
+  );
 };
 
 const normalizeFilePath = (value: string): string => {
@@ -249,8 +268,13 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
   const addServerPathAttachment = useInputStore((state) => state.addServerPathAttachment);
   const didInitialLoadRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const createInputRef = React.useRef<HTMLInputElement | null>(null);
   const uploadTargetRef = React.useRef('');
   const [contextMenuPath, setContextMenuPath] = React.useState<string | null>(null);
+  const [createDialog, setCreateDialog] = React.useState<CreateDialogState | null>(null);
+  const [createDraft, setCreateDraft] = React.useState('');
+  const [createError, setCreateError] = React.useState<string | null>(null);
+  const [createSubmitting, setCreateSubmitting] = React.useState(false);
   const [renameTarget, setRenameTarget] = React.useState<WorkspaceEntry | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
   const [renameError, setRenameError] = React.useState<string | null>(null);
@@ -297,19 +321,69 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
     }
   }, []);
 
-  const handleCreateFolder = React.useCallback(async (parent = '') => {
-    const name = window.prompt(t('workspace.sidebar.prompt.newFolderName'));
-    if (!name?.trim()) return;
-    const entry = await createFolder(childPath(parent, name));
-    if (entry) toast.success(t('workspace.sidebar.toast.folderCreated'));
-  }, [createFolder, t]);
+  const closeCreateDialog = React.useCallback(() => {
+    setCreateDialog(null);
+    setCreateDraft('');
+    setCreateError(null);
+    setCreateSubmitting(false);
+  }, []);
 
-  const handleCreateFile = React.useCallback(async (parent = '') => {
-    const name = window.prompt(t('workspace.sidebar.prompt.newFileName'));
-    if (!name?.trim()) return;
-    const entry = await createFile(childPath(parent, name), '');
-    if (entry) toast.success(t('workspace.sidebar.toast.fileCreated'));
-  }, [createFile, t]);
+  const openCreateDialog = React.useCallback((kind: CreateEntryKind, parent = '') => {
+    setContextMenuPath(null);
+    setCreateDialog({ kind, parent });
+    setCreateDraft('');
+    setCreateError(null);
+    setCreateSubmitting(false);
+  }, []);
+
+  const handleCreateFolder = React.useCallback((parent = '') => {
+    openCreateDialog('folder', parent);
+  }, [openCreateDialog]);
+
+  const handleCreateFile = React.useCallback((parent = '') => {
+    openCreateDialog('file', parent);
+  }, [openCreateDialog]);
+
+  const validateCreateDraft = React.useCallback((name: string): string | null => {
+    if (!isSafeCreateEntryName(name)) {
+      return t('workspace.sidebar.dialog.create.invalidName');
+    }
+    return null;
+  }, [t]);
+
+  const createDialogPathLabel = React.useMemo(() => {
+    if (!createDialog) return '';
+    return createDialog.parent || root?.root || '/workspace';
+  }, [createDialog, root?.root]);
+
+  const handleCreateSubmit = React.useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!createDialog) return;
+
+    const validation = validateCreateDraft(createDraft);
+    if (validation) {
+      setCreateError(validation);
+      return;
+    }
+
+    const name = createDraft.trim();
+    const targetPath = childPath(createDialog.parent, name);
+    setCreateSubmitting(true);
+    const entry = createDialog.kind === 'folder'
+      ? await createFolder(targetPath)
+      : await createFile(targetPath, '');
+    setCreateSubmitting(false);
+
+    if (entry) {
+      toast.success(t(createDialog.kind === 'folder'
+        ? 'workspace.sidebar.toast.folderCreated'
+        : 'workspace.sidebar.toast.fileCreated'));
+      closeCreateDialog();
+      return;
+    }
+
+    setCreateError(useWorkspaceStore.getState().error || t('workspace.sidebar.dialog.create.failed'));
+  }, [closeCreateDialog, createDialog, createDraft, createFile, createFolder, t, validateCreateDraft]);
 
   const closeRenameDialog = React.useCallback(() => {
     setRenameTarget(null);
@@ -887,6 +961,61 @@ export const WorkspaceSidebarSection: React.FC<WorkspaceSidebarSectionProps> = (
         className="hidden"
         onChange={handleUploadChange}
       />
+
+      <Dialog open={createDialog !== null} onOpenChange={(open) => {
+        if (!open) closeCreateDialog();
+      }}>
+        <DialogContent className="max-w-md" initialFocus={createInputRef}>
+          <form className="space-y-4" onSubmit={handleCreateSubmit}>
+            <DialogHeader>
+              <DialogTitle>
+                {createDialog?.kind === 'folder'
+                  ? t('workspace.sidebar.dialog.create.folderTitle')
+                  : t('workspace.sidebar.dialog.create.fileTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {createDialog?.kind === 'folder'
+                  ? t('workspace.sidebar.dialog.create.folderDescription', { path: createDialogPathLabel })
+                  : t('workspace.sidebar.dialog.create.fileDescription', { path: createDialogPathLabel })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Input
+                ref={createInputRef}
+                value={createDraft}
+                onChange={(event) => {
+                  setCreateDraft(event.currentTarget.value);
+                  setCreateError(null);
+                }}
+                placeholder={t('workspace.sidebar.dialog.create.namePlaceholder')}
+                aria-invalid={createError ? true : undefined}
+                disabled={createSubmitting}
+              />
+              {createError ? (
+                <p className="typography-micro text-[var(--status-error)]">
+                  {createError}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={closeCreateDialog}
+                disabled={createSubmitting}
+              >
+                {t('workspace.sidebar.dialog.create.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={createSubmitting || !createDraft.trim()}
+              >
+                {t('workspace.sidebar.dialog.create.confirm')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={renameTarget !== null} onOpenChange={(open) => {
         if (!open) closeRenameDialog();
