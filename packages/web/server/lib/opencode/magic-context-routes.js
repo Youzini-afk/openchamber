@@ -57,6 +57,9 @@ export const registerMagicContextRoutes = (app, dependencies = {}) => {
       const body = req.body ?? {};
       saveMagicContextConfig({
         expectedMtimeMs: body.expectedMtimeMs ?? null,
+        sourcePath: body.sourcePath ?? null,
+        sourceMtimeMs: body.sourceMtimeMs ?? null,
+        directory,
         config: body.config ?? {},
       });
 

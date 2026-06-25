@@ -7,6 +7,7 @@ import {
   createMagicContextDraftFromConfig,
   hasMagicContextDraftChanges,
   type MagicContextConfig,
+  type MagicContextConfigSourceLike,
 } from '@/components/sections/magic-context/magicContextConfig';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -25,10 +26,13 @@ export interface MagicContextConfigResponse {
     format: 'json' | 'jsonc';
     mtimeMs?: number | null;
   };
+  source?: MagicContextConfigSourceLike | null;
   project: {
     path: string | null;
     exists: boolean;
     overriddenKeys: string[];
+    source?: MagicContextConfigSourceLike | null;
+    legacy?: boolean;
   };
   diagnostics?: {
     tui?: {
@@ -45,9 +49,16 @@ export interface MagicContextConfigResponse {
       uiConfigDir: string;
       runtimeConfigDir: string;
       matchesRuntime: boolean;
+      legacyConfigDir?: string;
     };
+    source?: (MagicContextConfigSourceLike & {
+      targetPath?: string | null;
+      differsFromTarget?: boolean;
+    }) | null;
     project?: {
       ignoredUserOnlyKeys: string[];
+      source?: MagicContextConfigSourceLike | null;
+      legacy?: boolean;
     };
   };
   schemaUrl: string;
@@ -259,7 +270,7 @@ export const useMagicContextConfigStore = create<MagicContextConfigStore>()(
 
         let requiresReload = false;
         try {
-          const payload = buildMagicContextSavePayload(state.config?.target.mtimeMs ?? null, state.draft);
+          const payload = buildMagicContextSavePayload(state.config?.target.mtimeMs ?? null, state.draft, state.config?.source ?? null);
           const response = await runtimeFetch('/api/magic-context/config', {
             query: configDirectory ? { directory: configDirectory } : undefined,
             method: 'PATCH',

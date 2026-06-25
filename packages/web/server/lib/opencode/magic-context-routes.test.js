@@ -70,6 +70,9 @@ describe('magic-context config routes', () => {
 
     expect(saveMagicContextConfig).toHaveBeenCalledWith({
       expectedMtimeMs: 123,
+      sourcePath: null,
+      sourceMtimeMs: null,
+      directory: null,
       config: { enabled: true, historian: { model: 'openai/gpt-5.4' } },
     });
     expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('magic-context config updated');

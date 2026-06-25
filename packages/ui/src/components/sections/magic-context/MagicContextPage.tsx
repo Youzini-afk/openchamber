@@ -42,13 +42,16 @@ import {
   agentFallbackModelsToRows,
   agentFallbackRowsToConfig,
   buildMagicContextSavePayload,
+  CANONICAL_DREAMER_TASKS,
   countFallbackModels,
+  DEFAULT_DREAMER_TASK_SCHEDULES,
   hasMagicContextDraftChanges,
   joinModelRef,
   normalizeMagicContextConfig,
   parseModelRef,
   type MagicContextAgentConfig,
   type MagicContextConfig,
+  type MagicContextDreamTaskConfig,
   type MagicContextFallbackRow,
 } from './magicContextConfig';
 
@@ -88,9 +91,9 @@ const AGENT_DEFINITIONS: Array<{
   },
 ];
 
-const DREAMER_TASKS = ['consolidate', 'verify', 'archive-stale', 'improve', 'maintain-docs'];
 const AGENT_MODES = ['subagent', 'primary', 'all'];
 const EMBEDDING_PROVIDERS = ['local', 'openai-compatible', 'off'];
+const HISTORIAN_DISALLOWED_TOOLS = ['*', 'read', 'aft_outline', 'aft_zoom', 'aft_search'];
 const VARIANT_OPTIONS: Array<{ value: string; labelKey: I18nKey }> = [
   { value: 'low', labelKey: 'settings.magicContext.variant.low' },
   { value: 'medium', labelKey: 'settings.magicContext.variant.medium' },
@@ -113,6 +116,47 @@ const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ?
 const getAgentEntry = (draft: MagicContextConfig, id: MagicAgentId): MagicContextAgentConfig => (
   asRecord(draft[id]) as MagicContextAgentConfig
 );
+
+const getDreamerTasks = (entry: MagicContextAgentConfig): Record<string, MagicContextDreamTaskConfig> => (
+  asRecord(entry.tasks) as Record<string, MagicContextDreamTaskConfig>
+);
+
+const getDreamerTask = (entry: MagicContextAgentConfig, task: string): MagicContextDreamTaskConfig => (
+  asRecord(getDreamerTasks(entry)[task]) as MagicContextDreamTaskConfig
+);
+
+const buildDreamerTaskPatch = (
+  entry: MagicContextAgentConfig,
+  task: string,
+  patch: Record<string, unknown>,
+): Record<string, MagicContextDreamTaskConfig> => {
+  const tasks = getDreamerTasks(entry);
+  const current = asRecord(tasks[task]);
+  const nextTask = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete nextTask[key];
+    } else {
+      nextTask[key] = value;
+    }
+  }
+  return {
+    ...tasks,
+    [task]: nextTask as MagicContextDreamTaskConfig,
+  };
+};
+
+const getDreamerEnabledCount = (entry: MagicContextAgentConfig): number => (
+  Object.values(getDreamerTasks(entry)).filter((task) => typeof task?.schedule === 'string' && task.schedule.trim()).length
+);
+
+const toggleDreamerTaskEnabled = (
+  entry: MagicContextAgentConfig,
+  task: string,
+  enabled: boolean,
+): Record<string, MagicContextDreamTaskConfig> => buildDreamerTaskPatch(entry, task, {
+  schedule: enabled ? (asString(getDreamerTask(entry, task).schedule) || DEFAULT_DREAMER_TASK_SCHEDULES[task as keyof typeof DEFAULT_DREAMER_TASK_SCHEDULES] || '0 2 * * *') : '',
+});
 
 const parseMaybeNumber = (value: string): string | number => {
   const trimmed = value.trim();
@@ -240,6 +284,9 @@ function DiagnosticsPanel({
   const diagnostics = config?.diagnostics;
   const activeHooks = diagnostics?.omo?.activeConflictingHooks ?? [];
   const disabledHooks = diagnostics?.omo?.disabledConflictingHooks ?? [];
+  const source = config?.source ?? diagnostics?.source ?? null;
+  const target = config?.target ?? null;
+  const sourceDiffersFromTarget = Boolean(source?.path && target?.path && source.path !== target.path);
   const pluginOk = config?.plugin.detected === true;
   const tuiOk = diagnostics?.tui?.detected === true;
   const configPathOk = diagnostics?.configPath?.matchesRuntime !== false;
@@ -266,6 +313,11 @@ function DiagnosticsPanel({
         {configPathOk
           ? diagnostics?.configPath?.uiConfigDir ?? config?.target.path ?? t('settings.magicContext.diagnostics.pathMatches')
           : t('settings.magicContext.diagnostics.pathMismatch', { uiPath: diagnostics?.configPath?.uiConfigDir ?? '', runtimePath: diagnostics?.configPath?.runtimeConfigDir ?? '' })}
+      </DiagnosticItem>
+      <DiagnosticItem label="Magic Context source" ok={!sourceDiffersFromTarget && source?.legacy !== true}>
+        {source?.path
+          ? `read ${source.legacy ? 'legacy ' : ''}${source.path}; write ${target?.path ?? source.path}`
+          : target?.path ?? t('settings.magicContext.diagnostics.unknownPath')}
       </DiagnosticItem>
       {ignoredProjectKeys.length > 0 ? (
         <div className="rounded-md border border-[var(--status-warning)]/30 bg-[var(--status-warning)]/10 px-2.5 py-2 md:col-span-2 xl:col-span-4">
@@ -673,7 +725,8 @@ function AgentCard({
   const normalizedEntry = normalized[id] as MagicContextAgentConfig | undefined;
   const fallbackCount = countFallbackModels(entry.fallback_models);
   const isCoreAgent = id === 'historian';
-  const enabled = isCoreAgent ? entry.disable !== true : entry.enabled === true && entry.disable !== true;
+  const enabled = entry.disable !== true;
+  const dreamerEnabledTasks = id === 'dreamer' ? getDreamerEnabledCount(entry) : 0;
 
   const updateAgent = (patch: Record<string, unknown>) => {
     const next = { ...entry };
@@ -692,8 +745,7 @@ function AgentCard({
   const setEnabled = (checked: boolean) => {
     if (isCoreAgent) return;
     updateAgent({
-      enabled: checked ? true : false,
-      disable: checked ? undefined : entry.disable,
+      disable: checked ? undefined : true,
     });
   };
 
@@ -707,6 +759,7 @@ function AgentCard({
             {!isCoreAgent && enabled ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.common.enabled')}</Badge> : null}
             {!isCoreAgent && !enabled ? <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.common.disabled')}</Badge> : null}
             {fallbackCount > 0 ? <Badge className="bg-muted text-muted-foreground">{t('settings.magicContext.agent.fallbackCount', { count: fallbackCount })}</Badge> : null}
+            {id === 'dreamer' ? <Badge className="bg-muted text-muted-foreground">{dreamerEnabledTasks} tasks</Badge> : null}
           </div>
           <p className="max-w-3xl typography-ui text-foreground/90">{t(descriptionKey)}</p>
           <p className="truncate font-mono typography-micro text-muted-foreground">{t('settings.magicContext.agent.defaultChain', { chain: defaultChain })}</p>
@@ -755,13 +808,18 @@ function AgentCard({
 
         {id === 'dreamer' ? (
           <>
-            <AgentSettingRow label={t('settings.magicContext.agent.schedule.label')} description={t('settings.magicContext.agent.schedule.description')}>
-              <Input
-                value={asString(entry.schedule)}
-                onChange={(event) => updateAgent({ schedule: event.target.value })}
-                placeholder="02:00-06:00"
-                className="h-9 font-mono"
-              />
+            <AgentSettingRow label="tasks" description="Configured Dreamer v2 schedules">
+              <div className="flex flex-wrap gap-1.5">
+                {CANONICAL_DREAMER_TASKS.map((task) => {
+                  const taskConfig = getDreamerTask(entry, task);
+                  const active = typeof taskConfig.schedule === 'string' && taskConfig.schedule.trim() !== '';
+                  return (
+                    <Badge key={task} className={active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
+                      {task}
+                    </Badge>
+                  );
+                })}
+              </div>
             </AgentSettingRow>
             <AgentSettingRow label={t('settings.magicContext.agent.variant.label')} description={t('settings.magicContext.agent.variant.inheritDescription')}>
               <VariantSelect value={asString(entry.variant)} onChange={(value) => updateAgent({ variant: value })} />
@@ -972,27 +1030,10 @@ function AgentAdvancedDialog({
     updateDraft({ [agentId]: next });
   }, [agentId, updateDraft]);
 
-  const updateAgentObject = (field: string, patch: Record<string, unknown>) => {
-    const current = asRecord(entry[field]);
-    const next = { ...current };
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === undefined || value === '') {
-        delete next[key];
-      } else {
-        next[key] = value;
-      }
-    }
-    updateAgent({ [field]: Object.keys(next).length > 0 ? next : undefined });
-  };
-
   const commitFallbackRows = (rows: MagicContextFallbackRow[]) => {
     setFallbackRows(rows);
     updateAgent({ fallback_models: agentFallbackRowsToConfig(rows) });
   };
-
-  const tasks = Array.isArray(entry.tasks) ? entry.tasks.filter((task): task is string => typeof task === 'string') : [];
-  const userMemories = asRecord(entry.user_memories);
-  const pinKeyFiles = asRecord(entry.pin_key_files);
 
   return (
     <Dialog open={Boolean(agentId)} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -1063,88 +1104,83 @@ function AgentAdvancedDialog({
               </label>
 
               {agentId === 'historian' ? (
-                <Field label="two_pass">
-                  <BooleanOverrideSelect value={entry.two_pass} onChange={(value) => updateAgent({ two_pass: value })} />
-                </Field>
+                <>
+                  <Field label="two_pass">
+                    <BooleanOverrideSelect value={entry.two_pass} onChange={(value) => updateAgent({ two_pass: value })} />
+                  </Field>
+                  <Field label="disallowed_tools">
+                    <Textarea
+                      value={stringArrayToText(entry.disallowed_tools)}
+                      onChange={(event) => updateAgent({
+                        disallowed_tools: textToStringArray(event.target.value)?.filter((tool) => HISTORIAN_DISALLOWED_TOOLS.includes(tool)),
+                      })}
+                      rows={4}
+                      outerClassName="min-h-[112px]"
+                      className="font-mono typography-meta"
+                      placeholder={HISTORIAN_DISALLOWED_TOOLS.join('\n')}
+                    />
+                  </Field>
+                </>
               ) : null}
             </section>
 
             <FallbackEditor rows={fallbackRows} onChange={commitFallbackRows} />
 
             {agentId === 'dreamer' ? (
-              <section className="grid gap-3 rounded-lg border border-border/70 p-3 md:grid-cols-2">
-                <Field label="enabled">
-                  <BooleanOverrideSelect value={entry.enabled} onChange={(value) => updateAgent({ enabled: value })} />
-                </Field>
+              <section className="grid gap-3 rounded-lg border border-border/70 p-3">
                 <Field label="inject_docs">
                   <BooleanOverrideSelect value={entry.inject_docs} onChange={(value) => updateAgent({ inject_docs: value })} />
                 </Field>
-                <Field label="schedule">
-                  <Input value={asString(entry.schedule)} onChange={(event) => updateAgent({ schedule: event.target.value })} placeholder="02:00-06:00" className="h-8" />
-                </Field>
-                <Field label="max_runtime_minutes">
-                  <Input value={asString(entry.max_runtime_minutes)} onChange={(event) => updateAgent({ max_runtime_minutes: event.target.value })} placeholder="120" className="h-8" />
-                </Field>
-                <Field label="task_timeout_minutes">
-                  <Input value={asString(entry.task_timeout_minutes)} onChange={(event) => updateAgent({ task_timeout_minutes: event.target.value })} placeholder="20" className="h-8" />
-                </Field>
-                <Field label="tasks">
-                  <div className="flex flex-wrap gap-1.5">
-                    {DREAMER_TASKS.map((task) => {
-                      const checked = tasks.includes(task);
-                      return (
-                        <Button
-                          key={task}
-                          type="button"
-                          size="xs"
-                          variant="chip"
-                          aria-pressed={checked}
-                          onClick={() => updateAgent({
-                            tasks: checked ? tasks.filter((candidate) => candidate !== task) : [...tasks, task],
+                <div className="grid gap-2">
+                  <div className="typography-ui-label font-medium text-foreground">tasks</div>
+                  {CANONICAL_DREAMER_TASKS.map((task) => {
+                    const taskConfig = getDreamerTask(entry, task);
+                    const enabled = typeof taskConfig.schedule === 'string' && taskConfig.schedule.trim() !== '';
+                    const fallbackRowsForTask = agentFallbackModelsToRows(taskConfig.fallback_models);
+                    const updateTask = (patch: Record<string, unknown>) => updateAgent({ tasks: buildDreamerTaskPatch(entry, task, patch) });
+                    return (
+                      <div key={task} className="grid gap-2 rounded-md border border-border/60 p-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label className="flex items-center gap-2 typography-ui-label text-foreground">
+                            <Checkbox
+                              checked={enabled}
+                              onChange={(checked) => updateAgent({ tasks: toggleDreamerTaskEnabled(entry, task, Boolean(checked)) })}
+                              ariaLabel={`enable ${task}`}
+                            />
+                            {task}
+                          </label>
+                          <Input
+                            value={asString(taskConfig.schedule)}
+                            onChange={(event) => updateTask({ schedule: event.target.value })}
+                            placeholder={DEFAULT_DREAMER_TASK_SCHEDULES[task] || 'disabled'}
+                            className="h-8 max-w-[220px] font-mono"
+                          />
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <Input value={asString(taskConfig.timeout_minutes)} onChange={(event) => updateTask({ timeout_minutes: event.target.value })} placeholder="timeout_minutes" className="h-8" />
+                          <Input value={asString(taskConfig.model)} onChange={(event) => updateTask({ model: event.target.value })} placeholder="model" className="h-8 font-mono" />
+                          <Input value={asString(taskConfig.thinking_level)} onChange={(event) => updateTask({ thinking_level: event.target.value })} placeholder="thinking_level" className="h-8" />
+                        </div>
+                        {task === 'review-user-memories' || task === 'promote-primers' ? (
+                          <Input value={asString(taskConfig.promotion_threshold)} onChange={(event) => updateTask({ promotion_threshold: event.target.value })} placeholder="promotion_threshold" className="h-8" />
+                        ) : null}
+                        <Input
+                          value={fallbackRowsForTask.map((row) => row.model).join(', ')}
+                          onChange={(event) => updateTask({
+                            fallback_models: agentFallbackRowsToConfig(event.target.value.split(',').map((model, index) => ({ id: `fallback-${index}`, model }))),
                           })}
-                        >
-                          {task}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </Field>
-                <Field label="user_memories">
-                  <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
-                    <BooleanOverrideSelect value={userMemories.enabled} onChange={(value) => updateAgentObject('user_memories', { enabled: value })} />
-                    <Input
-                      value={asString(userMemories.promotion_threshold)}
-                      onChange={(event) => updateAgentObject('user_memories', { promotion_threshold: event.target.value })}
-                      placeholder="promotion_threshold"
-                      className="h-8"
-                    />
-                  </div>
-                </Field>
-                <Field label="pin_key_files">
-                  <div className="grid gap-2 sm:grid-cols-[auto_1fr_1fr] sm:items-center">
-                    <BooleanOverrideSelect value={pinKeyFiles.enabled} onChange={(value) => updateAgentObject('pin_key_files', { enabled: value })} />
-                    <Input
-                      value={asString(pinKeyFiles.token_budget)}
-                      onChange={(event) => updateAgentObject('pin_key_files', { token_budget: event.target.value })}
-                      placeholder="token_budget"
-                      className="h-8"
-                    />
-                    <Input
-                      value={asString(pinKeyFiles.min_reads)}
-                      onChange={(event) => updateAgentObject('pin_key_files', { min_reads: event.target.value })}
-                      placeholder="min_reads"
-                      className="h-8"
-                    />
-                  </div>
-                </Field>
+                          placeholder="fallback_models comma-separated"
+                          className="h-8 font-mono"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             ) : null}
 
             {agentId === 'sidekick' ? (
               <section className="grid gap-3 rounded-lg border border-border/70 p-3 md:grid-cols-2">
-                <Field label="enabled">
-                  <BooleanOverrideSelect value={entry.enabled} onChange={(value) => updateAgent({ enabled: value })} />
-                </Field>
                 <Field label="timeout_ms">
                   <Input value={asString(entry.timeout_ms)} onChange={(event) => updateAgent({ timeout_ms: event.target.value })} placeholder="30000" className="h-8" />
                 </Field>
@@ -1274,6 +1310,8 @@ function EmbeddingMemorySection({
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const embedding = asRecord(draft.embedding);
   const memory = asRecord(draft.memory);
+  const autoSearch = asRecord(memory.auto_search);
+  const gitIndexing = asRecord(memory.git_commit_indexing);
   const normalized = normalizeMagicContextConfig(draft);
 
   return (
@@ -1317,6 +1355,18 @@ function EmbeddingMemorySection({
             <Field label="api_key">
               <Input value={asString(embedding.api_key)} onChange={(event) => updateDraftPath(['embedding', 'api_key'], event.target.value)} placeholder={t('settings.magicContext.common.optional')} className="h-8 font-mono" type="password" />
             </Field>
+            <Field label="input_type">
+              <Input value={asString(embedding.input_type)} onChange={(event) => updateDraftPath(['embedding', 'input_type'], event.target.value)} placeholder="search_document" className="h-8 font-mono" />
+            </Field>
+            <Field label="query_input_type">
+              <Input value={asString(embedding.query_input_type)} onChange={(event) => updateDraftPath(['embedding', 'query_input_type'], event.target.value)} placeholder="search_query" className="h-8 font-mono" />
+            </Field>
+            <Field label="truncate">
+              <Input value={asString(embedding.truncate)} onChange={(event) => updateDraftPath(['embedding', 'truncate'], event.target.value)} placeholder="END / START / NONE" className="h-8 font-mono" />
+            </Field>
+            <Field label="max_input_tokens">
+              <Input value={asString(embedding.max_input_tokens)} onChange={(event) => updateDraftPath(['embedding', 'max_input_tokens'], event.target.value)} placeholder="8192" className="h-8" />
+            </Field>
           </div>
         </div>
 
@@ -1347,6 +1397,20 @@ function EmbeddingMemorySection({
             <Field label="retrieval_count_promotion_threshold">
               <Input value={asString(memory.retrieval_count_promotion_threshold)} onChange={(event) => updateDraftPath(['memory', 'retrieval_count_promotion_threshold'], event.target.value)} placeholder="3" className="h-8" />
             </Field>
+            <div className="grid gap-2 rounded-md border border-border/60 p-2">
+              <Field label="auto_search.enabled">
+                <BooleanOverrideSelect value={autoSearch.enabled} onChange={(value) => updateDraftPath(['memory', 'auto_search', 'enabled'], value)} />
+              </Field>
+              <Input value={asString(autoSearch.score_threshold)} onChange={(event) => updateDraftPath(['memory', 'auto_search', 'score_threshold'], event.target.value)} placeholder="score_threshold 0.3..0.95" className="h-8" />
+              <Input value={asString(autoSearch.min_prompt_chars)} onChange={(event) => updateDraftPath(['memory', 'auto_search', 'min_prompt_chars'], event.target.value)} placeholder="min_prompt_chars 5..500" className="h-8" />
+            </div>
+            <div className="grid gap-2 rounded-md border border-border/60 p-2">
+              <Field label="git_commit_indexing.enabled">
+                <BooleanOverrideSelect value={gitIndexing.enabled} onChange={(value) => updateDraftPath(['memory', 'git_commit_indexing', 'enabled'], value)} />
+              </Field>
+              <Input value={asString(gitIndexing.since_days)} onChange={(event) => updateDraftPath(['memory', 'git_commit_indexing', 'since_days'], event.target.value)} placeholder="since_days 7..3650" className="h-8" />
+              <Input value={asString(gitIndexing.max_commits)} onChange={(event) => updateDraftPath(['memory', 'git_commit_indexing', 'max_commits'], event.target.value)} placeholder="max_commits 100..20000" className="h-8" />
+            </div>
           </div>
         </div>
       </div>
@@ -1365,11 +1429,8 @@ function OperationsSection({
   const updateDraftPath = useMagicContextConfigStore((state) => state.updateDraftPath);
   const resetKey = useMagicContextConfigStore((state) => state.resetKey);
   const commitCluster = asRecord(draft.commit_cluster_trigger);
-  const compressor = asRecord(draft.compressor);
-  const experimental = asRecord(draft.experimental);
-  const gitIndexing = asRecord(experimental.git_commit_indexing);
-  const autoSearch = asRecord(experimental.auto_search);
-  const caveman = asRecord(experimental.caveman_text_compression);
+  const caveman = asRecord(draft.caveman_text_compression);
+  const sqlite = asRecord(draft.sqlite);
   const normalized = normalizeMagicContextConfig(draft);
 
   return (
@@ -1402,67 +1463,48 @@ function OperationsSection({
         <div className="rounded-md border border-border/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <div className="typography-ui-label font-medium text-foreground">compressor</div>
-              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.operations.compressor.description')}</div>
+              <div className="typography-ui-label font-medium text-foreground">caveman_text_compression</div>
+              <div className="typography-micro text-muted-foreground">Stable text compression thresholds.</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.compressor ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
-              {projectOverrides.has('compressor') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('compressor')} title={t('settings.magicContext.actions.removeOverride')}>
+              {normalized.caveman_text_compression ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('caveman_text_compression') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('caveman_text_compression')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <div className="grid gap-3">
             <Field label="enabled">
-              <BooleanOverrideSelect value={compressor.enabled} onChange={(value) => updateDraftPath(['compressor', 'enabled'], value)} />
+              <BooleanOverrideSelect value={caveman.enabled} onChange={(value) => updateDraftPath(['caveman_text_compression', 'enabled'], value)} />
             </Field>
-            {['min_compartment_ratio', 'max_merge_depth', 'cooldown_ms', 'max_compartments_per_pass', 'grace_compartments'].map((field) => (
-              <Field key={field} label={field}>
-                <Input value={asString(compressor[field])} onChange={(event) => updateDraftPath(['compressor', field], event.target.value)} placeholder="inherit" className="h-8" />
-              </Field>
-            ))}
+            <Field label="min_chars">
+              <Input value={asString(caveman.min_chars)} onChange={(event) => updateDraftPath(['caveman_text_compression', 'min_chars'], event.target.value)} placeholder="100..10000" className="h-8" />
+            </Field>
           </div>
         </div>
 
         <div className="rounded-md border border-border/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <div className="typography-ui-label font-medium text-foreground">experimental</div>
-              <div className="typography-micro text-muted-foreground">{t('settings.magicContext.operations.experimental.description')}</div>
+              <div className="typography-ui-label font-medium text-foreground">sqlite</div>
+              <div className="typography-micro text-muted-foreground">SQLite cache and mmap limits.</div>
             </div>
             <div className="flex items-center gap-1">
-              {normalized.experimental ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
-              {projectOverrides.has('experimental') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
-              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('experimental')} title={t('settings.magicContext.actions.removeOverride')}>
+              {normalized.sqlite ? <Badge className="bg-primary/10 text-primary">{t('settings.magicContext.badge.overridden')}</Badge> : null}
+              {projectOverrides.has('sqlite') ? <Badge className="bg-[var(--status-warning)]/10 text-[var(--status-warning)]">{t('settings.magicContext.badge.projectOverride')}</Badge> : null}
+              <Button type="button" size="icon" variant="ghost" onClick={() => resetKey('sqlite')} title={t('settings.magicContext.actions.removeOverride')}>
                 <RiRestartLine className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <div className="grid gap-3">
-            <Field label="temporal_awareness">
-              <BooleanOverrideSelect value={experimental.temporal_awareness} onChange={(value) => updateDraftPath(['experimental', 'temporal_awareness'], value)} />
+            <Field label="cache_size_mb">
+              <Input value={asString(sqlite.cache_size_mb)} onChange={(event) => updateDraftPath(['sqlite', 'cache_size_mb'], event.target.value)} placeholder="2..2048" className="h-8" />
             </Field>
-            <div className="grid gap-2 rounded-md border border-border/60 p-2">
-              <Field label="git_commit_indexing.enabled">
-                <BooleanOverrideSelect value={gitIndexing.enabled} onChange={(value) => updateDraftPath(['experimental', 'git_commit_indexing', 'enabled'], value)} />
-              </Field>
-              <Input value={asString(gitIndexing.since_days)} onChange={(event) => updateDraftPath(['experimental', 'git_commit_indexing', 'since_days'], event.target.value)} placeholder="since_days" className="h-8" />
-              <Input value={asString(gitIndexing.max_commits)} onChange={(event) => updateDraftPath(['experimental', 'git_commit_indexing', 'max_commits'], event.target.value)} placeholder="max_commits" className="h-8" />
-            </div>
-            <div className="grid gap-2 rounded-md border border-border/60 p-2">
-              <Field label="auto_search.enabled">
-                <BooleanOverrideSelect value={autoSearch.enabled} onChange={(value) => updateDraftPath(['experimental', 'auto_search', 'enabled'], value)} />
-              </Field>
-              <Input value={asString(autoSearch.score_threshold)} onChange={(event) => updateDraftPath(['experimental', 'auto_search', 'score_threshold'], event.target.value)} placeholder="score_threshold" className="h-8" />
-              <Input value={asString(autoSearch.min_prompt_chars)} onChange={(event) => updateDraftPath(['experimental', 'auto_search', 'min_prompt_chars'], event.target.value)} placeholder="min_prompt_chars" className="h-8" />
-            </div>
-            <div className="grid gap-2 rounded-md border border-border/60 p-2">
-              <Field label="caveman_text_compression.enabled">
-                <BooleanOverrideSelect value={caveman.enabled} onChange={(value) => updateDraftPath(['experimental', 'caveman_text_compression', 'enabled'], value)} />
-              </Field>
-              <Input value={asString(caveman.min_chars)} onChange={(event) => updateDraftPath(['experimental', 'caveman_text_compression', 'min_chars'], event.target.value)} placeholder="min_chars" className="h-8" />
-            </div>
+            <Field label="mmap_size_mb">
+              <Input value={asString(sqlite.mmap_size_mb)} onChange={(event) => updateDraftPath(['sqlite', 'mmap_size_mb'], event.target.value)} placeholder="0..8192" className="h-8" />
+            </Field>
           </div>
         </div>
       </div>
@@ -1625,19 +1667,17 @@ export const MagicContextPage: React.FC = () => {
         <BooleanRow field="enabled" label="enabled" description={t('settings.magicContext.field.enabled.description')} draft={draft} projectOverrides={projectOverrides} />
         <BooleanRow field="auto_update" label="auto_update" description={t('settings.magicContext.field.autoUpdate.description')} draft={draft} projectOverrides={projectOverrides} />
         <BooleanRow field="ctx_reduce_enabled" label="ctx_reduce_enabled" description={t('settings.magicContext.field.ctxReduce.description')} draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="drop_tool_structure" label="drop_tool_structure" description={t('settings.magicContext.field.dropToolStructure.description')} draft={draft} projectOverrides={projectOverrides} />
-        <BooleanRow field="compaction_markers" label="compaction_markers" description={t('settings.magicContext.field.compactionMarkers.description')} draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="temporal_awareness" label="temporal_awareness" description="Include temporal awareness hints in Magic Context behavior." draft={draft} projectOverrides={projectOverrides} />
+        <BooleanRow field="keep_subagents" label="keep_subagents" description="Keep subagent context available for Magic Context." draft={draft} projectOverrides={projectOverrides} />
+        <ScalarRow field="toast_duration_ms" label="toast_duration_ms" description="Toast duration in milliseconds (0..60000)." placeholder="5000" draft={draft} projectOverrides={projectOverrides} />
         <MapEditor field="cache_ttl" label="cache_ttl" description={t('settings.magicContext.field.cacheTtl.description')} draft={draft} projectOverrides={projectOverrides} type="string" allowScalar valuePlaceholder="5m / 60m" />
         <MapEditor field="execute_threshold_percentage" label="execute_threshold_percentage" description={t('settings.magicContext.field.executeThresholdPercentage.description')} draft={draft} projectOverrides={projectOverrides} type="number" allowScalar valuePlaceholder="65" />
         <MapEditor field="execute_threshold_tokens" label="execute_threshold_tokens" description={t('settings.magicContext.field.executeThresholdTokens.description')} draft={draft} projectOverrides={projectOverrides} type="number" allowScalar={false} valuePlaceholder="150000" />
       </Section>
 
       <Section title={t('settings.magicContext.section.cleanup.title')} description={t('settings.magicContext.section.cleanup.description')}>
-        <ScalarRow field="nudge_interval_tokens" label="nudge_interval_tokens" description={t('settings.magicContext.field.nudgeInterval.description')} placeholder="10000" draft={draft} projectOverrides={projectOverrides} />
         <ScalarRow field="protected_tags" label="protected_tags" description={t('settings.magicContext.field.protectedTags.description')} placeholder="20" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="auto_drop_tool_age" label="auto_drop_tool_age" description={t('settings.magicContext.field.autoDropToolAge.description')} placeholder="100" draft={draft} projectOverrides={projectOverrides} />
         <ScalarRow field="clear_reasoning_age" label="clear_reasoning_age" description={t('settings.magicContext.field.clearReasoningAge.description')} placeholder="50" draft={draft} projectOverrides={projectOverrides} />
-        <ScalarRow field="iteration_nudge_threshold" label="iteration_nudge_threshold" description={t('settings.magicContext.field.iterationNudgeThreshold.description')} placeholder="15" draft={draft} projectOverrides={projectOverrides} />
         <ScalarRow field="history_budget_percentage" label="history_budget_percentage" description={t('settings.magicContext.field.historyBudgetPercentage.description')} placeholder="0.15" draft={draft} projectOverrides={projectOverrides} />
         <ScalarRow field="historian_timeout_ms" label="historian_timeout_ms" description={t('settings.magicContext.field.historianTimeout.description')} placeholder="300000" draft={draft} projectOverrides={projectOverrides} />
       </Section>
