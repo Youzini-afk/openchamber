@@ -7,7 +7,6 @@ export type SettingsPageSlug =
   | 'providers'
   | 'usage'
   | 'agents'
-  | 'smart-search'
   | 'behavior'
   | 'commands'
   | 'mcp'
@@ -114,15 +113,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
       'categories',
       'model routes',
     ],
-  },
-  {
-    slug: 'smart-search',
-    title: 'Smart Search',
-    group: 'skills',
-    kind: 'split',
-    primaryNav: false,
-    keywords: ['smart search', 'smart-search', 'web research', 'search', 'exa', 'context7', 'zhipu', 'tavily', 'firecrawl'],
-    isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
     slug: 'behavior',
