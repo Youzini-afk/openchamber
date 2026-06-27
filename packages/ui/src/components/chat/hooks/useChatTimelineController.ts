@@ -395,10 +395,53 @@ export const useChatTimelineController = ({
         const container = scrollRef.current;
         if (!container) return;
 
+        const snap = prePrependScrollRef.current;
+        const prev = prependTrackingRef.current;
         const currentOldestId = renderedMessages[0]?.info?.id ?? null;
         const currentNewestId = renderedMessages[renderedMessages.length - 1]?.info?.id ?? null;
 
-        const snap = prePrependScrollRef.current;
+        // A prepend = content inserted ABOVE the viewport within the same session.
+        // Do not require newestId to stay fixed: history prepend and streaming tail
+        // growth can land in the same React commit, and skipping compensation there
+        // causes the one-frame up/down judder this controller is meant to prevent.
+        const isPrepend = Boolean(
+            prev
+            && prev.oldestId
+            && currentOldestId
+            && currentOldestId !== prev.oldestId
+            && prev.sessionId === sessionIdRef.current,
+        );
+
+        const updateTracking = () => {
+            prependTrackingRef.current = {
+                oldestId: currentOldestId,
+                newestId: currentNewestId,
+                scrollHeight: container.scrollHeight,
+                sessionId: sessionIdRef.current,
+            };
+        };
+
+        if (isPinnedRef.current) {
+            // Bottom-pinned. Only content inserted ABOVE (a prepend / history load)
+            // needs an explicit re-pin: with overflow-anchor:none the browser leaves
+            // scrollTop unchanged, so the viewport would visibly jump. Route that
+            // through goToBottom — the single programmatic writer.
+            //
+            // A normal bottom APPEND (a sent message, a streaming part) must NOT
+            // re-pin here. Auto-follow's own follow loop — kicked by the content
+            // ResizeObserver and the streaming chunk handlers — already eases to the
+            // new bottom. Calling goToBottom on every append layered its settle burst
+            // on top of that loop: two writers aiming at different positions, which
+            // is exactly the up/down jiggle reported on send / from the queue / while
+            // streaming. So for an append we do nothing and let the follow loop own it.
+            if (snap || isPrepend) {
+                prePrependScrollRef.current = null;
+                goToBottom('instant');
+            }
+            updateTracking();
+            return;
+        }
+
         if (snap) {
             prePrependScrollRef.current = null;
             // When a viewport anchor is available, delegate to MessageList
@@ -411,43 +454,18 @@ export const useChatTimelineController = ({
                     container.scrollTop = snap.top + delta;
                 }
             }
-        } else {
-            // Auto-detect a prepend by the oldest message id changing WITHIN
-            // the same session. We no longer require the newest id to be
-            // unchanged: when streaming and prepend land in the same commit,
-            // newestId also changes and the old guard would skip compensation
-            // — leaving the viewport visibly jumped up until auto-follow
-            // yanked it back on the next frame (a one-shot up/down judder).
-            // Instead, compensate by the height delta whenever a prepend is
-            // detected within the same session, regardless of whether the
-            // tail also grew. The full delta includes any streaming tail
-            // growth; for a bottom-pinned viewport auto-follow re-clamps on
-            // the next frame anyway, and for a released viewport the small
-            // over-compensation (tail growth) is far less jarring than the
-            // large under-compensation (whole prepend page) of skipping.
-            const prev = prependTrackingRef.current;
-            const isPrepend = Boolean(
-                prev
-                && prev.oldestId
-                && currentOldestId
-                && currentOldestId !== prev.oldestId
-                && prev.sessionId === sessionIdRef.current,
-            );
-            if (isPrepend && prev) {
-                const delta = container.scrollHeight - prev.scrollHeight;
-                if (delta > 0) {
-                    container.scrollTop = container.scrollTop + delta;
-                }
+        } else if (isPrepend && prev) {
+            // Released viewport: preserve the read position by compensating for
+            // the height delta in the same layout pass, with no intermediate
+            // frame for auto-follow to fight.
+            const delta = container.scrollHeight - prev.scrollHeight;
+            if (delta > 0) {
+                container.scrollTop = container.scrollTop + delta;
             }
         }
 
-        prependTrackingRef.current = {
-            oldestId: currentOldestId,
-            newestId: currentNewestId,
-            scrollHeight: container.scrollHeight,
-            sessionId: sessionIdRef.current,
-        };
-    }, [renderedMessages, scrollRef, restoreViewportAnchor]);
+        updateTracking();
+    }, [renderedMessages, scrollRef, restoreViewportAnchor, goToBottom]);
 
     const revealBufferedTurns = React.useCallback(async (): Promise<boolean> => false, []);
 

@@ -45,7 +45,7 @@ import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, ProjectIconImage } from '@/lib/pro
 import { cn } from '@/lib/utils';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { mergeSessionDirectoryMetadata, refreshGlobalSessions, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { mergeLiveSessionWithGlobalSession, refreshGlobalSessions, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useMobileSessionExpansionStore } from '@/stores/useMobileSessionExpansionStore';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -155,6 +155,20 @@ const pathBelongsToRoot = (path: string, root: string): boolean => {
       normalizedRoot &&
       (normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`)),
   );
+};
+
+const findExactWorktreeMatch = (project: ProjectMeta, normalizedDirectory: string): WorktreeMetadata | null => (
+  project.worktrees.find((worktree) => normalizePath(worktree.path) === normalizedDirectory) ?? null
+);
+
+const projectMatchesExactDirectory = (project: ProjectMeta, normalizedDirectory: string): boolean => (
+  normalizedDirectory === project.path || Boolean(findExactWorktreeMatch(project, normalizedDirectory))
+);
+
+const findExactProjectMatch = (projects: ProjectMeta[], directory: string): ProjectMeta | null => {
+  const normalizedDirectory = normalizePath(directory);
+  if (!normalizedDirectory) return null;
+  return projects.find((project) => projectMatchesExactDirectory(project, normalizedDirectory)) ?? null;
 };
 
 const sessionMatchesQuery = (session: Session, projectLabel: string, query: string): boolean => {
@@ -627,7 +641,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
     const liveById = new Map(liveSessions.map((session) => [session.id, session]));
     const merged = globalActiveSessions.map((session) => {
       const liveSession = liveById.get(session.id);
-      return liveSession ? mergeSessionDirectoryMetadata(liveSession, session) : session;
+      return liveSession ? mergeLiveSessionWithGlobalSession(liveSession, session) : session;
     });
     const seenIds = new Set(merged.map((session) => session.id));
     for (const session of liveSessions) {
@@ -671,12 +685,10 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
     for (const session of sessions) {
       const directory = getSessionDirectory(session);
       if (!directory) continue;
-      const node = nodes.find((entry) => {
-        if (pathBelongsToRoot(directory, entry.project.path)) return true;
-        return entry.project.worktrees.some((worktree) => pathBelongsToRoot(directory, worktree.path));
-      });
+      const normalizedDirectory = normalizePath(directory);
+      const node = nodes.find((entry) => projectMatchesExactDirectory(entry.project, normalizedDirectory));
       if (!node) continue;
-      const matchedWorktree = node.project.worktrees.find((entry) => pathBelongsToRoot(directory, entry.path));
+      const matchedWorktree = findExactWorktreeMatch(node.project, normalizedDirectory);
       const bucket = matchedWorktree
         ? ensureBucket(node, matchedWorktree.path, matchedWorktree)
         : ensureBucket(node, node.project.path, null);
@@ -686,7 +698,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
     for (const node of nodes) {
       for (const bucket of node.buckets) {
         bucket.sessions.sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
-        node.totalSessions += bucket.sessions.length;
+        for (const session of bucket.sessions) {
+          if (!getParentId(session)) node.totalSessions += 1;
+        }
       }
     }
 
@@ -825,10 +839,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
     // Switching session switches the working directory (handled by
     // setCurrentSession) — also move the active project so the rest of the app
     // and the active highlight follow the selected session, not just the draft.
-    const project = projectsMeta.find((entry) => {
-      if (pathBelongsToRoot(directory ?? '', entry.path)) return true;
-      return entry.worktrees.some((worktree) => pathBelongsToRoot(directory ?? '', worktree.path));
-    });
+    const project = findExactProjectMatch(projectsMeta, directory ?? '');
     if (project) setActiveProjectIdOnly(project.id);
     void setCurrentSession(session.id, directory);
     onOpenChange(false);
@@ -887,12 +898,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
   const buildSessionContextLabel = React.useCallback(
     (session: Session): string => {
       const directory = getSessionDirectory(session);
-      const project = projectsMeta.find((entry) => {
-        if (pathBelongsToRoot(directory, entry.path)) return true;
-        return entry.worktrees.some((worktree) => pathBelongsToRoot(directory, worktree.path));
-      });
+      const project = findExactProjectMatch(projectsMeta, directory);
       if (!project) return getProjectLabel(directory) || directory;
-      const matchedWorktree = project.worktrees.find((entry) => pathBelongsToRoot(directory, entry.path));
+      const matchedWorktree = findExactWorktreeMatch(project, normalizePath(directory));
       if (matchedWorktree?.branch) return `${project.label} · ${matchedWorktree.branch}`;
       return project.label;
     },
@@ -924,10 +932,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
     return sessions
       .filter((session) => {
         const directory = getSessionDirectory(session);
-        const project = projectsMeta.find((entry) => {
-          if (pathBelongsToRoot(directory, entry.path)) return true;
-          return entry.worktrees.some((worktree) => pathBelongsToRoot(directory, worktree.path));
-        });
+        const project = findExactProjectMatch(projectsMeta, directory);
         return sessionMatchesQuery(session, project?.label ?? '', normalizedQuery);
       })
       .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
@@ -940,9 +945,9 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({
       .map((project) => ({
         ...project,
         sessionCount: sessions.filter((session) => {
-          const directory = getSessionDirectory(session);
-          if (pathBelongsToRoot(directory, project.path)) return true;
-          return project.worktrees.some((worktree) => pathBelongsToRoot(directory, worktree.path));
+          if (getParentId(session)) return false;
+          const directory = normalizePath(getSessionDirectory(session));
+          return projectMatchesExactDirectory(project, directory);
         }).length,
       }));
   }, [normalizedQuery, projectsMeta, sessions]);

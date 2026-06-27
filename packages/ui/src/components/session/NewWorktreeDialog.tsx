@@ -46,7 +46,8 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useContextStore } from '@/stores/contextStore';
 import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
-import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
+import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
+import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
@@ -924,6 +925,10 @@ export function NewWorktreeDialog({
       let createdSessionId: string | null = null;
 
       if (shouldCreateSession) {
+        if (await getWorktreeSetupWaitEnabled(projectRef)) {
+          await waitForWorktreeBootstrap(metadata.path);
+        }
+
         const sessionTitle = linkedIssue
           ? `#${linkedIssue.number} ${linkedIssue.title}`.trim()
           : linkedPrState

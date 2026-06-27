@@ -58,7 +58,7 @@ export type Snippet = {
 };
 
 export type PluginScope = 'user' | 'project';
-export type PluginParsedKind = 'npm' | 'path';
+type PluginParsedKind = 'npm' | 'path';
 
 export type PluginEntry = {
   id: string;
@@ -239,7 +239,7 @@ const getUserAgentPath = (agentName: string, lookupCache: AgentLookupCache = glo
   return pluralPath;
 };
 
-export const getAgentScope = (
+const getAgentScope = (
   agentName: string,
   workingDirectory?: string,
   lookupCache: AgentLookupCache = globalAgentLookupCache
@@ -312,7 +312,7 @@ const getUserCommandPath = (commandName: string): string => {
   return pluralPath;
 };
 
-export const getCommandScope = (commandName: string, workingDirectory?: string): { scope: CommandScope | null; path: string | null } => {
+const getCommandScope = (commandName: string, workingDirectory?: string): { scope: CommandScope | null; path: string | null } => {
   if (workingDirectory) {
     const projectPath = getProjectCommandPath(workingDirectory, commandName);
     if (fs.existsSync(projectPath)) {
@@ -3111,7 +3111,7 @@ export const SKILL_SCOPE = {
 export type SkillScope = typeof SKILL_SCOPE[keyof typeof SKILL_SCOPE];
 export type SkillSource = 'opencode' | 'claude' | 'agents';
 
-export type SupportingFile = {
+type SupportingFile = {
   name: string;
   path: string;
   fullPath: string;
@@ -3252,9 +3252,9 @@ const getProjectAgentsSkillDir = (workingDirectory: string, skillName: string): 
   return path.join(workingDirectory, '.agents', 'skills', skillName);
 };
 
-export const getSkillScope = (skillName: string, workingDirectory?: string): { 
-  scope: SkillScope | null; 
-  path: string | null; 
+const getSkillScope = (skillName: string, workingDirectory?: string): {
+  scope: SkillScope | null;
+  path: string | null;
   source: SkillSource | null;
 } => {
   const discovered = discoverSkills(workingDirectory).find((skill) => skill.name === skillName);

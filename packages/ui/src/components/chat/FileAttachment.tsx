@@ -16,7 +16,7 @@ import { useDeviceInfo } from '@/lib/device';
 
 import type { ToolPopupContent } from './message/types';
 
-export const FileAttachmentButton = memo(() => {
+const FileAttachmentButton = memo(() => {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addAttachedFile = useInputStore((state) => state.addAttachedFile);
@@ -918,7 +918,7 @@ interface ImageGalleryProps {
   onShowPopup?: (content: ToolPopupContent) => void;
 }
 
-export const ImageGallery = memo(({ urls, caption, onShowPopup }: ImageGalleryProps) => {
+const ImageGallery = memo(({ urls, caption, onShowPopup }: ImageGalleryProps) => {
   if (urls.length === 0) return null;
 
   const getGridCols = () => {

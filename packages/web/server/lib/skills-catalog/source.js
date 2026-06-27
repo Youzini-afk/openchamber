@@ -1,4 +1,5 @@
 const GITHUB_HOST = 'github.com';
+const CLAWDHUB_SOURCE_PREFIX = 'clawdhub:';
 
 function normalizeGitHubOwnerRepo(owner, repo) {
   const normalizedOwner = String(owner || '').trim();
@@ -82,4 +83,8 @@ export function parseSkillRepoSource(input, options = {}) {
   }
 
   return { ok: false, error: { kind: 'invalidSource', message: 'Unsupported repository source format' } };
+}
+
+export function isClawdHubSource(input) {
+  return typeof input === 'string' && input.trim().toLowerCase().startsWith(CLAWDHUB_SOURCE_PREFIX);
 }
