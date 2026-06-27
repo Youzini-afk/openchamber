@@ -447,6 +447,87 @@ describe("optimisticSend target directory", () => {
   })
 })
 
+describe("prompt delivery recovery helpers", () => {
+  test("detects assistant responses after the optimistic user prompt", async () => {
+    const { hasAssistantResponseAfterPrompt } = await import("./session-actions")
+    const userMessage = {
+      id: "msg_user",
+      sessionID: "session-a",
+      role: "user",
+      time: { created: 100 },
+    } as Message
+    const assistantMessage = {
+      id: "msg_assistant",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 101 },
+    } as Message
+
+    expect(hasAssistantResponseAfterPrompt(
+      { message: { "session-a": [userMessage] } },
+      "session-a",
+      "msg_user",
+      100,
+    )).toBe(false)
+
+    expect(hasAssistantResponseAfterPrompt(
+      { message: { "session-a": [userMessage, assistantMessage] } },
+      "session-a",
+      "msg_user",
+      100,
+    )).toBe(true)
+  })
+
+  test("falls back to message timestamps when the optimistic user prompt was replaced", async () => {
+    const { hasAssistantResponseAfterPrompt } = await import("./session-actions")
+    const assistantMessage = {
+      id: "msg_assistant",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 105 },
+    } as Message
+
+    expect(hasAssistantResponseAfterPrompt(
+      { message: { "session-a": [assistantMessage] } },
+      "session-a",
+      "msg_user_missing",
+      100,
+    )).toBe(true)
+  })
+
+  test("changes progress signature when streamed assistant text grows", async () => {
+    const { buildPromptProgressSignature } = await import("./session-actions")
+    const userMessage = {
+      id: "msg_user",
+      sessionID: "session-a",
+      role: "user",
+      time: { created: 100 },
+    } as Message
+    const assistantMessage = {
+      id: "msg_assistant",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 101 },
+    } as Message
+    const base = {
+      message: { "session-a": [userMessage, assistantMessage] },
+      part: {
+        msg_assistant: [{ id: "prt_1", messageID: "msg_assistant", type: "text", text: "hel" } as Part],
+      },
+      session_status: { "session-a": { type: "busy" as const } },
+    }
+    const next = {
+      ...base,
+      part: {
+        msg_assistant: [{ id: "prt_1", messageID: "msg_assistant", type: "text", text: "hello" } as Part],
+      },
+    }
+
+    expect(buildPromptProgressSignature(base, "session-a", "msg_user", 100))
+      .not.toBe(buildPromptProgressSignature(next, "session-a", "msg_user", 100))
+  })
+})
+
 describe("respondToPermission passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0

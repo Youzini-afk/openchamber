@@ -536,7 +536,7 @@ export function needsSnapshotAfterStatusPoll(
   return Boolean(currentStatus && currentStatus.type !== "idle")
 }
 
-type EventRoutingIndex = {
+export type EventRoutingIndex = {
   sessionDirectoryById: Map<string, string>
   messageSessionById: Map<string, string>
   sessionMessageIdsById: Map<string, Set<string>>
@@ -551,7 +551,7 @@ const dispatchVSCodeRuntimeNotificationEvent = (directory: string, payload: Even
   }))
 }
 
-const createEventRoutingIndex = (): EventRoutingIndex => ({
+export const createEventRoutingIndex = (): EventRoutingIndex => ({
   sessionDirectoryById: new Map(),
   messageSessionById: new Map(),
   sessionMessageIdsById: new Map(),
@@ -881,7 +881,76 @@ const childStoreHasMessagePartState = (
   return Object.prototype.hasOwnProperty.call(store.getState().part, messageID)
 }
 
-const resolveDirectoryFromRoutingIndex = (
+const getUniqueActiveSessionCandidate = (
+  childStores: ChildStoreManager,
+): { directory: string; sessionID: string } | null => {
+  let activeStatusMatch: { directory: string; sessionID: string } | null = null
+
+  for (const [directory, store] of childStores.children) {
+    const state = store.getState()
+    for (const [sessionID, status] of Object.entries(state.session_status ?? {})) {
+      if (!status || status.type === "idle") continue
+      if (activeStatusMatch) return null
+      activeStatusMatch = { directory, sessionID }
+    }
+  }
+
+  if (activeStatusMatch) return activeStatusMatch
+
+  let recoveryMatch: { directory: string; sessionID: string } | null = null
+
+  for (const [directory, store] of childStores.children) {
+    const candidates = getActiveSessionCandidateIds(directory, store.getState())
+    if (candidates.length === 0) continue
+    if (candidates.length > 1 || recoveryMatch) return null
+    recoveryMatch = { directory, sessionID: candidates[0] }
+  }
+
+  return recoveryMatch
+}
+
+const findSessionIdForMessageInStore = (
+  store: StoreApi<DirectoryStore>,
+  messageID: string,
+): string | null => {
+  const state = store.getState()
+  for (const [sessionID, messages] of Object.entries(state.message)) {
+    if (messages.some((message) => message.id === messageID)) {
+      return sessionID
+    }
+  }
+  return null
+}
+
+export const resolveMaterializationSessionId = (
+  routingIndex: EventRoutingIndex,
+  payload: Event,
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+  childStores: ChildStoreManager,
+  explicitSessionID?: string,
+): string | undefined => {
+  const sessionID = explicitSessionID ?? getSessionIdFromPayload(payload)
+  if (sessionID) return sessionID
+
+  const messageID = getMessageIdFromPayload(payload)
+  if (!messageID) return undefined
+
+  const indexedSessionID = routingIndex.messageSessionById.get(messageID)
+  if (indexedSessionID) return indexedSessionID
+
+  const storeSessionID = findSessionIdForMessageInStore(store, messageID)
+  if (storeSessionID) return storeSessionID
+
+  const unique = getUniqueActiveSessionCandidate(childStores)
+  if (unique?.directory === directory) {
+    return unique.sessionID
+  }
+
+  return undefined
+}
+
+export const resolveDirectoryFromRoutingIndex = (
   routingIndex: EventRoutingIndex,
   rawDirectory: string,
   payload: Event,
@@ -928,6 +997,11 @@ const resolveDirectoryFromRoutingIndex = (
       if (Object.prototype.hasOwnProperty.call(store.getState().part, messageID)) {
         return dir
       }
+    }
+
+    const unique = getUniqueActiveSessionCandidate(childStores)
+    if (unique && (!normalizedDirectory || normalizedDirectory === "global")) {
+      return unique.directory
     }
   }
 
@@ -1536,7 +1610,14 @@ function handleEvent(
   // Snapshot materialization is driven by typed reducer outcomes, not by
   // inferring meaning from a generic false/no-change result.
   if (materializationResult) {
-    const materializationSessionID = materializationResult.sessionID ?? getSessionIdFromPayload(payload) ?? undefined
+    const materializationSessionID = resolveMaterializationSessionId(
+      routingIndex,
+      payload,
+      resolvedDirectory,
+      store,
+      childStores,
+      materializationResult.sessionID,
+    )
     if (materializationSessionID) {
       enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores)
     }

@@ -7,7 +7,7 @@ import type { OpencodeClient, Session, Message, Part } from "@opencode-ai/sdk/v2
 import { Binary } from "./binary"
 import { useSessionUIStore } from "./session-ui-store"
 import { useInputStore } from "./input-store"
-import type { ChildStoreManager } from "./child-store"
+import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { computeSubtreeIds } from "./scoped-blocking-requests"
 import { opencodeClient } from "@/lib/opencode/client"
 import { mergeSessionDirectoryMetadata, useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
@@ -33,6 +33,7 @@ const MESSAGE_REFETCH_LIMIT = 100
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const UNREVERT_REFETCH_ATTEMPTS = 3
 const UNREVERT_REFETCH_RETRY_MS = 150
+const PROMPT_RECOVERY_DELAYS_MS = [2_000, 6_000, 12_000, 24_000, 45_000, 90_000]
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
 let _sdk: OpencodeClient | null = null
@@ -45,6 +46,93 @@ let _optimisticAdd: ((input: OptimisticAddInput) => void) | null = null
 let _optimisticRemove: ((input: OptimisticRemoveInput) => void) | null = null
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function getMessageCreatedAt(message: Message): number {
+  const created = (message.time as { created?: unknown } | undefined)?.created
+  return typeof created === "number" ? created : 0
+}
+
+function getPartEndTime(part: Part): number | undefined {
+  const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end
+  if (typeof stateEnd === "number") return stateEnd
+  const timeEnd = (part as { time?: { end?: unknown } }).time?.end
+  return typeof timeEnd === "number" ? timeEnd : undefined
+}
+
+function getPartStringLength(part: Part, field: "text" | "output"): number {
+  const value = (part as Record<string, unknown>)[field]
+  return typeof value === "string" ? value.length : 0
+}
+
+function promptMessageStartIndex(messages: Message[], promptMessageID: string): number {
+  const index = messages.findIndex((message) => message.id === promptMessageID)
+  return index >= 0 ? index : -1
+}
+
+function isMessageAfterPrompt(
+  messages: Message[],
+  message: Message,
+  promptMessageID: string,
+  promptCreatedAt: number,
+): boolean {
+  const promptIndex = promptMessageStartIndex(messages, promptMessageID)
+  if (promptIndex >= 0) {
+    const messageIndex = messages.findIndex((item) => item.id === message.id)
+    return messageIndex > promptIndex
+  }
+  return getMessageCreatedAt(message) >= promptCreatedAt
+}
+
+export function hasAssistantResponseAfterPrompt(
+  state: Pick<DirectoryStore, "message">,
+  sessionId: string,
+  promptMessageID: string,
+  promptCreatedAt: number,
+): boolean {
+  const messages = state.message[sessionId] ?? []
+  return messages.some((message) => (
+    message.role === "assistant"
+    && isMessageAfterPrompt(messages, message, promptMessageID, promptCreatedAt)
+  ))
+}
+
+export function buildPromptProgressSignature(
+  state: Pick<DirectoryStore, "message" | "part" | "session_status">,
+  sessionId: string,
+  promptMessageID: string,
+  promptCreatedAt: number,
+): string {
+  const messages = state.message[sessionId] ?? []
+  const status = state.session_status?.[sessionId]
+  const relevantMessages = messages.filter((message) => (
+    message.id === promptMessageID
+    || isMessageAfterPrompt(messages, message, promptMessageID, promptCreatedAt)
+  ))
+
+  return [
+    status?.type ?? "unknown",
+    ...relevantMessages.map((message) => {
+      const parts = state.part[message.id] ?? []
+      const completed = (message.time as { completed?: unknown } | undefined)?.completed
+      const partSignature = parts
+        .map((part) => [
+          part.id,
+          part.type,
+          getPartStringLength(part, "text"),
+          getPartStringLength(part, "output"),
+          getPartEndTime(part) ?? "",
+        ].join(":"))
+        .join(",")
+      return [
+        message.id,
+        message.role,
+        getMessageCreatedAt(message),
+        typeof completed === "number" ? completed : "",
+        partSignature,
+      ].join("|")
+    }),
+  ].join("||")
+}
 
 type SdkResult<T> = {
   data?: T
@@ -697,6 +785,12 @@ export async function optimisticSend(input: {
 
   try {
     await input.send(messageID)
+    schedulePromptDeliveryRecovery({
+      sessionId: input.sessionId,
+      directory: targetDirectory,
+      promptMessageID: messageID,
+      promptCreatedAt: getMessageCreatedAt(optimisticMessage),
+    })
   } catch (error) {
     // Rollback via optimistic infrastructure
     _optimisticRemove({
@@ -712,6 +806,71 @@ export async function optimisticSend(input: {
       },
     })
     throw error
+  }
+}
+
+function schedulePromptDeliveryRecovery(input: {
+  sessionId: string
+  directory?: string | null
+  promptMessageID: string
+  promptCreatedAt: number
+}): void {
+  const targetDirectory = input.directory ?? dir()
+  const stores = _childStores
+  if (!stores || !targetDirectory) return
+
+  const initialStore = stores.getChild(targetDirectory)
+  if (!initialStore) return
+
+  let lastSignature = buildPromptProgressSignature(
+    initialStore.getState(),
+    input.sessionId,
+    input.promptMessageID,
+    input.promptCreatedAt,
+  )
+
+  for (const delayMs of PROMPT_RECOVERY_DELAYS_MS) {
+    const timer = setTimeout(() => {
+      void (async () => {
+        const liveStores = _childStores
+        const store = liveStores?.getChild(targetDirectory)
+        if (!store) return
+
+        const before = store.getState()
+        const hasAssistant = hasAssistantResponseAfterPrompt(
+          before,
+          input.sessionId,
+          input.promptMessageID,
+          input.promptCreatedAt,
+        )
+        const currentSignature = buildPromptProgressSignature(
+          before,
+          input.sessionId,
+          input.promptMessageID,
+          input.promptCreatedAt,
+        )
+        const status = before.session_status?.[input.sessionId]
+        const active = !!status && status.type !== "idle"
+        const stalled = active && currentSignature === lastSignature
+
+        if (!hasAssistant || stalled) {
+          try {
+            await refetchSessionMessages(input.sessionId, targetDirectory)
+          } catch (error) {
+            console.warn("[session-actions] prompt recovery refetch failed", error)
+          }
+        }
+
+        const after = store.getState()
+        lastSignature = buildPromptProgressSignature(
+          after,
+          input.sessionId,
+          input.promptMessageID,
+          input.promptCreatedAt,
+        )
+      })()
+    }, delayMs)
+    ;(timer as unknown as { unref?: () => void }).unref?.()
   }
 }
 
@@ -1015,8 +1174,10 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   }
 }
 
-export async function refetchSessionMessages(sessionId: string): Promise<void> {
-  const { store, directory } = dirStoreForSession(sessionId)
+export async function refetchSessionMessages(sessionId: string, directoryHint?: string | null): Promise<void> {
+  const { store, directory } = directoryHint
+    ? { store: dirStoreForDirectory(directoryHint), directory: directoryHint }
+    : dirStoreForSession(sessionId)
   const result = await sdk().session.messages({ sessionID: sessionId, directory, limit: MESSAGE_REFETCH_LIMIT })
   const records = (assertSdkSuccess(result, "session.messages") ?? [])
     .filter((record: { info?: { id?: string } }) => !!record?.info?.id)
