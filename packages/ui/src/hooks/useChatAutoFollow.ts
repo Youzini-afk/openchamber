@@ -2,10 +2,9 @@ import React from 'react';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
-import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
-import type { MessageListHandle } from '@/components/chat/MessageList';
+import { useViewportStore } from '@/sync/viewport-store';
 
-export type AutoFollowState = 'following' | 'released';
+type AutoFollowState = 'following' | 'released';
 
 export type ContentChangeReason = 'text' | 'structural' | 'permission';
 
@@ -24,7 +23,7 @@ interface UseChatAutoFollowOptions {
     sessionMessageCount: number;
     sessionIsWorking: boolean;
     isMobile: boolean;
-    messageListRef?: React.RefObject<MessageListHandle | null>;
+    messageListRef?: React.RefObject<unknown>;
     onActiveTurnChange?: (turnId: string | null) => void;
 }
 
@@ -38,6 +37,7 @@ export interface UseChatAutoFollowResult {
     notifyContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
+    scrollToBottomOnSend: () => void;
     releaseAutoFollow: () => void;
     saveSnapshotNow: () => void;
     restoreSnapshot: () => Promise<boolean>;
@@ -50,16 +50,8 @@ const SAVE_DEBOUNCE_MS = 150;
 const SETTLE_EPSILON = 0.5;
 const SETTLE_FRAMES = 4;
 const TOUCH_FINGER_DOWN_THRESHOLD = 2;
+const SETTLE_BURST_DURATION_MS = 280;
 const REPIN_GRACE_AFTER_RELEASE_MS = 1200;
-// Fix A5: anchor-correction loop tuning. After a DOM-anchor restore, scrollHeight
-// must be stable for this many frames before re-applying the anchor. A hard
-// frame/time cap prevents an oscillating session from keeping the loop alive.
-const ANCHOR_CORRECTION_STABLE_FRAMES = 3;
-const ANCHOR_CORRECTION_MAX_FRAMES = 120;
-const ANCHOR_CORRECTION_MAX_MS = 2000;
-// Width of the programmatic-write window after an anchor restore/correction so
-// the scroll handler does not interpret our own scrollTop write as user intent.
-const ANCHOR_RESTORE_PROGRAMMATIC_WINDOW_MS = 500;
 
 // The bottom of the chat has an empty spacer (10vh on desktop, 40px on mobile)
 // — its height is exactly how far above scrollHeight the user can be while still
@@ -107,52 +99,6 @@ const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | n
     return nested.scrollTop > 0;
 };
 
-const isAtBottomSnapshot = (snapshot: NonNullable<SessionMemoryState['scrollPosition']>, isMobile: boolean): boolean => {
-    const max = Math.max(0, snapshot.scrollHeight - snapshot.clientHeight);
-    if (max <= 0) return true;
-    const threshold = computeBottomZoneThreshold(isMobile, null);
-    return max - snapshot.scrollTop <= threshold;
-};
-
-// Fix A4: pure decision function for restoreSnapshot. Kept out of the hook
-// so the restore strategy (DOM-anchor vs defer vs bottom) is unit-testable
-// without rendering the hook.
-//
-// - Bottom snapshot (or no snapshot): pin to bottom (following + clamp).
-// - Non-bottom with no MessageListHandle yet (layout race, handle installs in
-//   the child's layout phase which runs before the parent's, but the
-//   container may still be hydrating): DEFER. Do NOT fall back to the ratio
-//   method — ratio against an unmeasured scrollHeight is the upward-flip bug.
-// - Non-bottom with a saved messageAnchor: hand it to the handle's
-//   restoreViewportAnchor. If that returns false the anchor's id is not in
-//   the loaded history at all (it lives in an older, unloaded page) →
-//   degrade to bottom (safest: user lands on the latest content, never
-//   flipped upward). No ratio fallback.
-// - Non-bottom with no messageAnchor (old snapshot written before this fix):
-//   degrade to bottom. No ratio fallback against an estimated scrollHeight.
-export type ViewportRestorePlan =
-    | { kind: 'bottom' }
-    | { kind: 'defer' }
-    | { kind: 'anchor'; messageAnchor: { messageId: string; offsetTop: number } };
-
-export const planViewportRestore = (input: {
-    saved: NonNullable<SessionMemoryState['scrollPosition']> | undefined;
-    isMobile: boolean;
-    hasHandle: boolean;
-}): ViewportRestorePlan => {
-    const { saved, isMobile, hasHandle } = input;
-    if (!saved || isAtBottomSnapshot(saved, isMobile)) {
-        return { kind: 'bottom' };
-    }
-    if (!hasHandle) {
-        return { kind: 'defer' };
-    }
-    if (saved.messageAnchor) {
-        return { kind: 'anchor', messageAnchor: saved.messageAnchor };
-    }
-    return { kind: 'bottom' };
-};
-
 export const shouldRepinReleasedViewport = (input: {
     state: AutoFollowState;
     nearBottom: boolean;
@@ -173,9 +119,10 @@ export const useChatAutoFollow = ({
     sessionMessageCount,
     sessionIsWorking,
     isMobile,
-    messageListRef: messageListHandleRef,
+    messageListRef: _messageListRef,
     onActiveTurnChange,
 }: UseChatAutoFollowOptions): UseChatAutoFollowResult => {
+    void _messageListRef;
     const scrollRef = React.useRef<HTMLDivElement | null>(null);
     const [containerEl, setContainerEl] = React.useState<HTMLDivElement | null>(null);
     const lastSeenContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -195,29 +142,10 @@ export const useChatAutoFollow = ({
     const programmaticWriteUntilRef = React.useRef(0);
     const followRafRef = React.useRef<number | null>(null);
     const settledFramesRef = React.useRef(0);
-    // Fix D: lastScrollHeightRef lets the follow loop distinguish a
-    // measurement-phase frame (scrollHeight grew because the virtualizer
-    // replaced an estimated item height with a measured one) from a genuine
-    // "not at bottom" frame. During the measurement phase we still clamp to
-    // bottom but do NOT reset settledFrames, so once heights stabilize the
-    // loop converges quickly instead of resetting every frame.
-    const lastScrollHeightRef = React.useRef(0);
     const lastScrollTopRef = React.useRef(0);
     const saveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const repinGraceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Fix A3: pendingSaveRef now holds the FULL immutable snapshot captured at
-    // queue time (anchor + messageAnchor + scrollTop/scrollHeight/clientHeight).
-    // flushSave no longer reads the live container, so a session switch between
-    // queue and flush cannot write the new session's pixels into the old
-    // session's memory.
-    const pendingSaveRef = React.useRef<{
-        sessionId: string;
-        anchor: number;
-        messageAnchor: { messageId: string; offsetTop: number } | null;
-        scrollTop: number;
-        scrollHeight: number;
-        clientHeight: number;
-    } | null>(null);
+    const pendingSaveRef = React.useRef<{ sessionId: string; anchor: number } | null>(null);
     const settleBurstRafRef = React.useRef<number | null>(null);
     const contentChangeFrameRef = React.useRef<number | null>(null);
     const lastUserReleaseAtRef = React.useRef(0);
@@ -225,26 +153,6 @@ export const useChatAutoFollow = ({
     // (skeleton rendered, no scroll container yet), we record the session here
     // so a follow-up effect can replay the restore once the container mounts.
     const pendingInitialRestoreRef = React.useRef<string | null>(null);
-
-    // Fix A5: anchor-correction loop. After a DOM-anchor restore lands on an
-    // unmeasured (estimated-height) virtualizer, scrollHeight grows frame over
-    // frame as items are measured, drifting the viewport away from the saved
-    // anchor. This rAF loop watches scrollHeight; once it's stable for
-    // ANCHOR_CORRECTION_STABLE_FRAMES frames it re-applies the anchor to absorb
-    // the drift, then stops. Tokenized so a stale loop from a prior session
-    // cannot re-apply to the current session; cancellable from every
-    // session-switch / user-release / cleanup path.
-    const anchorCorrectionRafRef = React.useRef<number | null>(null);
-    const anchorCorrectionStateRef = React.useRef<{
-        sessionId: string;
-        token: number;
-        anchor: { messageId: string; offsetTop: number };
-        lastScrollHeight: number;
-        stableFrames: number;
-        frames: number;
-        startedAt: number;
-    } | null>(null);
-    const anchorCorrectionTokenCounterRef = React.useRef(0);
 
     const updateViewportAnchor = useViewportStore((s) => s.updateViewportAnchor);
 
@@ -282,90 +190,22 @@ export const useChatAutoFollow = ({
         }
         followRafRef.current = null;
         settledFramesRef.current = 0;
-        // Fix D: clear lastScrollHeightRef so the next follow loop starts
-        // fresh — a stale value from a prior loop/session would make the first
-        // tick falsely read "scrollHeight unchanged" and skip the measurement
-        // clamp.
-        lastScrollHeightRef.current = 0;
-        setIsFollowingProgrammatically(false);
-    }, []);
-
-    const cancelAnchorCorrection = React.useCallback(() => {
-        if (anchorCorrectionRafRef.current !== null && typeof window !== 'undefined') {
-            window.cancelAnimationFrame(anchorCorrectionRafRef.current);
+        // Only the active scroll-writer owns the "programmatic follow" flag. If the
+        // settle burst is still running it remains the owner, so don't clear here.
+        if (settleBurstRafRef.current === null) {
+            setIsFollowingProgrammatically(false);
         }
-        anchorCorrectionRafRef.current = null;
-        anchorCorrectionStateRef.current = null;
     }, []);
 
-    const startAnchorCorrectionLoop = React.useCallback((sessionId: string, anchor: { messageId: string; offsetTop: number }) => {
-        cancelAnchorCorrection();
-        if (typeof window === 'undefined') return;
-        anchorCorrectionTokenCounterRef.current += 1;
-        const token = anchorCorrectionTokenCounterRef.current;
-        const container = scrollRef.current;
-        anchorCorrectionStateRef.current = {
-            sessionId,
-            token,
-            anchor,
-            lastScrollHeight: container?.scrollHeight ?? 0,
-            stableFrames: 0,
-            frames: 0,
-            startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-        };
-        const tick = () => {
-            anchorCorrectionRafRef.current = null;
-            const loopState = anchorCorrectionStateRef.current;
-            if (!loopState || loopState.token !== token) return;
-            if (currentSessionIdRef.current !== loopState.sessionId) {
-                cancelAnchorCorrection();
-                return;
-            }
-            // Fix A5: the correction loop only makes sense while the viewport
-            // is in the released state we set after restore. If something
-            // transitioned us to following (goToBottom / repin / send), bail —
-            // re-applying a released-state anchor would fight the follow clamp.
-            if (stateRef.current !== 'released') {
-                cancelAnchorCorrection();
-                return;
-            }
-            const currentContainer = scrollRef.current;
-            if (!currentContainer) {
-                cancelAnchorCorrection();
-                return;
-            }
-            if (!messageListHandleRef?.current) {
-                cancelAnchorCorrection();
-                return;
-            }
-            const currentScrollHeight = currentContainer.scrollHeight;
-            loopState.frames += 1;
-            if (currentScrollHeight === loopState.lastScrollHeight) {
-                loopState.stableFrames += 1;
-            } else {
-                loopState.stableFrames = 0;
-                loopState.lastScrollHeight = currentScrollHeight;
-            }
-            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - loopState.startedAt;
-            if (loopState.stableFrames >= ANCHOR_CORRECTION_STABLE_FRAMES) {
-                // Heights settled: re-apply the anchor to absorb the drift that
-                // accumulated while the virtualizer was measuring. Mark the
-                // write programmatic so the scroll handler ignores it.
-                markProgrammaticWrite(ANCHOR_RESTORE_PROGRAMMATIC_WINDOW_MS);
-                messageListHandleRef.current.restoreViewportAnchor(loopState.anchor);
-                cancelAnchorCorrection();
-                return;
-            }
-            if (loopState.frames >= ANCHOR_CORRECTION_MAX_FRAMES || elapsed >= ANCHOR_CORRECTION_MAX_MS) {
-                // Hard cap: stop even if not fully stable so a perpetually
-                // oscillating session never keeps this loop alive forever.
-                cancelAnchorCorrection();
-                return;
-            }
-            anchorCorrectionRafRef.current = window.requestAnimationFrame(tick);
-        };
-        anchorCorrectionRafRef.current = window.requestAnimationFrame(tick);
-    }, [cancelAnchorCorrection, markProgrammaticWrite, messageListHandleRef]);
+    const stopSettleBurst = React.useCallback(() => {
+        if (settleBurstRafRef.current !== null && typeof window !== 'undefined') {
+            window.cancelAnimationFrame(settleBurstRafRef.current);
+        }
+        settleBurstRafRef.current = null;
+        if (followRafRef.current === null) {
+            setIsFollowingProgrammatically(false);
+        }
+    }, []);
 
     const tickFollow = React.useCallback(() => {
         followRafRef.current = null;
@@ -382,22 +222,6 @@ export const useChatAutoFollow = ({
         const target = Math.max(0, container.scrollHeight - container.clientHeight);
         const current = container.scrollTop;
         const delta = target - current;
-        const currentScrollHeight = container.scrollHeight;
-        // Fix D: a changed scrollHeight means the virtualizer is still
-        // measuring (estimated → real heights). Still clamp to bottom so the
-        // viewport stays pinned, but do NOT reset settledFrames — keep its
-        // current value so once heights stabilize the loop converges in
-        // SETTLE_FRAMES rather than restarting every frame.
-        const scrollHeightChanged = currentScrollHeight !== lastScrollHeightRef.current;
-        lastScrollHeightRef.current = currentScrollHeight;
-
-        if (scrollHeightChanged) {
-            markProgrammaticWrite();
-            container.scrollTop = target;
-            lastScrollTopRef.current = container.scrollTop;
-            followRafRef.current = window.requestAnimationFrame(tickFollow);
-            return;
-        }
 
         // The virtualized message list and async markdown highlighter can update
         // scrollHeight several times while a send/stream is settling. LERPing
@@ -429,14 +253,18 @@ export const useChatAutoFollow = ({
 
     const startFollowLoop = React.useCallback(() => {
         if (typeof window === 'undefined') return;
-        if (followRafRef.current !== null) return;
         if (stateRef.current !== 'following') return;
+        // Single-writer invariant, asymmetric on purpose: the settle burst is the
+        // AUTHORITATIVE instant pin (session restore / goToBottom 'instant'). While
+        // it is snapping to the bottom, YIELD — never preempt it with the easing
+        // follow loop. Preempting it let a content-measurement ResizeObserver tick
+        // downgrade an instant restore into a visible smooth scroll from a mid
+        // position when entering a historical session. When the burst ends, the
+        // next content kick starts the follow loop. (startSettleBurst still stops
+        // this loop, so the two never write scrollTop in the same frame.)
+        if (settleBurstRafRef.current !== null) return;
+        if (followRafRef.current !== null) return;
         settledFramesRef.current = 0;
-        // Fix D: seed lastScrollHeightRef to the current scrollHeight so the
-        // first tick's "scrollHeightChanged" comparison is meaningful. If the
-        // container isn't ready yet, 0 forces the first real tick to treat
-        // the first observed scrollHeight as a clamp frame.
-        lastScrollHeightRef.current = scrollRef.current?.scrollHeight ?? 0;
         setIsFollowingProgrammatically(true);
         followRafRef.current = window.requestAnimationFrame(tickFollow);
     }, [tickFollow]);
@@ -457,13 +285,6 @@ export const useChatAutoFollow = ({
         const target = Math.max(0, container.scrollHeight - container.clientHeight);
         writeScrollTopInstant(target);
     }, [writeScrollTopInstant]);
-
-    const stopSettleBurst = React.useCallback(() => {
-        if (settleBurstRafRef.current !== null && typeof window !== 'undefined') {
-            window.cancelAnimationFrame(settleBurstRafRef.current);
-        }
-        settleBurstRafRef.current = null;
-    }, []);
 
     const stopContentChangeFrame = React.useCallback(() => {
         if (contentChangeFrameRef.current !== null && typeof window !== 'undefined') {
@@ -501,34 +322,73 @@ export const useChatAutoFollow = ({
         }, delay);
     }, [isMobile, setStateValue, startFollowLoop]);
 
+    const startSettleBurst = React.useCallback(() => {
+        if (typeof window === 'undefined') return;
+        // Single-writer invariant (mirror of startFollowLoop): the settle burst is
+        // taking over scroll ownership, so stop the easing follow loop first. The
+        // two must never write scrollTop in the same frame.
+        stopFollowLoop();
+        stopSettleBurst();
+        setIsFollowingProgrammatically(true);
+        const until = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + SETTLE_BURST_DURATION_MS;
+        const finish = () => {
+            settleBurstRafRef.current = null;
+            if (followRafRef.current === null) {
+                setIsFollowingProgrammatically(false);
+            }
+        };
+        const tick = () => {
+            settleBurstRafRef.current = null;
+            if (stateRef.current !== 'following') {
+                finish();
+                return;
+            }
+            const c = scrollRef.current;
+            if (!c) {
+                finish();
+                return;
+            }
+            const target = Math.max(0, c.scrollHeight - c.clientHeight);
+            if (Math.abs(c.scrollTop - target) > SETTLE_EPSILON) {
+                markProgrammaticWrite();
+                c.scrollTop = target;
+                lastScrollTopRef.current = target;
+            }
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            if (now < until) {
+                settleBurstRafRef.current = window.requestAnimationFrame(tick);
+            } else {
+                finish();
+            }
+        };
+        settleBurstRafRef.current = window.requestAnimationFrame(tick);
+    }, [markProgrammaticWrite, stopFollowLoop, stopSettleBurst]);
+
     const releaseAutoFollow = React.useCallback(() => {
         stopFollowLoop();
         stopSettleBurst();
         cancelRepinGraceTimer();
-        cancelAnchorCorrection();
         lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
         setStateValue('released');
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
 
     const releaseFromUserIntent = React.useCallback(() => {
         cancelRepinGraceTimer();
         if (stateRef.current === 'following') {
             stopFollowLoop();
             stopSettleBurst();
-            cancelAnchorCorrection();
             lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
             setStateValue('released');
         } else {
             lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
         }
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, setStateValue, stopFollowLoop, stopSettleBurst]);
 
     const goToBottom = React.useCallback((mode: 'instant' | 'smooth' = 'instant') => {
         const container = scrollRef.current;
         setStateValue('following');
         lastUserReleaseAtRef.current = 0;
         cancelRepinGraceTimer();
-        cancelAnchorCorrection();
         if (!container) return;
         if (mode === 'smooth') {
             const target = Math.max(0, container.scrollHeight - container.clientHeight);
@@ -542,7 +402,23 @@ export const useChatAutoFollow = ({
         stopFollowLoop();
         stopSettleBurst();
         writeScrollTopInstant(target);
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, markProgrammaticWrite, setStateValue, stopFollowLoop, stopSettleBurst, writeScrollTopInstant]);
+        startSettleBurst();
+    }, [cancelRepinGraceTimer, markProgrammaticWrite, setStateValue, startSettleBurst, stopFollowLoop, stopSettleBurst, writeScrollTopInstant]);
+
+    const scrollToBottomOnSend = React.useCallback(() => {
+        // Keep a SINGLE movement to the just-sent message.
+        // If we're already following the bottom, the optimistic message is eased
+        // into view by the follow loop (kicked by the content ResizeObserver). Just
+        // (re)kick that one owner — do NOT also fire an instant goToBottom here, or
+        // the instant snap races the easing loop and you see a visible double scroll
+        // (ease, then snap).
+        if (stateRef.current === 'following') {
+            startFollowLoop();
+            return;
+        }
+        // Scrolled up (released): bring the user down to the message they just sent.
+        goToBottom('instant');
+    }, [goToBottom, startFollowLoop]);
 
     const flushSave = React.useCallback(() => {
         if (saveTimerRef.current !== null) {
@@ -551,16 +427,15 @@ export const useChatAutoFollow = ({
         }
         const pending = pendingSaveRef.current;
         if (!pending) return;
-        // Fix A3: write the immutable snapshot captured at queue time. We do
-        // NOT read the live container here — between queue and flush the
-        // session may have changed, and reading the new container's pixels
-        // would persist the wrong session's scroll state into the old
-        // session's memory (the upward-flip bug on re-entry).
+        const container = scrollRef.current;
+        if (!container) {
+            pendingSaveRef.current = null;
+            return;
+        }
         updateViewportAnchor(pending.sessionId, pending.anchor, {
-            scrollTop: pending.scrollTop,
-            scrollHeight: pending.scrollHeight,
-            clientHeight: pending.clientHeight,
-            ...(pending.messageAnchor ? { messageAnchor: pending.messageAnchor } : {}),
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+            clientHeight: container.clientHeight,
         });
         pendingSaveRef.current = null;
     }, [updateViewportAnchor]);
@@ -576,27 +451,14 @@ export const useChatAutoFollow = ({
             ? (scrollTop + clientHeight / 2) / scrollHeight
             : 0;
         const anchor = Math.floor(anchorRatio * sessionMessageCountRef.current);
-        // Fix A3: capture the DOM anchor (and pixel state) NOW, at queue time,
-        // so flushSave writes an immutable snapshot. captureViewportAnchor
-        // finds the first visible [data-message-id] row; null when no row is
-        // visible (e.g. empty/skeleton) and restoreSnapshot then degrades to
-        // bottom on re-entry.
-        const messageAnchor = messageListHandleRef?.current?.captureViewportAnchor() ?? null;
 
-        pendingSaveRef.current = {
-            sessionId,
-            anchor,
-            messageAnchor,
-            scrollTop,
-            scrollHeight,
-            clientHeight,
-        };
+        pendingSaveRef.current = { sessionId, anchor };
         if (saveTimerRef.current !== null) return;
         saveTimerRef.current = setTimeout(() => {
             saveTimerRef.current = null;
             flushSave();
         }, SAVE_DEBOUNCE_MS);
-    }, [flushSave, messageListHandleRef]);
+    }, [flushSave]);
 
     const saveSnapshotNow = React.useCallback(() => {
         flushSave();
@@ -617,60 +479,21 @@ export const useChatAutoFollow = ({
         }
         pendingInitialRestoreRef.current = null;
 
-        const saved = getViewportSessionMemory(sessionId)?.scrollPosition;
-        const plan = planViewportRestore({ saved, isMobile, hasHandle: Boolean(messageListHandleRef?.current) });
-
-        if (plan.kind === 'bottom') {
-            setStateValue('following');
-            lastUserReleaseAtRef.current = 0;
-            cancelRepinGraceTimer();
-            cancelAnchorCorrection();
-            const target = Math.max(0, container.scrollHeight - container.clientHeight);
-            writeScrollTopInstant(target);
-            startFollowLoop();
-            return false;
-        }
-
-        if (plan.kind === 'defer') {
-            // Handle not installed yet (child layout race or container still
-            // hydrating). Defer to the container-attach replay. Do NOT fall
-            // back to the ratio method — ratio against an unmeasured
-            // scrollHeight is the upward-flip root cause.
-            pendingInitialRestoreRef.current = sessionId;
-            setStateValue('following');
-            cancelRepinGraceTimer();
-            return false;
-        }
-
-        // plan.kind === 'anchor': hand the saved DOM anchor to the handle.
-        cancelRepinGraceTimer();
-        markProgrammaticWrite(ANCHOR_RESTORE_PROGRAMMATIC_WINDOW_MS);
-        const restored = messageListHandleRef?.current?.restoreViewportAnchor(plan.messageAnchor) ?? false;
-        if (restored) {
-            // Element was in the DOM, or restoreViewportAnchor fell back to
-            // scrollHistoryIndexIntoView for a virtualized (out-of-viewport)
-            // history item. Either way the anchor is addressable in the
-            // loaded history — release and start the measurement-stability
-            // correction loop to absorb drift while the virtualizer measures.
-            setStateValue('released');
-            lastUserReleaseAtRef.current = 0;
-            startAnchorCorrectionLoop(sessionId, plan.messageAnchor);
-            return true;
-        }
-
-        // restoreViewportAnchor returned false: the anchor's id is not in the
-        // loaded history at all (it lives in an older, unloaded page). Degrade
-        // to bottom — the user lands on the latest content and is never
-        // flipped upward. No ratio fallback.
+        // Always return to the bottom on session switch. The previous saved-ratio
+        // restore had a low success rate and, by landing 'released' partway up,
+        // produced the visible backward jump as content finished loading.
         setStateValue('following');
         lastUserReleaseAtRef.current = 0;
         cancelRepinGraceTimer();
-        cancelAnchorCorrection();
         const target = Math.max(0, container.scrollHeight - container.clientHeight);
+        // Mirror goToBottom('instant'): jump to the bottom now, then hold it with the
+        // settle burst while late history content measures in. Do NOT also start the
+        // easing follow loop here — that is what produced the smooth scroll-from-mid
+        // position on session entry.
         writeScrollTopInstant(target);
-        startFollowLoop();
+        startSettleBurst();
         return false;
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, isMobile, markProgrammaticWrite, messageListHandleRef, setStateValue, startAnchorCorrectionLoop, startFollowLoop, writeScrollTopInstant]);
+    }, [cancelRepinGraceTimer, setStateValue, startSettleBurst, writeScrollTopInstant]);
 
     React.useEffect(() => {
         if (!currentSessionId || currentSessionId === lastSessionIdRef.current) {
@@ -682,17 +505,12 @@ export const useChatAutoFollow = ({
         stopFollowLoop();
         stopSettleBurst();
         cancelRepinGraceTimer();
-        cancelAnchorCorrection();
-        // Fix D: clear lastScrollHeightRef on session switch so the new
-        // session's follow loop does not compare against the prior session's
-        // scrollHeight and falsely skip the measurement-phase clamp.
-        lastScrollHeightRef.current = 0;
         markProgrammaticWrite();
         // Drop any pending restore request inherited from a different session.
         if (pendingInitialRestoreRef.current && pendingInitialRestoreRef.current !== currentSessionId) {
             pendingInitialRestoreRef.current = null;
         }
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, currentSessionId, flushSave, markProgrammaticWrite, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, currentSessionId, flushSave, markProgrammaticWrite, stopFollowLoop, stopSettleBurst]);
 
     React.useEffect(() => {
         if (sessionIsWorking && stateRef.current === 'following') {
@@ -701,6 +519,8 @@ export const useChatAutoFollow = ({
     }, [sessionIsWorking, startFollowLoop]);
 
     // Replay a deferred restoreSnapshot once ChatViewport mounts.
+    // useLayoutEffect ensures scroll position is set before the browser paints,
+    // preventing a visible flash of content at the wrong scroll position.
     React.useLayoutEffect(() => {
         if (!containerEl) return;
         if (pendingInitialRestoreRef.current && pendingInitialRestoreRef.current === currentSessionId) {
@@ -749,12 +569,14 @@ export const useChatAutoFollow = ({
             return;
         }
 
-        if (currentTop < previousTop && stateRef.current === 'following') {
+        // Release auto-follow only when the user has actually left the near-bottom
+        // zone — not on the small scrollTop clamp the browser applies when the
+        // composer grows and shrinks the viewport (which keeps you at the bottom).
+        // Position-based, mirroring the re-pin check below; this removes the false
+        // release that produced the visible backward jump on session switch.
+        if (stateRef.current === 'following' && !isNearBottom(container, isMobile)) {
             stopFollowLoop();
             stopSettleBurst();
-            // Fix A5: a user-initiated upward scroll abandons any in-flight
-            // anchor correction — the user is now driving the viewport.
-            cancelAnchorCorrection();
             lastUserReleaseAtRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
             setStateValue('released');
         }
@@ -772,10 +594,6 @@ export const useChatAutoFollow = ({
             maxScrollTop,
         })) {
             cancelRepinGraceTimer();
-            // Fix A5: repinning to following abandons any in-flight anchor
-            // correction — the user is now back at the bottom, the correction
-            // loop (for released state) is no longer relevant.
-            cancelAnchorCorrection();
             setStateValue('following');
             lastUserReleaseAtRef.current = 0;
             startFollowLoop();
@@ -787,7 +605,6 @@ export const useChatAutoFollow = ({
 
         queueSave();
     }, [
-        cancelAnchorCorrection,
         isInProgrammaticWindow,
         isMobile,
         queueSave,
@@ -979,14 +796,13 @@ export const useChatAutoFollow = ({
             stopSettleBurst();
             stopContentChangeFrame();
             cancelRepinGraceTimer();
-            cancelAnchorCorrection();
             flushSave();
             if (saveTimerRef.current !== null) {
                 clearTimeout(saveTimerRef.current);
                 saveTimerRef.current = null;
             }
         };
-    }, [cancelAnchorCorrection, cancelRepinGraceTimer, flushSave, stopContentChangeFrame, stopFollowLoop, stopSettleBurst]);
+    }, [cancelRepinGraceTimer, flushSave, stopContentChangeFrame, stopFollowLoop, stopSettleBurst]);
 
     React.useEffect(() => {
         if (!onActiveTurnChange) return;
@@ -1088,6 +904,7 @@ export const useChatAutoFollow = ({
         notifyContentChange,
         getAnimationHandlers,
         goToBottom,
+        scrollToBottomOnSend,
         releaseAutoFollow,
         saveSnapshotNow,
         restoreSnapshot,

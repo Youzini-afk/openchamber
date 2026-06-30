@@ -71,7 +71,7 @@ import {
   normalizePath,
 } from './sidebar/utils';
 import {
-  mergeSessionDirectoryMetadata,
+  mergeLiveSessionWithGlobalSession,
   refreshGlobalSessions,
   refreshGlobalSessionsForDirectories,
   resolveGlobalSessionDirectory,
@@ -362,7 +362,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     const liveById = new Map(liveSessions.map((session) => [session.id, session]));
     const merged = globalActiveSessions.map((session) => {
       const liveSession = liveById.get(session.id);
-      return liveSession ? mergeSessionDirectoryMetadata(liveSession, session) : session;
+      return liveSession ? mergeLiveSessionWithGlobalSession(liveSession, session) : session;
     });
     const seenIds = new Set(merged.map((session) => session.id));
 

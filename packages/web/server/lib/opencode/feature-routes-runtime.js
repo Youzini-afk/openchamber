@@ -19,6 +19,37 @@ import { registerOpenAgentRoutes } from './openagent-routes.js';
 import { registerAgentOrchestrationRoutes } from './agent-orchestration-routes.js';
 import { registerMagicContextRoutes } from './magic-context-routes.js';
 import { registerSmartSearchRoutes } from '../smart-search/routes.js';
+import { getProviderSources, getProviderConfig, upsertProviderConfig, removeProviderConfig, fetchProviderModels } from './providers.js';
+import { getAgentSources, getAgentConfig, createAgent, updateAgent, deleteAgent } from './agents.js';
+import { getCommandSources, createCommand, updateCommand, deleteCommand } from './commands.js';
+import { listMcpConfigs, getMcpConfig, createMcpConfig, updateMcpConfig, deleteMcpConfig } from './mcp.js';
+import { listSnippets, getSnippet, createSnippet, updateSnippet, deleteSnippet, expandSnippets } from './snippets.js';
+import {
+  listPluginEntries,
+  getPluginEntry,
+  createPluginEntry,
+  updatePluginEntry,
+  deletePluginEntry,
+  listPluginDirFiles,
+  readPluginDirFile,
+  writePluginDirFile,
+  deletePluginDirFile,
+  encodePluginId,
+  decodePluginId,
+} from './plugins.js';
+import { SKILL_DIR, SKILL_SCOPE, readSkillSupportingFile, writeSkillSupportingFile, deleteSkillSupportingFile } from './shared.js';
+import { getSkillSources, discoverSkills, mergeDiscoveredSkills, createSkill, updateSkill, deleteSkill } from './skills.js';
+import { getCuratedSkillsSources } from '../skills-catalog/curated-sources.js';
+import { getCacheKey, getCachedScan, setCachedScan } from '../skills-catalog/cache.js';
+import { isClawdHubSource, parseSkillRepoSource } from '../skills-catalog/source.js';
+import { scanSkillsRepository } from '../skills-catalog/scan.js';
+import { installSkillsFromRepository } from '../skills-catalog/install.js';
+import { scanClawdHubPage } from '../skills-catalog/clawdhub/scan.js';
+import { installSkillsFromClawdHub } from '../skills-catalog/clawdhub/install.js';
+import { readOpenAgentConfig, saveOpenAgentConfig, setOpenAgentPluginEnabled } from './openagent-config.js';
+import { readAgentOrchestrationConfig, setAgentOrchestrationMode } from './agent-orchestration-config.js';
+import { readSlimConfig, saveSlimConfig } from './slim-config.js';
+import { readMagicContextConfig, saveMagicContextConfig } from './magic-context-config.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -74,23 +105,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
       __dirname,
     } = routeDependencies;
-
-    const {
-      getProviderSources,
-      getProviderConfig,
-      upsertProviderConfig,
-      removeProviderConfig,
-      fetchProviderModels,
-      readOpenAgentConfig,
-      saveOpenAgentConfig,
-      setOpenAgentPluginEnabled,
-      readAgentOrchestrationConfig,
-      setAgentOrchestrationMode,
-      readSlimConfig,
-      saveSlimConfig,
-      readMagicContextConfig,
-      saveMagicContextConfig,
-    } = await import('./index.js');
 
     registerSettingsUtilityRoutes(app, {
       readCustomThemesFromDisk,
@@ -192,40 +206,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
     });
 
-    const {
-      getAgentSources,
-      getAgentConfig,
-      createAgent,
-      updateAgent,
-      deleteAgent,
-      getCommandSources,
-      createCommand,
-      updateCommand,
-      deleteCommand,
-      listMcpConfigs,
-      getMcpConfig,
-      createMcpConfig,
-      updateMcpConfig,
-      deleteMcpConfig,
-      listSnippets,
-      getSnippet,
-      createSnippet,
-      updateSnippet,
-      deleteSnippet,
-      expandSnippets,
-      listPluginEntries,
-      getPluginEntry,
-      createPluginEntry,
-      updatePluginEntry,
-      deletePluginEntry,
-      listPluginDirFiles,
-      readPluginDirFile,
-      writePluginDirFile,
-      deletePluginDirFile,
-      encodePluginId,
-      decodePluginId,
-    } = await import('./index.js');
-
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
@@ -274,32 +254,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isExactSemver,
     });
 
-    const {
-      getSkillSources,
-      discoverSkills,
-      mergeDiscoveredSkills,
-      createSkill,
-      updateSkill,
-      deleteSkill,
-      readSkillSupportingFile,
-      writeSkillSupportingFile,
-      deleteSkillSupportingFile,
-      SKILL_SCOPE,
-      SKILL_DIR,
-    } = await import('./index.js');
-
-    const {
-      getCuratedSkillsSources,
-      getCacheKey,
-      getCachedScan,
-      setCachedScan,
-      parseSkillRepoSource,
-      scanSkillsRepository,
-      installSkillsFromRepository,
-      scanClawdHubPage,
-      installSkillsFromClawdHub,
-      isClawdHubSource,
-    } = await import('../skills-catalog/index.js');
     const { getProfiles, getProfile } = await import('../git/index.js');
 
     registerSkillRoutes(app, {

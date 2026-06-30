@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Select as BaseSelect } from "@base-ui/react/select"
 import type { SelectRootChangeEventDetails } from "@base-ui/react/select";
-import { RiArrowDownSLine, RiArrowUpSLine, RiCheckLine } from '@remixicon/react';
+import { RiArrowDownSLine, RiCheckLine } from '@remixicon/react';
 
 import { cn } from "@/lib/utils"
 import { ScrollableOverlay } from "@/components/ui/ScrollableOverlay";
@@ -272,50 +272,12 @@ function SelectSeparator({
   )
 }
 
-function SelectScrollUpButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof BaseSelect.ScrollUpArrow>) {
-  return (
-    <BaseSelect.ScrollUpArrow
-      data-slot="select-scroll-up-button"
-      className={cn(
-        "flex cursor-pointer items-center justify-center py-1",
-        className
-      )}
-      {...props}
-    >
-      <RiArrowUpSLine className="size-4" />
-    </BaseSelect.ScrollUpArrow>
-  )
-}
-
-function SelectScrollDownButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof BaseSelect.ScrollDownArrow>) {
-  return (
-    <BaseSelect.ScrollDownArrow
-      data-slot="select-scroll-down-button"
-      className={cn(
-        "flex cursor-pointer items-center justify-center py-1",
-        className
-      )}
-      {...props}
-    >
-      <RiArrowDownSLine className="size-4" />
-    </BaseSelect.ScrollDownArrow>
-  )
-}
-
 export {
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,

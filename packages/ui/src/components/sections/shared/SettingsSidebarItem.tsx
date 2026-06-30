@@ -9,7 +9,7 @@ import {
 import { RiMore2Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 
-export interface SettingsSidebarItemAction {
+interface SettingsSidebarItemAction {
   /** Label shown in dropdown menu */
   label: string;
   /** Icon component to show before label */

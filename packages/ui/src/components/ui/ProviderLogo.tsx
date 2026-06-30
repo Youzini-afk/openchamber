@@ -36,6 +36,7 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
             decoding="async"
             fetchPriority="high"
             onLoad={() => setLoaded(true)}
+            draggable={false}
             onError={handleError}
         />
     );

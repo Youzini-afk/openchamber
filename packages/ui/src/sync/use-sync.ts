@@ -13,7 +13,6 @@ import { dropSessionCaches, getProtectedSessionCacheIds } from "./session-cache"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
-import { viewportSessionKey } from "./viewport-store"
 import {
   shouldSkipSessionPrefetch,
   getSessionPrefetch,
@@ -93,100 +92,13 @@ export function endProgressiveMount(sessionID: string, token: number): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Measurement-settled signal (Fix C).
-//
-// A high-floor session's virtualizer needs several frames after mount to
-// replace estimated item heights with measured ones. During that window
-// scrollHeight grows frame-over-frame, which the auto-follow loop fights
-// (root cause 1: "测量风暴"). progressive mount's second-page prepend lands
-// on top of that unsettled measurement storm and extends it (root cause 3).
-//
-// useChatTimelineController begins a fresh measurement generation on every
-// session enter and watches container.scrollHeight. When scrollHeight is
-// stable for N consecutive frames it marks the generation settled. The
-// progressive-mount slot then waits for "settled" (with a hard timeout) so
-// the prepend lands on stable content instead of on a measuring storm.
-//
-// The value carries a generation token: a stale measurement loop (from an
-// older session enter for the same sessionKey) must NOT mark a newer
-// generation settled. Only markMeasurementSettled with the matching token
-// records settled=true.
-// ---------------------------------------------------------------------------
-const measurementSettledBySession = new Map<string, { generation: number; settled: boolean }>()
-let measurementGenerationCounter = 0
-
-// Begin a new measurement generation for a sessionKey and return the token
-// the caller must pass to markMeasurementSettled. Resets any prior settled
-// state for this sessionKey (re-entering the same session forces a fresh
-// settle before progressive mount proceeds).
-export function beginMeasurementGeneration(sessionKey: string): number {
-  measurementGenerationCounter += 1
-  const generation = measurementGenerationCounter
-  measurementSettledBySession.set(sessionKey, { generation, settled: false })
-  return generation
-}
-
-// Mark the generation settled ONLY if the stored generation token still
-// matches. A stale loop whose session was switched away (beginMeasurementGeneration
-// was called again with a newer token) is a no-op.
-export function markMeasurementSettled(sessionKey: string, generation: number): void {
-  const existing = measurementSettledBySession.get(sessionKey)
-  if (!existing || existing.generation !== generation) return
-  existing.settled = true
-}
-
-export function isMeasurementSettled(sessionKey: string): boolean {
-  return measurementSettledBySession.get(sessionKey)?.settled === true
-}
-
-// Test/internal helper: clear the settled record for a sessionKey. Used by
-// tests to isolate cases; production relies on beginMeasurementGeneration to
-// reset on re-entry.
-export function clearMeasurementSettled(sessionKey: string): void {
-  measurementSettledBySession.delete(sessionKey)
-}
-
 type IdleCapableWindow = typeof window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number
 }
 
-// Hard timeout for the soft "wait for measurement settled" gate. Past this
-// the progressive mount proceeds regardless — a soft gate, never a deadlock.
-// Must be long enough to cover a high-floor session's measurement storm but
-// short enough that a session with no active controller (no
-// beginMeasurementGeneration ever called → isMeasurementSettled stays false)
-// still progresses.
-const MEASUREMENT_SETTLED_HARD_TIMEOUT_MS = 2000
-const MEASUREMENT_SETTLED_POLL_MS = 32
-
-function waitForMeasurementSettled(sessionKey: string): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof window === "undefined") {
-      resolve()
-      return
-    }
-    const deadline = Date.now() + MEASUREMENT_SETTLED_HARD_TIMEOUT_MS
-    const check = () => {
-      if (isMeasurementSettled(sessionKey)) {
-        resolve()
-        return
-      }
-      if (Date.now() >= deadline) {
-        // Hard timeout: proceed even if not settled (no active controller,
-        // or measurement is taking unusually long). Never deadlock.
-        resolve()
-        return
-      }
-      window.setTimeout(check, MEASUREMENT_SETTLED_POLL_MS)
-    }
-    check()
-  })
-}
-
-function waitForProgressiveHistorySlot(sessionKey: string): Promise<void> {
+function waitForProgressiveHistorySlot(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve()
-  return new Promise<void>((resolve) => {
+  return new Promise((resolve) => {
     window.setTimeout(() => {
       const requestIdle = (window as IdleCapableWindow).requestIdleCallback
       if (typeof requestIdle === "function") {
@@ -195,7 +107,7 @@ function waitForProgressiveHistorySlot(sessionKey: string): Promise<void> {
       }
       resolve()
     }, PROGRESSIVE_MOUNT_DELAY_MS)
-  }).then(() => waitForMeasurementSettled(sessionKey))
+  })
 }
 
 type SyncMeta = {
@@ -667,7 +579,7 @@ export function useSync() {
             const token = beginProgressiveMount(sessionID)
             void (async () => {
               try {
-                await waitForProgressiveHistorySlot(viewportSessionKey(sessionID))
+                await waitForProgressiveHistorySlot()
                 if (isStale()) return
                 const latestMeta = getMetaFor(sessionID)
                 if (!latestMeta.cursor || latestMeta.complete) return

@@ -5,7 +5,7 @@ import { useDeviceInfo } from "@/lib/device"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
-export interface NumberInputProps
+interface NumberInputProps
   extends Omit<React.ComponentProps<"input">, "value" | "onChange" | "type"> {
   value?: number
   onValueChange: (value: number) => void

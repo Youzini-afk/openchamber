@@ -22,7 +22,6 @@ import { PluginsSidebar, PluginsPage } from '@/components/sections/plugins';
 import { usePluginsStore } from '@/stores/usePluginsStore';
 import { SkillsSidebar } from '@/components/sections/skills/SkillsSidebar';
 import { SkillsPage } from '@/components/sections/skills/SkillsPage';
-import { SmartSearchPage } from '@/components/sections/smart-search/SmartSearchPage';
 import { ProjectsSidebar } from '@/components/sections/projects/ProjectsSidebar';
 import { ProjectsPage } from '@/components/sections/projects/ProjectsPage';
 import { RemoteInstancesPage } from '@/components/sections/remote-instances/RemoteInstancesPage';
@@ -101,7 +100,6 @@ const pageOrder: SettingsPageSlug[] = [
   'providers',
   'usage',
   'skills.installed',
-  'smart-search',
   'skills.catalog',
   'voice',
   'tunnel',
@@ -754,8 +752,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <PluginsSidebar onItemSelect={opts.onItemSelect} />;
       case 'skills.installed':
         return <SkillsSidebar onItemSelect={opts.onItemSelect} />;
-      case 'smart-search':
-        return null;
       case 'providers':
         return <ProvidersSidebar onItemSelect={opts.onItemSelect} />;
       case 'usage':
@@ -794,8 +790,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <PluginsPage />;
       case 'skills.installed':
         return <SkillsPage view="installed" />;
-      case 'smart-search':
-        return <SmartSearchPage />;
       case 'skills.catalog':
         return <SkillsPage view="catalog" />;
       case 'providers':

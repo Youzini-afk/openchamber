@@ -7,7 +7,6 @@ export type SettingsPageSlug =
   | 'providers'
   | 'usage'
   | 'agents'
-  | 'smart-search'
   | 'behavior'
   | 'commands'
   | 'mcp'
@@ -26,7 +25,7 @@ export type SettingsPageSlug =
   | 'tunnel'
   | 'about';
 
-export type SettingsPageGroup =
+type SettingsPageGroup =
   | 'appearance'
   | 'projects'
   | 'general'
@@ -53,17 +52,6 @@ export interface SettingsPageMeta {
   primaryNav?: boolean;
   isAvailable?: (ctx: SettingsRuntimeContext) => boolean;
 }
-
-export const SETTINGS_GROUP_LABELS: Record<SettingsPageGroup, string> = {
-  appearance: 'Appearance',
-  projects: 'Projects',
-  general: 'General',
-  opencode: 'OpenCode',
-  git: 'Git',
-  skills: 'Skills',
-  usage: 'Usage',
-  advanced: 'Advanced',
-};
 
 export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   {
@@ -125,15 +113,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
       'categories',
       'model routes',
     ],
-  },
-  {
-    slug: 'smart-search',
-    title: 'Smart Search',
-    group: 'skills',
-    kind: 'split',
-    primaryNav: false,
-    keywords: ['smart search', 'smart-search', 'web research', 'search', 'exa', 'context7', 'zhipu', 'tavily', 'firecrawl'],
-    isAvailable: (ctx) => !ctx.isVSCode,
   },
   {
     slug: 'behavior',
@@ -237,7 +216,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   { slug: 'about', title: 'About', group: 'advanced', kind: 'single', keywords: ['about', 'version', 'updates', 'release', 'changelog'], isAvailable: (ctx) => ctx.isMobile },
 ] as const;
 
-export const LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG: Record<SidebarSection, SettingsPageSlug> = {
+const LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG: Record<SidebarSection, SettingsPageSlug> = {
   sessions: 'sessions',
   agents: 'agents',
   commands: 'commands',

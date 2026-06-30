@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { create, type StoreApi } from "zustand"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Event, Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { INITIAL_STATE, type State } from "../types"
-import type { DirectoryStore } from "../child-store"
+import type { ChildStoreManager, DirectoryStore } from "../child-store"
 import {
   applySessionStatusSnapshot,
+  createEventRoutingIndex,
   needsSnapshotAfterStatusPoll,
+  resolveDirectoryFromRoutingIndex,
+  resolveMaterializationSessionId,
 } from "../sync-context"
 
 type StatusSnapshot = Record<string, { type: "idle" | "busy" | "retry"; attempt?: number; message?: string; next?: number }>
@@ -19,6 +22,19 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
     patch: (partial) => set(partial),
     replace: (next) => set(next),
   }))
+}
+
+function createChildStores(entries: Array<[string, StoreApi<DirectoryStore>]>): ChildStoreManager {
+  const children = new Map(entries)
+  return {
+    children,
+    ensureChild: (directory: string) => {
+      const store = children.get(directory)
+      if (!store) throw new Error(`missing store for ${directory}`)
+      return store
+    },
+    getChild: (directory: string) => children.get(directory),
+  } as unknown as ChildStoreManager
 }
 
 function streamingMessage() {
@@ -113,5 +129,99 @@ describe("needsSnapshotAfterStatusPoll", () => {
   test("does NOT escalate when the store already considers the session idle", () => {
     const store = createDirectoryStore({ session_status: {} })
     expect(needsSnapshotAfterStatusPoll(store.getState(), "ses_a", undefined)).toBe(false)
+  })
+})
+
+describe("message event routing recovery", () => {
+  const deltaEvent = {
+    type: "message.part.delta",
+    properties: {
+      messageID: "msg_assistant",
+      partID: "prt_1",
+      field: "text",
+      delta: "hello",
+    },
+  } as Event
+
+  test("routes global message deltas to the only active directory", () => {
+    const activeStore = createDirectoryStore({
+      session_status: { ses_a: BUSY },
+    })
+    const idleStore = createDirectoryStore({
+      session_status: { ses_b: { type: "idle" } },
+    })
+    const childStores = createChildStores([
+      ["/active/project", activeStore],
+      ["/idle/project", idleStore],
+    ])
+    const routingIndex = createEventRoutingIndex()
+
+    expect(resolveDirectoryFromRoutingIndex(
+      routingIndex,
+      "global",
+      deltaEvent,
+      childStores,
+    )).toBe("/active/project")
+  })
+
+  test("does not guess a directory when multiple sessions are active", () => {
+    const firstStore = createDirectoryStore({ session_status: { ses_a: BUSY } })
+    const secondStore = createDirectoryStore({ session_status: { ses_b: BUSY } })
+    const childStores = createChildStores([
+      ["/first/project", firstStore],
+      ["/second/project", secondStore],
+    ])
+    const routingIndex = createEventRoutingIndex()
+
+    expect(resolveDirectoryFromRoutingIndex(
+      routingIndex,
+      "global",
+      deltaEvent,
+      childStores,
+    )).toBe("global")
+  })
+
+  test("uses the only active session for materialization of sessionless message deltas", () => {
+    const activeStore = createDirectoryStore({
+      session_status: { ses_a: BUSY },
+      message: {
+        ses_a: [{
+          id: "msg_user",
+          role: "user",
+          sessionID: "ses_a",
+          time: { created: 1 },
+        } as Message],
+      },
+    })
+    const childStores = createChildStores([["/active/project", activeStore]])
+    const routingIndex = createEventRoutingIndex()
+
+    expect(resolveMaterializationSessionId(
+      routingIndex,
+      deltaEvent,
+      "/active/project",
+      activeStore,
+      childStores,
+    )).toBe("ses_a")
+  })
+
+  test("prefers the non-idle child session when parent recovery is also a candidate", () => {
+    const activeStore = createDirectoryStore({
+      session: [
+        { id: "ses_parent", time: { created: 1 } },
+        { id: "ses_child", parentID: "ses_parent", time: { created: 2 } },
+      ] as State["session"],
+      session_status: { ses_child: BUSY },
+    })
+    const childStores = createChildStores([["/active/project", activeStore]])
+    const routingIndex = createEventRoutingIndex()
+
+    expect(resolveMaterializationSessionId(
+      routingIndex,
+      deltaEvent,
+      "/active/project",
+      activeStore,
+      childStores,
+    )).toBe("ses_child")
   })
 })
