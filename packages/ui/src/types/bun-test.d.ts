@@ -10,10 +10,14 @@ declare module "bun:test" {
     toBeTruthy(): void;
     toBeFalsy(): void;
     toBeNull(): void;
+    toBeUndefined(): void;
+    toBeDefined(): void;
     toThrow(expected?: string | RegExp): void;
     toContain(expected: unknown): void;
     toBeGreaterThan(expected: number): void;
+    toBeGreaterThanOrEqual(expected: number): void;
     toBeLessThan(expected: number): void;
+    toBeLessThanOrEqual(expected: number): void;
     toHaveLength(expected: number): void;
     toBeInstanceOf(expected: unknown): void;
     not: {
@@ -21,6 +25,8 @@ declare module "bun:test" {
       toBe(expected: unknown): void;
       toContain(expected: unknown): void;
       toBeNull(): void;
+      toBeUndefined(): void;
+      toBeDefined(): void;
     };
   };
   export function beforeEach(fn: () => void | Promise<void>): void;

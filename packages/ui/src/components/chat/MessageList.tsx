@@ -31,47 +31,18 @@ const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
 // worth of headroom so fast wheel scrolls do not cross an unmeasured edge, while
 // still avoiding the older very-large overscan that kept too much DOM alive.
 const MESSAGE_LIST_BUFFER_SIZE = 360;
-const TIMELINE_CACHE_LIMIT = 16;
-// Dynamic chat rows can grow after the first paint (markdown/Shiki workers,
-// tool output reveal, task summaries). Restoring stale virtual heights during
-// those sequence changes is worse than remeasuring, because it briefly lets
-// virtual rows overlap later normal-flow rows. Keep the cache writer in place
-// for a future content-revisioned cache, but do not restore by key alone.
-const RESTORE_TIMELINE_CACHE = false;
 
-const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => {
-    if (a === b) return true;
-    if (!a || !b) return false;
-    if (a.length !== b.length) return false;
-    return a.every((key, index) => key === b[index]);
-};
-
-const timelineCache = new Map<string, { keys: readonly string[]; cache: CacheSnapshot }>();
-
-const readTimelineCache = (sessionKey: string, keys: readonly string[]): CacheSnapshot | undefined => {
-    if (!RESTORE_TIMELINE_CACHE) return undefined;
-    const entry = timelineCache.get(sessionKey);
-    if (!entry) return undefined;
-    if (sameKeys(entry.keys, keys)) return entry.cache;
-    timelineCache.delete(sessionKey);
-    return undefined;
-};
-
-const writeTimelineCache = (
-    sessionKey: string,
-    keys: readonly string[],
-    handle: VirtualizerHandle | null | undefined,
-): void => {
-    if (!RESTORE_TIMELINE_CACHE) return;
-    if (!handle || keys.length === 0) return;
-    timelineCache.delete(sessionKey);
-    timelineCache.set(sessionKey, { keys: keys.slice(), cache: handle.cache });
-    while (timelineCache.size > TIMELINE_CACHE_LIMIT) {
-        const oldest = timelineCache.keys().next().value;
-        if (typeof oldest !== 'string') break;
-        timelineCache.delete(oldest);
-    }
-};
+// Fix B: timeline measurement cache + height-oriented signature live in a
+// worker-free module so they can be unit-tested without pulling the markdown/
+// shiki worker that MessageList transitively imports through ChatMessage.
+import {
+    buildTimelineHeightSignature,
+    readTimelineCache,
+    writeTimelineCache,
+    markTimelineCacheDirty,
+    getRuntimeSurfaceKey,
+    type TimelineRenderDims,
+} from './lib/virtualization/timelineCache';
 
 const useStableEvent = <TArgs extends unknown[], TResult>(handler: (...args: TArgs) => TResult) => {
     const handlerRef = React.useRef(handler);
@@ -1326,17 +1297,50 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         },
         [historyEntryKeys, sessionKey, virtualLayoutMode],
     );
+    // Fix B4: render dimensions for the height signature. The width bucket is
+    // a synchronous proxy (window.innerWidth) rather than the chat container's
+    // clientWidth: ChatViewport remounts on session switch (key={sessionId}),
+    // so during MessageList's first render the scroll container ref is null.
+    // The cache prop is applied at virtualizer mount, so the signature must be
+    // computable synchronously. window.innerWidth is stable across re-entry at
+    // the same window size and changes on resize — exactly the invalidate-on-
+    // resize property the signature needs.
+    const renderDims = React.useMemo<TimelineRenderDims>(
+        () => ({
+            virtualLayoutMode,
+            widthBucket: Math.floor((typeof window !== 'undefined' ? window.innerWidth : 0) / 50),
+            chatRenderMode,
+            runtimeSurface: getRuntimeSurfaceKey(),
+        }),
+        // sessionKey is intentionally a dependency so the width bucket is
+        // re-read from window.innerWidth on every session enter (re-entry at a
+        // different window size must invalidate the restored cache). It is not
+        // referenced in the body; the dependency exists to trigger recompute.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [chatRenderMode, sessionKey, virtualLayoutMode],
+    );
+    const heightSignature = React.useMemo(
+        () => buildTimelineHeightSignature(historyEntries, renderDims),
+        [historyEntries, renderDims],
+    );
     const virtualCache = React.useMemo(
-        () => (shouldVirtualizeHistory ? readTimelineCache(sessionKey, historyEntryKeys) : undefined),
-        [historyEntryKeys, sessionKey, shouldVirtualizeHistory],
+        () => (shouldVirtualizeHistory ? readTimelineCache(sessionKey, historyEntryKeys, heightSignature) : undefined),
+        [heightSignature, historyEntryKeys, sessionKey, shouldVirtualizeHistory],
     );
     const virtualCacheSessionRef = React.useRef(sessionKey);
     const virtualCacheKeysRef = React.useRef(historyEntryKeys);
+    const virtualCacheHeightSigRef = React.useRef(heightSignature);
     const setHistoryVirtualizer = React.useCallback((handle: VirtualizerHandle | null) => {
         if (!handle) {
+            // Fix B2: persist the measured cache with the height signature that
+            // was in effect when this virtualizer measured. The signature is
+            // read from a ref so the OLD virtualizer's unmount writes the OLD
+            // signature (matching its measurements), not a new one from a
+            // render whose ref-sync effect has not run yet.
             writeTimelineCache(
                 virtualCacheSessionRef.current,
                 virtualCacheKeysRef.current,
+                virtualCacheHeightSigRef.current,
                 historyVirtualizerRef.current,
             );
             historyVirtualizerRef.current = null;
@@ -1349,16 +1353,130 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     React.useEffect(() => {
         virtualCacheSessionRef.current = sessionKey;
         virtualCacheKeysRef.current = historyEntryKeys;
-    }, [historyEntryKeys, sessionKey]);
+        virtualCacheHeightSigRef.current = heightSignature;
+    }, [heightSignature, historyEntryKeys, sessionKey]);
 
     React.useEffect(() => {
         const virtualizerForCleanup = historyVirtualizerRef.current;
         return () => {
-            writeTimelineCache(virtualCacheSessionRef.current, virtualCacheKeysRef.current, virtualizerForCleanup);
+            writeTimelineCache(
+                virtualCacheSessionRef.current,
+                virtualCacheKeysRef.current,
+                virtualCacheHeightSigRef.current,
+                virtualizerForCleanup,
+            );
         };
     }, []);
 
+    // Fix B3: after entering a virtualized session, watch container.scrollHeight.
+    // Once it's stable for a few frames (markdown/Shiki workers settled, async
+    // heights done growing), rewrite the timeline cache with the virtualizer's
+    // CURRENT measurements + the current height signature. This captures the
+    // final settled heights — the cache written at unmount or during the storm
+    // could hold half-measured heights. If the user switches away before
+    // settling, no half-stable cache is written. Tokenized + cancellable.
+    const measurementRewriteRafRef = React.useRef<number | null>(null);
+    const measurementRewriteStateRef = React.useRef<{
+        sessionKey: string;
+        token: number;
+        lastScrollHeight: number;
+        stableFrames: number;
+        frames: number;
+        startedAt: number;
+    } | null>(null);
+    const measurementRewriteTokenRef = React.useRef(0);
+
+    React.useEffect(() => {
+        if (!shouldVirtualizeHistory) {
+            if (measurementRewriteRafRef.current !== null && typeof window !== 'undefined') {
+                window.cancelAnimationFrame(measurementRewriteRafRef.current);
+            }
+            measurementRewriteRafRef.current = null;
+            measurementRewriteStateRef.current = null;
+            return;
+        }
+        if (typeof window === 'undefined') return;
+        measurementRewriteTokenRef.current += 1;
+        const token = measurementRewriteTokenRef.current;
+        const container = resolveScrollContainer();
+        measurementRewriteStateRef.current = {
+            sessionKey,
+            token,
+            lastScrollHeight: container?.scrollHeight ?? 0,
+            stableFrames: 0,
+            frames: 0,
+            startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+        };
+
+        const tick = () => {
+            measurementRewriteRafRef.current = null;
+            const loopState = measurementRewriteStateRef.current;
+            if (!loopState || loopState.token !== token) return;
+            if (loopState.sessionKey !== sessionKey) {
+                cancelRewrite();
+                return;
+            }
+            const currentContainer = resolveScrollContainer();
+            const virtualizer = historyVirtualizerRef.current;
+            if (!currentContainer || !virtualizer) {
+                // Container/virtualizer gone — stop without writing a
+                // half-stable cache.
+                cancelRewrite();
+                return;
+            }
+            const currentScrollHeight = currentContainer.scrollHeight;
+            loopState.frames += 1;
+            if (currentScrollHeight === loopState.lastScrollHeight) {
+                loopState.stableFrames += 1;
+            } else {
+                loopState.stableFrames = 0;
+                loopState.lastScrollHeight = currentScrollHeight;
+            }
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - loopState.startedAt;
+            if (loopState.stableFrames >= 3) {
+                // Settled: rewrite the cache with the final measured heights
+                // and the current signature. Reads keys/signature from refs so
+                // a render that changed them (but whose ref-sync effect has not
+                // run yet) does not write a mismatched key/sig pair.
+                writeTimelineCache(
+                    virtualCacheSessionRef.current,
+                    virtualCacheKeysRef.current,
+                    virtualCacheHeightSigRef.current,
+                    virtualizer,
+                );
+                cancelRewrite();
+                return;
+            }
+            if (loopState.frames >= 120 || elapsed >= 2000) {
+                // Hard cap: stop without forcing a write (heights may still be
+                // oscillating; a half-stable cache is worse than none).
+                cancelRewrite();
+                return;
+            }
+            measurementRewriteRafRef.current = window.requestAnimationFrame(tick);
+        };
+
+        const cancelRewrite = () => {
+            if (measurementRewriteRafRef.current !== null && typeof window !== 'undefined') {
+                window.cancelAnimationFrame(measurementRewriteRafRef.current);
+            }
+            measurementRewriteRafRef.current = null;
+            measurementRewriteStateRef.current = null;
+        };
+
+        measurementRewriteRafRef.current = window.requestAnimationFrame(tick);
+        return () => {
+            cancelRewrite();
+        };
+    }, [shouldVirtualizeHistory, sessionKey, resolveScrollContainer]);
+
     const stableHistoryContentChange = useStableEvent((reason?: ContentChangeReason) => {
+        // Fix B3: a history-row content change means the cached virtualizer
+        // heights for this session are stale. Mark the session dirty so the
+        // next entry forces a fresh measurement instead of restoring stale
+        // heights. The measurement-rewrite loop clears this once heights
+        // re-settle (writing a fresh cache).
+        markTimelineCacheDirty(sessionKey);
         onMessageContentChange(reason);
     });
 
@@ -1480,11 +1598,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return true;
     }, [findMessageElement, resolveScrollContainer]);
 
-    React.useEffect(() => {
-        if (!ref) {
-            return;
-        }
-
+    // Fix A1: install the imperative handle via useImperativeHandle so it is
+    // available during the LAYOUT phase. The parent (ChatContainer) calls
+    // restoreSnapshot from its own useLayoutEffect; child layout effects run
+    // before parent layout effects, so useImperativeHandle (which runs at
+    // layout phase) guarantees messageListRef.current is populated before
+    // the parent reads it. The previous useEffect (passive phase) installed
+    // the handle AFTER the parent's layout effect, so on first mount the
+    // handle was null and DOM-anchor restore silently degraded — leaving the
+    // ratio method as the only path (root cause 2's upward-flip).
+    React.useImperativeHandle(ref, () => {
         const handle: MessageListHandle = {
             scrollToTurnId: (turnId: string, options?: { behavior?: ScrollBehavior }) => {
                 const behavior = options?.behavior ?? 'auto';
@@ -1570,6 +1693,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 }
 
                 if (!messageIndexMap.has(anchor.messageId)) {
+                    // The anchor's id is not in the loaded history at all
+                    // (it lives in an older, unloaded page). Caller degrades
+                    // to bottom. Returning false (rather than ratio fallback)
+                    // is the root-cause fix for the upward-flip.
                     return false;
                 }
 
@@ -1588,6 +1715,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 };
 
                 if (!applyAnchor()) {
+                    // Element not in DOM (virtualized out of viewport) but the
+                    // id IS in the loaded history — scroll the virtualizer so
+                    // the item mounts, then re-apply the pixel anchor. Returns
+                    // true so the caller treats this as a restorable anchor.
                     const index = messageIndexMap.get(anchor.messageId);
                     if (typeof index === 'number' && index < historyEntries.length) {
                         return scrollHistoryIndexIntoView(index, 'auto');
@@ -1604,19 +1735,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             },
         };
 
-        if (typeof ref === 'function') {
-            ref(handle);
-            return () => {
-                ref(null);
-            };
-        }
-
-        const objectRef = ref;
-        objectRef.current = handle;
-        return () => {
-            objectRef.current = null;
-        };
-    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, turnIndexMap, ref]);
+        return handle;
+    }, [findMessageElement, historyEntries.length, messageIndexMap, resolveScrollContainer, scrollHistoryIndexIntoView, scrollMessageElementIntoView, turnIndexMap]);
 
     const disableFadeIn = false;
 

@@ -28,7 +28,10 @@ export const detectHostedSurface = (): HostedSurface => {
     return explicitSurface;
   }
 
-  const override = new URLSearchParams(window.location.search).get('surface');
+  // window may exist without a Location in non-browser/test environments;
+  // guard the URL override lookup so a missing location does not throw.
+  const winLocation = typeof window.location !== 'undefined' ? window.location : undefined;
+  const override = winLocation ? new URLSearchParams(winLocation.search).get('surface') : null;
   if (override === 'mobile' || override === 'desktop') {
     return override;
   }

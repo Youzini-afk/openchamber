@@ -12,6 +12,8 @@ import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/session
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { isProgressiveMountInFlight } from '@/sync/use-sync';
+import { beginMeasurementGeneration, markMeasurementSettled } from '@/sync/use-sync';
+import { viewportSessionKey } from '@/sync/viewport-store';
 
 type ViewportAnchor = { messageId: string; offsetTop: number };
 
@@ -67,6 +69,15 @@ const MOBILE_TURN_MODEL_CACHE_MAX = 4
 const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const HISTORY_RENDER_WAIT_TIMEOUT_MS = 250
 const HISTORY_INTERACTION_GUARD_MS = 2000
+// Fix C: scrollHeight must be stable for this many consecutive frames before
+// the measurement generation is marked settled. 3 is enough to ride out a
+// single async reflow (markdown/Shiki worker callback) without false-settling.
+const MEASUREMENT_SETTLE_FRAMES = 3
+// Hard ceiling on the measurement-watch loop. Past this the generation is
+// force-marked settled so progressive mount never waits forever for a session
+// whose height keeps oscillating.
+const MEASUREMENT_SETTLE_MAX_FRAMES = 120
+const MEASUREMENT_SETTLE_MAX_MS = 2000
 const turnModelCache = new Map<string, { messages: ChatMessageEntry[]; model: TurnWindowModel }>()
 const getTurnModelCacheMax = () => {
     if (isVSCodeRuntime()) return VSCODE_TURN_MODEL_CACHE_MAX
@@ -226,6 +237,33 @@ export const useChatTimelineController = ({
 
     const historySignalsRef = React.useRef(historySignals);
 
+    // Fix C: measurement-settled watch. On each session enter we begin a new
+    // measurement generation and run a rAF loop that records
+    // container.scrollHeight (+ clientHeight to distinguish resize from
+    // content growth). When scrollHeight is stable for
+    // MEASUREMENT_SETTLE_FRAMES the generation is marked settled, which the
+    // progressive-mount slot waits for so its second-page prepend lands on
+    // stable content instead of on a still-measuring virtualizer storm.
+    const measurementWatchRafRef = React.useRef<number | null>(null);
+    const measurementWatchStateRef = React.useRef<{
+        sessionId: string;
+        sessionKey: string;
+        generation: number;
+        lastScrollHeight: number;
+        lastClientHeight: number;
+        stableFrames: number;
+        frames: number;
+        startedAt: number;
+    } | null>(null);
+
+    const stopMeasurementWatch = React.useCallback(() => {
+        if (measurementWatchRafRef.current !== null && typeof window !== 'undefined') {
+            window.cancelAnimationFrame(measurementWatchRafRef.current);
+        }
+        measurementWatchRafRef.current = null;
+        measurementWatchStateRef.current = null;
+    }, []);
+
     turnModelRef.current = turnWindowModel;
     isPinnedRef.current = isPinned;
     isLoadingOlderRef.current = isLoadingOlder;
@@ -272,6 +310,92 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         setActiveTurnId(null);
     }, [sessionId]);
+
+    // Fix C2: drive the measurement-settled signal. A fresh generation is
+    // begun on every session enter; a rAF loop watches scrollHeight. When
+    // stable for MEASUREMENT_SETTLE_FRAMES the generation is marked settled
+    // (which the progressive-mount slot waits for). clientHeight changes
+    // (viewport resize) reset the stable counter without counting as content
+    // settle, so a shrinking/growing window does not falsely report settled.
+    // A hard frame/time cap force-marks settled so a perpetually-oscillating
+    // session never blocks progressive mount forever.
+    React.useLayoutEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!sessionId) {
+            stopMeasurementWatch();
+            return;
+        }
+        const sessionKey = viewportSessionKey(sessionId);
+        const generation = beginMeasurementGeneration(sessionKey);
+        const container = scrollRef.current;
+        measurementWatchStateRef.current = {
+            sessionId,
+            sessionKey,
+            generation,
+            lastScrollHeight: container?.scrollHeight ?? 0,
+            lastClientHeight: container?.clientHeight ?? 0,
+            stableFrames: 0,
+            frames: 0,
+            startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+        };
+
+        const tick = () => {
+            measurementWatchRafRef.current = null;
+            const state = measurementWatchStateRef.current;
+            if (!state || state.generation !== generation) return;
+            if (sessionIdRef.current !== state.sessionId) {
+                stopMeasurementWatch();
+                return;
+            }
+            const currentContainer = scrollRef.current;
+            if (!currentContainer) {
+                // No container yet (still hydrating). Mark settled so we do
+                // not block progressive mount on a container that may mount
+                // late; the measurement storm only matters once content is
+                // actually rendered.
+                markMeasurementSettled(state.sessionKey, generation);
+                stopMeasurementWatch();
+                return;
+            }
+            const scrollHeight = currentContainer.scrollHeight;
+            const clientHeight = currentContainer.clientHeight;
+            state.frames += 1;
+
+            if (scrollHeight === state.lastScrollHeight) {
+                if (clientHeight !== state.lastClientHeight) {
+                    // Resize, not content settle — reset the counter so a
+                    // resize-driven height change does not falsely settle.
+                    state.stableFrames = 0;
+                    state.lastClientHeight = clientHeight;
+                } else {
+                    state.stableFrames += 1;
+                }
+            } else {
+                state.stableFrames = 0;
+                state.lastScrollHeight = scrollHeight;
+                state.lastClientHeight = clientHeight;
+            }
+
+            const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - state.startedAt;
+            if (state.stableFrames >= MEASUREMENT_SETTLE_FRAMES) {
+                markMeasurementSettled(state.sessionKey, generation);
+                stopMeasurementWatch();
+                return;
+            }
+            if (state.frames >= MEASUREMENT_SETTLE_MAX_FRAMES || elapsed >= MEASUREMENT_SETTLE_MAX_MS) {
+                // Force-settle past the cap so progressive mount proceeds.
+                markMeasurementSettled(state.sessionKey, generation);
+                stopMeasurementWatch();
+                return;
+            }
+            measurementWatchRafRef.current = window.requestAnimationFrame(tick);
+        };
+
+        measurementWatchRafRef.current = window.requestAnimationFrame(tick);
+        return () => {
+            stopMeasurementWatch();
+        };
+    }, [sessionId, scrollRef, stopMeasurementWatch]);
 
     const resolvePendingRenderWaiters = React.useCallback(() => {
         const resolvers = pendingRenderResolversRef.current;
@@ -348,10 +472,11 @@ export const useChatTimelineController = ({
                 window.clearTimeout(historyInteractionTimerRef.current);
                 historyInteractionTimerRef.current = null;
             }
+            stopMeasurementWatch();
             resolvePendingRenderWaiters();
             resolvePendingScrollRequest(false);
         };
-    }, [resolvePendingRenderWaiters, resolvePendingScrollRequest]);
+    }, [resolvePendingRenderWaiters, resolvePendingScrollRequest, stopMeasurementWatch]);
 
     const renderedMessages = messages;
 

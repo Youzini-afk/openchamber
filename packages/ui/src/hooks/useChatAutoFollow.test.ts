@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { shouldRepinReleasedViewport } from './useChatAutoFollow';
+import { shouldRepinReleasedViewport, planViewportRestore } from './useChatAutoFollow';
 
 /**
  * These tests verify the rAF coalescing PATTERN used in useChatAutoFollow's
@@ -393,5 +393,500 @@ describe('useChatAutoFollow spy gating condition (Fix 2)', () => {
         calls.length = 0;
         simulateSpyEffect('following', false);
         expect(calls.length).toBe(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Fix A4: restoreSnapshot decision logic (planViewportRestore). The pure
+// planner is the unit-testable surface of the DOM-anchor restore path; the
+// hook's restoreSnapshot calls it and then either clamps to bottom, defers
+// (no ratio fallback), or hands the saved anchor to the MessageList handle.
+// ---------------------------------------------------------------------------
+describe('planViewportRestore (Fix A4)', () => {
+    const bottomSnapshot = { scrollTop: 800, scrollHeight: 900, clientHeight: 100 };
+    const nonBottomSnapshot = {
+        scrollTop: 100,
+        scrollHeight: 900,
+        clientHeight: 100,
+        messageAnchor: { messageId: 'msg_5', offsetTop: -40 },
+    };
+
+    test('bottom snapshot → pin to bottom (no ratio, no anchor)', () => {
+        const plan = planViewportRestore({ saved: bottomSnapshot, isMobile: false, hasHandle: true });
+        expect(plan.kind).toBe('bottom');
+    });
+
+    test('no snapshot at all → bottom', () => {
+        const plan = planViewportRestore({ saved: undefined, isMobile: false, hasHandle: true });
+        expect(plan.kind).toBe('bottom');
+    });
+
+    test('non-bottom with NO handle installed yet → DEFER (the layout-race path A1 fixes); never ratio', () => {
+        // This is the critical timing case: parent layout effect runs before
+        // the child's passive effect used to install the handle. With A1
+        // (useImperativeHandle, layout phase) hasHandle is true on first mount.
+        // If it ever is false, we must defer — NOT fall back to ratio (which
+        // against an unmeasured scrollHeight is the upward-flip bug).
+        const plan = planViewportRestore({ saved: nonBottomSnapshot, isMobile: false, hasHandle: false });
+        expect(plan.kind).toBe('defer');
+    });
+
+    test('non-bottom with a saved messageAnchor + handle → DOM-anchor restore', () => {
+        const plan = planViewportRestore({ saved: nonBottomSnapshot, isMobile: false, hasHandle: true });
+        expect(plan.kind).toBe('anchor');
+        if (plan.kind === 'anchor') {
+            expect(plan.messageAnchor).toEqual({ messageId: 'msg_5', offsetTop: -40 });
+        }
+    });
+
+    test('non-bottom with NO messageAnchor (old snapshot) → degrade to bottom; never ratio', () => {
+        const oldSnapshot = { scrollTop: 100, scrollHeight: 900, clientHeight: 100 };
+        const plan = planViewportRestore({ saved: oldSnapshot, isMobile: false, hasHandle: true });
+        expect(plan.kind).toBe('bottom');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Fix A3: queueSave captures an immutable snapshot; flushSave writes it
+// without reading the live container. Replicates the capture/flush contract
+// so a session switch between queue and flush cannot write the wrong session.
+// ---------------------------------------------------------------------------
+describe('queueSave / flushSave immutable snapshot (Fix A3)', () => {
+    type Pending = {
+        sessionId: string;
+        anchor: number;
+        messageAnchor: { messageId: string; offsetTop: number } | null;
+        scrollTop: number;
+        scrollHeight: number;
+        clientHeight: number;
+    };
+
+    // Replicates queueSave: captures everything at queue time, including a
+    // captureViewportAnchor call (here simulated by reading a "first visible
+    // message id" from the fake container).
+    const queueSave = (input: {
+        sessionId: string;
+        scrollTop: number;
+        scrollHeight: number;
+        clientHeight: number;
+        messageCount: number;
+        firstVisibleMessageId: string | null;
+        firstVisibleOffsetTop: number;
+    }): Pending => {
+        const anchorRatio = input.scrollHeight > 0
+            ? (input.scrollTop + input.clientHeight / 2) / input.scrollHeight
+            : 0;
+        const anchor = Math.floor(anchorRatio * input.messageCount);
+        const messageAnchor = input.firstVisibleMessageId
+            ? { messageId: input.firstVisibleMessageId, offsetTop: input.firstVisibleOffsetTop }
+            : null;
+        return {
+            sessionId: input.sessionId,
+            anchor,
+            messageAnchor,
+            scrollTop: input.scrollTop,
+            scrollHeight: input.scrollHeight,
+            clientHeight: input.clientHeight,
+        };
+    };
+
+    // Replicates flushSave: writes the immutable pending snapshot verbatim.
+    // It does NOT re-read the container.
+    const flushSave = (pending: Pending | null): { sessionId: string; scrollTop: number; messageAnchor: unknown } | null => {
+        if (!pending) return null;
+        return {
+            sessionId: pending.sessionId,
+            scrollTop: pending.scrollTop,
+            messageAnchor: pending.messageAnchor,
+        };
+    };
+
+    test('queueSave captures the messageAnchor (captureViewportAnchor is called)', () => {
+        const pending = queueSave({
+            sessionId: 'ses_A',
+            scrollTop: 400,
+            scrollHeight: 1000,
+            clientHeight: 200,
+            messageCount: 50,
+            firstVisibleMessageId: 'msg_5',
+            firstVisibleOffsetTop: -40,
+        });
+        expect(pending.messageAnchor).toEqual({ messageId: 'msg_5', offsetTop: -40 });
+        expect(pending.sessionId).toBe('ses_A');
+        expect(pending.scrollTop).toBe(400);
+    });
+
+    test('flushSave writes the queued snapshot; session switch between queue and flush does NOT write the wrong session', () => {
+        // User is in ses_A, scrolls → queueSave captures ses_A's pixels.
+        const pending = queueSave({
+            sessionId: 'ses_A',
+            scrollTop: 400,
+            scrollHeight: 1000,
+            clientHeight: 200,
+            messageCount: 50,
+            firstVisibleMessageId: 'msg_5',
+            firstVisibleOffsetTop: -40,
+        });
+
+        // Before flushSave fires, the user switches to ses_B. The OLD code read
+        // the live container at flush time → wrote ses_B's pixels into ses_A.
+        // With the immutable snapshot, flushSave writes ses_A's captured pixels.
+        const written = flushSave(pending);
+        expect(written?.sessionId).toBe('ses_A');
+        expect(written?.scrollTop).toBe(400);
+        expect(written?.messageAnchor).toEqual({ messageId: 'msg_5', offsetTop: -40 });
+    });
+
+    test('flushSave with no pending snapshot is a no-op', () => {
+        expect(flushSave(null)).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Fix A5: anchor-correction loop. Replicates the rAF loop contract: after a
+// DOM-anchor restore, watch scrollHeight; once stable for 3 frames, re-apply
+// the anchor; cancel on session switch; stop at the hard cap.
+// ---------------------------------------------------------------------------
+describe('anchor-correction loop (Fix A5)', () => {
+    const ANCHOR_CORRECTION_STABLE_FRAMES = 3;
+    const ANCHOR_CORRECTION_MAX_FRAMES = 120;
+    const ANCHOR_CORRECTION_MAX_MS = 2000;
+
+    const createAnchorCorrectionLoop = (options: {
+        scrollHeight: (frame: number) => number;
+        currentSessionId: () => string;
+        hasHandle: () => boolean;
+        hasContainer: () => boolean;
+        now: () => number;
+    }) => {
+        const rafQueue: Array<() => void> = [];
+        const schedule = (cb: () => void) => {
+            rafQueue.push(cb);
+            return rafQueue.length;
+        };
+        const drainRAF = () => {
+            const q = [...rafQueue];
+            rafQueue.length = 0;
+            for (const cb of q) cb();
+        };
+
+        const applied: number[] = [];
+        let stopped = false;
+        let cancelled = false;
+        const token = 1;
+        const loopState = {
+            sessionId: 'ses_A',
+            token,
+            anchor: { messageId: 'msg_5', offsetTop: -40 },
+            lastScrollHeight: options.scrollHeight(0),
+            stableFrames: 0,
+            frames: 0,
+            startedAt: options.now(),
+        };
+
+        const cancel = () => {
+            cancelled = true;
+            stopped = true;
+        };
+
+        const tick = () => {
+            if (stopped) return;
+            if (loopState.token !== token) return;
+            if (options.currentSessionId() !== loopState.sessionId) {
+                cancel();
+                return;
+            }
+            if (!options.hasContainer() || !options.hasHandle()) {
+                cancel();
+                return;
+            }
+            const sh = options.scrollHeight(loopState.frames);
+            loopState.frames += 1;
+            if (sh === loopState.lastScrollHeight) {
+                loopState.stableFrames += 1;
+            } else {
+                loopState.stableFrames = 0;
+                loopState.lastScrollHeight = sh;
+            }
+            const elapsed = options.now() - loopState.startedAt;
+            if (loopState.stableFrames >= ANCHOR_CORRECTION_STABLE_FRAMES) {
+                applied.push(loopState.frames);
+                cancel();
+                return;
+            }
+            if (loopState.frames >= ANCHOR_CORRECTION_MAX_FRAMES || elapsed >= ANCHOR_CORRECTION_MAX_MS) {
+                cancel();
+                return;
+            }
+            schedule(tick);
+        };
+
+        const start = () => {
+            schedule(tick);
+        };
+
+        return {
+            start,
+            drainRAF,
+            getAppliedCount: () => applied.length,
+            isStopped: () => stopped,
+            isCancelled: () => cancelled,
+            getFrames: () => loopState.frames,
+        };
+    };
+
+    test('re-applies the anchor after scrollHeight is stable for 3 frames', () => {
+        const heights = [1000, 1100, 1200, 1200, 1200, 1200]; // grows then settles
+        let frame = 0;
+        let now = 0;
+        const loop = createAnchorCorrectionLoop({
+            scrollHeight: () => heights[Math.min(frame, heights.length - 1)],
+            currentSessionId: () => 'ses_A',
+            hasHandle: () => true,
+            hasContainer: () => true,
+            now: () => now,
+        });
+        loop.start();
+        // Drive frames: each drain advances frame + time.
+        for (let i = 0; i < 10; i += 1) {
+            loop.drainRAF();
+            frame += 1;
+            now += 16;
+            if (loop.isStopped()) break;
+        }
+        expect(loop.getAppliedCount()).toBe(1);
+    });
+
+    test('cancels when the session switches away mid-correction', () => {
+        let frame = 0;
+        let now = 0;
+        let session = 'ses_A';
+        const loop = createAnchorCorrectionLoop({
+            scrollHeight: () => 1000 + frame, // always changing → never settles
+            currentSessionId: () => session,
+            hasHandle: () => true,
+            hasContainer: () => true,
+            now: () => now,
+        });
+        loop.start();
+        loop.drainRAF(); frame += 1; now += 16;
+        loop.drainRAF(); frame += 1; now += 16;
+        // User switches session — the loop must cancel on the next tick.
+        session = 'ses_B';
+        loop.drainRAF(); frame += 1; now += 16;
+        expect(loop.isCancelled()).toBe(true);
+        expect(loop.getAppliedCount()).toBe(0);
+    });
+
+    test('cancels when the handle unmounts mid-correction', () => {
+        let frame = 0;
+        let now = 0;
+        let handle = true;
+        const loop = createAnchorCorrectionLoop({
+            scrollHeight: () => 1000 + frame,
+            currentSessionId: () => 'ses_A',
+            hasHandle: () => handle,
+            hasContainer: () => true,
+            now: () => now,
+        });
+        loop.start();
+        loop.drainRAF(); frame += 1; now += 16;
+        handle = false; // handle unmounted
+        loop.drainRAF(); frame += 1; now += 16;
+        expect(loop.isCancelled()).toBe(true);
+    });
+
+    test('stops at the hard cap (max frames) without applying if never stable', () => {
+        let frame = 0;
+        let now = 0;
+        const loop = createAnchorCorrectionLoop({
+            // Always different → never reaches 3 stable frames.
+            scrollHeight: () => 1000 + frame,
+            currentSessionId: () => 'ses_A',
+            hasHandle: () => true,
+            hasContainer: () => true,
+            now: () => now,
+        });
+        loop.start();
+        for (let i = 0; i < ANCHOR_CORRECTION_MAX_FRAMES + 5; i += 1) {
+            loop.drainRAF();
+            frame += 1;
+            now += 16;
+            if (loop.isStopped()) break;
+        }
+        expect(loop.isStopped()).toBe(true);
+        expect(loop.getAppliedCount()).toBe(0); // never stable → no apply
+    });
+
+    test('stops at the hard time cap (2000ms) without applying if never stable', () => {
+        let frame = 0;
+        // Use a large per-frame time step so the 2000ms cap triggers well
+        // before the 120-frame cap, isolating the time cap.
+        let now = 0;
+        const loop = createAnchorCorrectionLoop({
+            scrollHeight: () => 1000 + frame,
+            currentSessionId: () => 'ses_A',
+            hasHandle: () => true,
+            hasContainer: () => true,
+            now: () => now,
+        });
+        loop.start();
+        for (let i = 0; i < 30; i += 1) {
+            loop.drainRAF();
+            frame += 1;
+            now += 200; // 200ms/frame → 2000ms after ~10 frames, far under 120 frames
+            if (loop.isStopped()) break;
+        }
+        expect(loop.isStopped()).toBe(true);
+        // now exceeds 2000ms → stopped via time cap, not the frame cap.
+        expect(now).toBeGreaterThanOrEqual(ANCHOR_CORRECTION_MAX_MS);
+        expect(frame).toBeLessThan(ANCHOR_CORRECTION_MAX_FRAMES);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Fix D: follow-loop tolerance during the measurement phase. Replicates the
+// tickFollow contract: when scrollHeight changes (virtualizer still measuring),
+// still clamp to bottom but do NOT reset settledFrames; once stable, the loop
+// converges to SETTLE_FRAMES and stops.
+// ---------------------------------------------------------------------------
+describe('tickFollow measurement-phase tolerance (Fix D)', () => {
+    const SETTLE_EPSILON = 0.5;
+    const SETTLE_FRAMES = 4;
+
+    const createFollowLoop = (options: {
+        scrollHeight: (frame: number) => number;
+        clientHeight: () => number;
+        getScrollTop: () => number;
+        setScrollTop: (v: number) => void;
+    }) => {
+        const rafQueue: Array<() => void> = [];
+        const schedule = (cb: () => void) => {
+            rafQueue.push(cb);
+            return rafQueue.length;
+        };
+        const drainRAF = () => {
+            const q = [...rafQueue];
+            rafQueue.length = 0;
+            for (const cb of q) cb();
+        };
+
+        let lastScrollHeight = 0;
+        let settledFrames = 0;
+        let stopped = false;
+        let frame = 0;
+
+        const tickFollow = () => {
+            if (stopped) return;
+            const scrollHeight = options.scrollHeight(frame);
+            const target = Math.max(0, scrollHeight - options.clientHeight());
+            const current = options.getScrollTop();
+            const delta = target - current;
+            const scrollHeightChanged = scrollHeight !== lastScrollHeight;
+            lastScrollHeight = scrollHeight;
+
+            if (scrollHeightChanged) {
+                // Measurement phase: clamp to bottom, do NOT touch settledFrames.
+                options.setScrollTop(target);
+                schedule(tickFollow);
+                return;
+            }
+
+            if (Math.abs(delta) <= SETTLE_EPSILON) {
+                if (current !== target) {
+                    options.setScrollTop(target);
+                }
+                settledFrames += 1;
+                if (settledFrames >= SETTLE_FRAMES) {
+                    stopped = true;
+                    return;
+                }
+                schedule(tickFollow);
+                return;
+            }
+
+            // Genuinely not at bottom (heights stable): reset + clamp.
+            settledFrames = 0;
+            options.setScrollTop(target);
+            schedule(tickFollow);
+        };
+
+        const start = () => {
+            // seed lastScrollHeight with the current value (mirrors startFollowLoop)
+            lastScrollHeight = options.scrollHeight(frame);
+            settledFrames = 0;
+            schedule(tickFollow);
+        };
+
+        const advanceFrame = () => {
+            drainRAF();
+            frame += 1;
+        };
+
+        return {
+            start,
+            advanceFrame,
+            isStopped: () => stopped,
+            getSettledFrames: () => settledFrames,
+        };
+    };
+
+    test('during the measurement phase settledFrames is preserved (not cleared each frame)', () => {
+        // scrollHeight grows for several frames (measurement storm), then stabilizes.
+        const heights = [1000, 1100, 1200, 1300, 1300, 1300, 1300, 1300];
+        let scrollTop = 0;
+        const loop = createFollowLoop({
+            scrollHeight: (frame) => heights[Math.min(frame, heights.length - 1)],
+            clientHeight: () => 200,
+            getScrollTop: () => scrollTop,
+            setScrollTop: (v) => { scrollTop = v; },
+        });
+
+        loop.start();
+        // Run through the storm (4 growth frames). settledFrames must NOT
+        // accumulate during growth (the loop returns before counting) and must
+        // NOT be reset by growth frames either.
+        loop.advanceFrame(); // frame 0→1: height 1000→1100 (changed) → clamp, no count
+        loop.advanceFrame(); // 1100→1200 (changed) → clamp, no count
+        // After 2 growth frames, settledFrames should still be 0 (never reset to 0
+        // by growth, never incremented either).
+        expect(loop.getSettledFrames()).toBe(0);
+    });
+
+    test('once scrollHeight stabilizes, the loop converges to SETTLE_FRAMES and stops', () => {
+        const heights = [1000, 1100, 1200, 1300, 1300, 1300, 1300, 1300, 1300];
+        let scrollTop = 0;
+        const loop = createFollowLoop({
+            scrollHeight: (frame) => heights[Math.min(frame, heights.length - 1)],
+            clientHeight: () => 200,
+            getScrollTop: () => scrollTop,
+            setScrollTop: (v) => { scrollTop = v; },
+        });
+
+        loop.start();
+        for (let i = 0; i < 20; i += 1) {
+            loop.advanceFrame();
+            if (loop.isStopped()) break;
+        }
+        expect(loop.isStopped()).toBe(true);
+        // Final scrollTop should be pinned to bottom of the stable height.
+        expect(scrollTop).toBe(1300 - 200);
+    });
+
+    test('a genuine "not at bottom" frame after stabilization resets settledFrames', () => {
+        // Heights stable from the start, but scrollTop is artificially held
+        // away from bottom (simulating a clamp that didn't reach target).
+        let scrollTop = 0;
+        const loop = createFollowLoop({
+            scrollHeight: () => 1000, // stable
+            clientHeight: () => 200,
+            getScrollTop: () => scrollTop,
+            // Simulate a container that resists the clamp (keeps drifting down).
+            setScrollTop: (v) => { scrollTop = Math.min(v, scrollTop + 5); },
+        });
+        loop.start();
+        loop.advanceFrame();
+        // delta > epsilon (scrollTop far from 800) → reset settledFrames to 0.
+        expect(loop.getSettledFrames()).toBe(0);
     });
 });
